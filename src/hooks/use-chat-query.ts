@@ -28,6 +28,7 @@ export const useChatQuery = ({
     fetchNextPage: () => {},
     hasNextPage: false,
     isFetchingNextPage: false,
-    status: "success" as const,
+    status: "success" as "success" | "loading" | "error",
   };
 };
+

@@ -1,6 +1,6 @@
-import { useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import { useMockStore } from "@/lib/mock-store";
-import { MemberRole } from "@/types";
 import { ChatHeader } from "@/components/chat/chat-header";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatMessages } from "@/components/chat/chat-messages";
@@ -9,24 +9,24 @@ import { MediaRoom } from "@/components/media-room";
 export const ConversationPage = () => {
   const { serverId, memberId } = useParams();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const servers = useMockStore((state) => state.servers);
   const currentProfile = useMockStore((state) => state.currentProfile);
 
-  const server = servers.find((s) => s.id === serverId) || servers[0];
+  const server = servers.find((s) => s.id === serverId);
   const targetMember = server?.members.find((m) => m.id === memberId);
+
+  useEffect(() => {
+    if (!server && servers.length > 0) {
+      navigate(`/servers/${servers[0].id}`, { replace: true });
+    }
+  }, [server, servers, navigate]);
 
   if (!server || !targetMember) {
     return null;
   }
 
-  const currentMember = server.members.find((m) => m.profileId === currentProfile.id) || {
-    id: `member-current-${server.id}`,
-    role: MemberRole.ADMIN,
-    profileId: currentProfile.id,
-    profile: currentProfile,
-    serverId: server.id,
-  };
-
+  const currentMember = server.members.find((m) => m.profileId === currentProfile.id) || server.members[0];
   const conversationId = [currentMember.id, targetMember.id].sort().join("-");
   const isVideo = searchParams.get("video") === "true";
 
@@ -59,6 +59,7 @@ export const ConversationPage = () => {
             type="conversation"
             query={{
               conversationId,
+              serverId: server.id,
             }}
           />
         </>

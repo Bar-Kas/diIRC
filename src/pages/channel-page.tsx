@@ -1,6 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import { useMockStore } from "@/lib/mock-store";
-import { ChannelType, MemberRole } from "@/types";
+import { ChannelType } from "@/types";
 import { ChatHeader } from "@/components/chat/chat-header";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatMessages } from "@/components/chat/chat-messages";
@@ -12,20 +13,20 @@ export const ChannelPage = () => {
   const servers = useMockStore((state) => state.servers);
   const currentProfile = useMockStore((state) => state.currentProfile);
 
-  const server = servers.find((s) => s.id === serverId) || servers[0];
+  const server = servers.find((s) => s.id === serverId);
   const channel = server?.channels.find((c) => c.id === channelId);
+
+  useEffect(() => {
+    if (!server && servers.length > 0) {
+      navigate(`/servers/${servers[0].id}`, { replace: true });
+    }
+  }, [server, servers, navigate]);
 
   if (!server || !channel) {
     return null;
   }
 
-  const currentMember = server.members.find((m) => m.profileId === currentProfile.id) || {
-    id: `member-current-${server.id}`,
-    role: MemberRole.ADMIN,
-    profileId: currentProfile.id,
-    profile: currentProfile,
-    serverId: server.id,
-  };
+  const currentMember = server.members.find((m) => m.profileId === currentProfile.id) || server.members[0];
 
   return (
     <div className="bg-white dark:bg-[#313338] flex flex-col h-full">

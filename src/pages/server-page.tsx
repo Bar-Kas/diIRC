@@ -9,7 +9,7 @@ export const ServerPage = () => {
   const servers = useMockStore((state) => state.servers);
 
   useEffect(() => {
-    const server = servers.find((s) => s.id === serverId) || servers[0];
+    const server = servers.find((s) => s.id === serverId);
 
     if (server) {
       const initialChannel = 
@@ -19,6 +19,8 @@ export const ServerPage = () => {
       if (initialChannel) {
         navigate(`/servers/${server.id}/channels/${initialChannel.id}`, { replace: true });
       }
+    } else if (servers.length > 0) {
+      navigate(`/servers/${servers[0].id}`, { replace: true });
     } else {
       navigate("/", { replace: true });
     }

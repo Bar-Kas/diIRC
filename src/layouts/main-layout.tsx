@@ -9,7 +9,7 @@ export const MainLayout = () => {
   const servers = useMockStore((state) => state.servers);
   const navigate = useNavigate();
 
-  const activeServerId = serverId || servers[0]?.id;
+  const activeServer = servers.find((s) => s.id === serverId) || servers[0];
 
   useEffect(() => {
     if (!serverId && servers.length > 0) {
@@ -17,7 +17,7 @@ export const MainLayout = () => {
     }
   }, [serverId, servers, navigate]);
 
-  if (!activeServerId) {
+  if (!activeServer) {
     return null;
   }
 
@@ -27,7 +27,7 @@ export const MainLayout = () => {
         <NavigationSidebar />
       </div>
       <div className="hidden md:flex h-full w-60 z-20 flex-col fixed inset-y-0 left-[72px]">
-        <ServerSidebar serverId={activeServerId} />
+        <ServerSidebar serverId={activeServer.id} />
       </div>
       <main className="md:pl-[312px] h-full">
         <Outlet />

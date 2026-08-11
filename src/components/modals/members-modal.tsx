@@ -9,7 +9,8 @@ import {
   ShieldQuestion
 } from "lucide-react";
 import { useState } from "react";
-import { MemberRole, ServerWithMembersWithProfiles } from "@/types";
+import { Member, MemberRole, ServerWithMembersWithProfiles } from "@/types";
+
 
 import {
   Dialog,
@@ -99,8 +100,9 @@ export const MembersModal = () => {
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="mt-8 max-h-[420px] pr-6">
-          {server?.members?.map((member) => (
+          {server?.members?.map((member: Member) => (
             <div key={member.id} className="flex items-center gap-x-2 mb-6">
+
               <UserAvatar src={member.profile.imageUrl} />
               <div className="flex flex-col gap-y-1">
                 <div className="text-xs font-semibold flex items-center gap-x-1">

@@ -34,6 +34,7 @@ export const ChatInput = ({
   const addMessage = useMockStore((state) => state.addMessage);
   const addDirectMessage = useMockStore((state) => state.addDirectMessage);
   const servers = useMockStore((state) => state.servers);
+  const currentProfile = useMockStore((state) => state.currentProfile);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -52,13 +53,14 @@ export const ChatInput = ({
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
+      const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : servers[0];
+      if (!activeServer) return;
+
+      const currentMember = activeServer.members.find((m) => m.profileId === currentProfile.id) || activeServer.members[0];
+
       if (type === "channel" && query?.channelId) {
-        const activeServer = servers.find((s) => s.id === query.serverId) || servers[0];
-        const currentMember = activeServer.members[0];
         addMessage(query.channelId, currentMember, values.content);
       } else if (type === "conversation" && query?.conversationId) {
-        const activeServer = servers[0];
-        const currentMember = activeServer.members[0];
         addDirectMessage(query.conversationId, currentMember, values.content);
       }
 
@@ -67,7 +69,7 @@ export const ChatInput = ({
         form.setFocus("content");
       }, 0);
     } catch (error) {
-      console.log(error);
+      console.error("Failed to send message:", error);
     }
   };
 

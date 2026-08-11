@@ -105,9 +105,18 @@ export const useMockStore = create<MockState>((set, get) => ({
   },
 
   deleteServer: (serverId) => {
-    set((state) => ({
-      servers: state.servers.filter((s) => s.id !== serverId),
-    }));
+    const targetServer = get().servers.find((s) => s.id === serverId);
+    const channelIdsToRemove = new Set(targetServer?.channels.map((c) => c.id) || []);
+
+    set((state) => {
+      const nextMessages = { ...state.messages };
+      channelIdsToRemove.forEach((id) => delete nextMessages[id]);
+
+      return {
+        servers: state.servers.filter((s) => s.id !== serverId),
+        messages: nextMessages,
+      };
+    });
   },
 
   joinServerByInvite: (inviteCode) => {
@@ -167,13 +176,19 @@ export const useMockStore = create<MockState>((set, get) => ({
   },
 
   deleteChannel: (serverId, channelId) => {
-    set((state) => ({
-      servers: state.servers.map((s) =>
-        s.id === serverId
-          ? { ...s, channels: s.channels.filter((c) => c.id !== channelId) }
-          : s
-      ),
-    }));
+    set((state) => {
+      const nextMessages = { ...state.messages };
+      delete nextMessages[channelId];
+
+      return {
+        servers: state.servers.map((s) =>
+          s.id === serverId
+            ? { ...s, channels: s.channels.filter((c) => c.id !== channelId) }
+            : s
+        ),
+        messages: nextMessages,
+      };
+    });
   },
 
   updateMemberRole: (serverId, memberId, role) => {

@@ -97,17 +97,21 @@ export const ServerSidebar = ({
           />
         </div>
         <Separator className="bg-zinc-200 dark:bg-zinc-700 rounded-md my-2" />
-        {!!textChannels?.length && (
-          <div className="mb-2">
+        {[
+          { label: "Text Channels", type: ChannelType.TEXT, channels: textChannels },
+          { label: "Voice Channels", type: ChannelType.AUDIO, channels: audioChannels },
+          { label: "Video Channels", type: ChannelType.VIDEO, channels: videoChannels },
+        ].map((section) => !!section.channels?.length && (
+          <div key={section.type} className="mb-2">
             <ServerSection
               sectionType="channels"
-              channelType={ChannelType.TEXT}
+              channelType={section.type}
               role={role}
-              label="Text Channels"
+              label={section.label}
               server={server}
             />
             <div className="space-y-[2px]">
-              {textChannels.map((channel) => (
+              {section.channels.map((channel) => (
                 <ServerChannel
                   key={channel.id}
                   channel={channel}
@@ -117,49 +121,7 @@ export const ServerSidebar = ({
               ))}
             </div>
           </div>
-        )}
-        {!!audioChannels?.length && (
-          <div className="mb-2">
-            <ServerSection
-              sectionType="channels"
-              channelType={ChannelType.AUDIO}
-              role={role}
-              label="Voice Channels"
-              server={server}
-            />
-            <div className="space-y-[2px]">
-              {audioChannels.map((channel) => (
-                <ServerChannel
-                  key={channel.id}
-                  channel={channel}
-                  role={role}
-                  server={server}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-        {!!videoChannels?.length && (
-          <div className="mb-2">
-            <ServerSection
-              sectionType="channels"
-              channelType={ChannelType.VIDEO}
-              role={role}
-              label="Video Channels"
-              server={server}
-            />
-            <div className="space-y-[2px]">
-              {videoChannels.map((channel) => (
-                <ServerChannel
-                  key={channel.id}
-                  channel={channel}
-                  role={role}
-                  server={server}
-                />
-              ))}
-            </div>
-          </div>
-        )}
+        ))}
         {!!members?.length && (
           <div className="mb-2">
             <ServerSection

@@ -3,12 +3,12 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ModalProvider } from "@/components/providers/modal-provider";
 import { SocketProvider } from "@/components/providers/socket-provider";
 
-import { MainLayout } from "@/layouts/MainLayout";
-import { SetupPage } from "@/pages/SetupPage";
-import { ServerPage } from "@/pages/ServerPage";
-import { ChannelPage } from "@/pages/ChannelPage";
-import { ConversationPage } from "@/pages/ConversationPage";
-import { InvitePage } from "@/pages/InvitePage";
+import { MainLayout } from "@/layouts/main-layout";
+import { SetupPage } from "@/pages/setup-page";
+import { ServerPage } from "@/pages/server-page";
+import { ChannelPage } from "@/pages/channel-page";
+import { ConversationPage } from "@/pages/conversation-page";
+import { InvitePage } from "@/pages/invite-page";
 
 export function App() {
   return (

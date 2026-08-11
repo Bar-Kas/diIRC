@@ -26,10 +26,11 @@ export const DeleteMessageModal = () => {
     try {
       setIsLoading(true);
       if (query?.channelId && query?.messageId) {
-        deleteMessage(query.channelId, query.messageId);
+        deleteMessage(String(query.channelId), String(query.messageId));
       } else if (query?.conversationId && query?.messageId) {
-        deleteDirectMessage(query.conversationId, query.messageId);
+        deleteDirectMessage(String(query.conversationId), String(query.messageId));
       }
+
 
       onClose();
     } catch (error) {

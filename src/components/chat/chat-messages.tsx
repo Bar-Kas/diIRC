@@ -105,9 +105,10 @@ export const ChatMessages = ({
       <div className="flex flex-col mt-auto">
         {data?.pages?.map((group, i) => (
           <Fragment key={i}>
-            {group.items.map((message: Message, index: number) => {
-              const prevMessage = group.items[index - 1] as Message | undefined;
+            {group.items.map((message: any, index: number) => {
+              const prevMessage = group.items[index - 1] as any;
               const isSameAuthor = prevMessage && prevMessage.member?.id === message.member?.id;
+
               const isWithinTimeLimit = prevMessage && (new Date(message.createdAt).getTime() - new Date(prevMessage.createdAt).getTime() < 300000);
               const isCompact = isSameAuthor && isWithinTimeLimit && !prevMessage.deleted && !message.fileUrl;
 

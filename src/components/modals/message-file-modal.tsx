@@ -55,12 +55,13 @@ export const MessageFileModal = () => {
       if (query?.channelId) {
         const activeServer = servers.find((s) => s.id === query.serverId) || servers[0];
         const currentMember = activeServer.members[0];
-        addMessage(query.channelId, currentMember, "Attachment", values.fileUrl);
+        addMessage(String(query.channelId), currentMember, "Attachment", values.fileUrl);
       } else if (query?.conversationId) {
         const activeServer = servers[0];
         const currentMember = activeServer.members[0];
-        addDirectMessage(query.conversationId, currentMember, "Attachment", values.fileUrl);
+        addDirectMessage(String(query.conversationId), currentMember, "Attachment", values.fileUrl);
       }
+
 
       handleClose();
     } catch (error) {
