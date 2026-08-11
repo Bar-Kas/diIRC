@@ -1,0 +1,37 @@
+import { useParams, Outlet, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
+import { NavigationSidebar } from "@/components/navigation/navigation-sidebar";
+import { ServerSidebar } from "@/components/server/server-sidebar";
+import { useMockStore } from "@/lib/mock-store";
+
+export const MainLayout = () => {
+  const { serverId } = useParams();
+  const servers = useMockStore((state) => state.servers);
+  const navigate = useNavigate();
+
+  const activeServerId = serverId || servers[0]?.id;
+
+  useEffect(() => {
+    if (!serverId && servers.length > 0) {
+      navigate(`/servers/${servers[0].id}`, { replace: true });
+    }
+  }, [serverId, servers, navigate]);
+
+  if (!activeServerId) {
+    return null;
+  }
+
+  return (
+    <div className="h-full">
+      <div className="hidden md:flex h-full w-[72px] z-30 flex-col fixed inset-y-0 left-0">
+        <NavigationSidebar />
+      </div>
+      <div className="hidden md:flex h-full w-60 z-20 flex-col fixed inset-y-0 left-[72px]">
+        <ServerSidebar serverId={activeServerId} />
+      </div>
+      <main className="md:pl-[312px] h-full">
+        <Outlet />
+      </main>
+    </div>
+  );
+};
