@@ -17,9 +17,6 @@ interface ChatMessagesProps {
   name: string;
   member: Member;
   chatId: string;
-  apiUrl: string;
-  socketUrl: string;
-  socketQuery: Record<string, string>;
   paramKey: "channelId" | "conversationId";
   paramValue: string;
   type: "channel" | "conversation";
@@ -29,9 +26,6 @@ export const ChatMessages = ({
   name,
   member,
   chatId,
-  apiUrl,
-  socketUrl,
-  socketQuery,
   paramKey,
   paramValue,
   type,
@@ -51,7 +45,6 @@ export const ChatMessages = ({
     status,
   } = useChatQuery({
     queryKey,
-    apiUrl,
     paramKey,
     paramValue,
   });
@@ -64,7 +57,7 @@ export const ChatMessages = ({
     count: data?.pages?.[0]?.items?.length ?? 0,
   });
 
-  if (status === ("loading" as any)) {
+  if (status === "loading") {
     return (
       <div className="flex flex-col flex-1 justify-center items-center">
         <Loader2 className="h-7 w-7 text-zinc-500 animate-spin my-4" />
@@ -75,7 +68,7 @@ export const ChatMessages = ({
     );
   }
 
-  if (status === ("error" as any)) {
+  if (status === "error") {
     return (
       <div className="flex flex-col flex-1 justify-center items-center">
         <ServerCrash className="h-7 w-7 text-zinc-500 my-4" />
@@ -112,8 +105,8 @@ export const ChatMessages = ({
       <div className="flex flex-col mt-auto">
         {data?.pages?.map((group, i) => (
           <Fragment key={i}>
-            {group.items.map((message: any, index: number) => {
-              const prevMessage = group.items[index - 1];
+            {group.items.map((message: Message, index: number) => {
+              const prevMessage = group.items[index - 1] as Message | undefined;
               const isSameAuthor = prevMessage && prevMessage.member?.id === message.member?.id;
               const isWithinTimeLimit = prevMessage && (new Date(message.createdAt).getTime() - new Date(prevMessage.createdAt).getTime() < 300000);
               const isCompact = isSameAuthor && isWithinTimeLimit && !prevMessage.deleted && !message.fileUrl;
@@ -130,8 +123,8 @@ export const ChatMessages = ({
                   timestamp={format(new Date(message.createdAt), DATE_FORMAT)}
                   compactTime={format(new Date(message.createdAt), TIME_FORMAT)}
                   isUpdated={message.updatedAt !== message.createdAt}
-                  socketUrl={socketUrl}
-                  socketQuery={socketQuery}
+                  channelId={paramKey === "channelId" ? paramValue : undefined}
+                  conversationId={paramKey === "conversationId" ? paramValue : undefined}
                   compact={isCompact}
                 />
               );

@@ -1,8 +1,7 @@
 import { useMockStore } from "@/lib/mock-store";
 
 interface ChatQueryProps {
-  queryKey: string;
-  apiUrl: string;
+  queryKey?: string;
   paramKey: "channelId" | "conversationId";
   paramValue: string;
 }

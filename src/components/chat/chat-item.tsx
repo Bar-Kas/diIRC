@@ -32,8 +32,8 @@ interface ChatItemProps {
   deleted: boolean;
   currentMember: Member;
   isUpdated: boolean;
-  socketUrl: string;
-  socketQuery: Record<string, string>;
+  channelId?: string;
+  conversationId?: string;
   compact?: boolean;
 }
 
@@ -57,8 +57,8 @@ export const ChatItem = ({
   deleted,
   currentMember,
   isUpdated,
-  socketUrl,
-  socketQuery,
+  channelId,
+  conversationId,
   compact = false,
 }: ChatItemProps) => {
   const [isEditing, setIsEditing] = useState(false);
@@ -78,7 +78,7 @@ export const ChatItem = ({
   };
 
   useEffect(() => {
-    const handleKeyDown = (event: any) => {
+    const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" || event.keyCode === 27) {
         setIsEditing(false);
       }
@@ -100,10 +100,10 @@ export const ChatItem = ({
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
-      if (socketQuery?.channelId) {
-        editMessage(socketQuery.channelId, id, values.content);
-      } else if (socketQuery?.conversationId) {
-        editDirectMessage(socketQuery.conversationId, id, values.content);
+      if (channelId) {
+        editMessage(channelId, id, values.content);
+      } else if (conversationId) {
+        editDirectMessage(conversationId, id, values.content);
       }
 
       form.reset();
@@ -249,8 +249,7 @@ export const ChatItem = ({
           <ActionTooltip label="Delete">
             <Trash
               onClick={() => onOpen("deleteMessage", { 
-                apiUrl: `${socketUrl}/${id}`,
-                query: { ...socketQuery, messageId: id },
+                query: { channelId, conversationId, messageId: id },
                })}
               className="cursor-pointer ml-auto w-4 h-4 text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition"
             />

@@ -27,7 +27,7 @@ export const ConversationPage = () => {
     serverId: server.id,
   };
 
-  const conversationId = `conversation-${targetMember.id}`;
+  const conversationId = [currentMember.id, targetMember.id].sort().join("-");
   const isVideo = searchParams.get("video") === "true";
 
   return (
@@ -51,18 +51,12 @@ export const ConversationPage = () => {
             name={targetMember.profile.name}
             chatId={conversationId}
             type="conversation"
-            apiUrl="/api/direct-messages"
-            socketUrl="/api/socket/direct-messages"
-            socketQuery={{
-              conversationId,
-            }}
             paramKey="conversationId"
             paramValue={conversationId}
           />
           <ChatInput
             name={targetMember.profile.name}
             type="conversation"
-            apiUrl="/api/socket/direct-messages"
             query={{
               conversationId,
             }}

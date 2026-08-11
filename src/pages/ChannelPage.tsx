@@ -41,19 +41,12 @@ export const ChannelPage = () => {
             name={channel.name}
             chatId={channel.id}
             type="channel"
-            apiUrl="/api/messages"
-            socketUrl="/api/socket/messages"
-            socketQuery={{
-              channelId: channel.id,
-              serverId: channel.serverId,
-            }}
             paramKey="channelId"
             paramValue={channel.id}
           />
           <ChatInput
             name={channel.name}
             type="channel"
-            apiUrl="/api/socket/messages"
             query={{
               channelId: channel.id,
               serverId: channel.serverId,
