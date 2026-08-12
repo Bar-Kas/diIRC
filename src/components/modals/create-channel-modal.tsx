@@ -2,9 +2,9 @@ import * as z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { ChannelType } from "@/types";
-import { useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
+import { HelpCircle } from "lucide-react";
 
 import {
   Dialog,
@@ -21,28 +21,22 @@ import {
   FormLabel,
   FormMessage
 } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useModal } from "@/hooks/use-modal-store";
+import { ChannelInput } from "@/components/ui/channel-input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from "@/components/ui/select";
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useModal } from "@/hooks/use-modal-store";
 import { useMockStore } from "@/lib/mock-store";
 
 const formSchema = z.object({
   name: z.string().min(1, {
     message: "Channel name is required."
-  }).refine(
-    name => name !== "general",
-    {
-      message: "Channel name cannot be 'general'"
-    }
-  ),
-  type: z.nativeEnum(ChannelType)
+  }),
+  joinTemporary: z.boolean().default(false)
 });
 
 export const CreateChannelModal = () => {
@@ -53,7 +47,7 @@ export const CreateChannelModal = () => {
   const servers = useMockStore((state) => state.servers);
 
   const isModalOpen = isOpen && type === "createChannel";
-  const { channelType, server: modalServer } = data;
+  const { server: modalServer } = data;
 
   const activeServerId = params?.serverId || modalServer?.id || servers[0]?.id;
 
@@ -61,29 +55,27 @@ export const CreateChannelModal = () => {
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
-      type: channelType || ChannelType.TEXT,
+      joinTemporary: false,
     }
   });
-
-  useEffect(() => {
-    if (channelType) {
-      form.setValue("type", channelType);
-    } else {
-      form.setValue("type", ChannelType.TEXT);
-    }
-  }, [channelType, form]);
 
   const isLoading = form.formState.isSubmitting;
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
       if (activeServerId) {
-        const newChannel = addChannel(activeServerId, values.name, values.type);
+        const cleanChannelName = values.name.trim().replace(/^#/, "");
+        const newChannel = addChannel(
+          activeServerId,
+          cleanChannelName,
+          ChannelType.TEXT,
+          values.joinTemporary
+        );
         
         try {
           await invoke("join_channel", {
             serverId: activeServerId,
-            channel: values.name
+            channel: cleanChannelName
           });
         } catch (e) {
           console.error("Failed to join channel on IRC:", e);
@@ -108,12 +100,12 @@ export const CreateChannelModal = () => {
       <DialogContent className="bg-white text-black p-0 overflow-hidden">
         <DialogHeader className="pt-8 px-6">
           <DialogTitle className="text-2xl text-center font-bold">
-            Create Channel
+            Join Channel
           </DialogTitle>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-            <div className="space-y-8 px-6">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <div className="space-y-6 px-6">
               <FormField
                 control={form.control}
                 name="name"
@@ -125,9 +117,8 @@ export const CreateChannelModal = () => {
                       Channel name
                     </FormLabel>
                     <FormControl>
-                      <Input
+                      <ChannelInput
                         disabled={isLoading}
-                        className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0"
                         placeholder="Enter channel name"
                         {...field}
                       />
@@ -138,42 +129,39 @@ export const CreateChannelModal = () => {
               />
               <FormField
                 control={form.control}
-                name="type"
+                name="joinTemporary"
                 render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Channel Type</FormLabel>
-                    <Select
-                      disabled={isLoading}
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger
-                          className="bg-zinc-300/50 border-0 focus:ring-0 text-black ring-offset-0 focus:ring-offset-0 capitalize outline-none"
-                        >
-                          <SelectValue placeholder="Select a channel type" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {Object.values(ChannelType).map((type) => (
-                          <SelectItem
-                            key={type}
-                            value={type}
-                            className="capitalize"
-                          >
-                            {type.toLowerCase()}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                    <div className="flex items-center gap-x-2">
+                      <FormLabel className="text-sm font-semibold cursor-pointer">
+                        Join temporary
+                      </FormLabel>
+                      <TooltipProvider>
+                        <Tooltip delayDuration={50}>
+                          <TooltipTrigger type="button">
+                            <HelpCircle className="w-4 h-4 text-zinc-500 hover:text-zinc-700 transition cursor-pointer" />
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-xs text-xs">
+                            Po restarcie aplikacji użytkownik nie zostanie automatycznie dołączony do kanału jeżeli ta opcja jest zaznaczona.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <FormControl>
+                      <input
+                        type="checkbox"
+                        checked={field.value}
+                        onChange={(e) => field.onChange(e.target.checked)}
+                        className="h-4 w-4 cursor-pointer rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                    </FormControl>
                   </FormItem>
                 )}
               />
             </div>
             <DialogFooter className="bg-gray-100 px-6 py-4">
               <Button variant="primary" disabled={isLoading}>
-                Create
+                Join
               </Button>
             </DialogFooter>
           </form>

@@ -36,6 +36,7 @@ export interface Channel {
   type: ChannelType;
   profileId: string;
   serverId: string;
+  isTemporary?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }

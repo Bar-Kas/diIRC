@@ -22,8 +22,8 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { FileUpload } from "@/components/file-upload";
-import { Plus, Trash, Hash } from "lucide-react";
+import { ChannelInput } from "@/components/ui/channel-input";
+import { Plus, Trash } from "lucide-react";
 import { useModal } from "@/hooks/use-modal-store";
 import { useMockStore } from "@/lib/mock-store";
 
@@ -35,7 +35,6 @@ const formSchema = z.object({
   password: z.string().optional(),
   channels: z.array(z.object({ value: z.string() })).min(1),
   useTls: z.boolean().default(false),
-  imageUrl: z.string().optional()
 });
 
 export const EditServerModal = () => {
@@ -55,7 +54,6 @@ export const EditServerModal = () => {
       password: "",
       channels: [{ value: "general" }],
       useTls: false,
-      imageUrl: "",
     }
   });
 
@@ -77,7 +75,7 @@ export const EditServerModal = () => {
       
       const defaultNicks = server.nicknames && server.nicknames.length > 0 
         ? server.nicknames.map(n => ({ value: n }))
-        : [{ value: server.nickname || "ReactUser" }];
+        : [{ value: server.nicknames?.[0] || "ReactUser" }];
       form.setValue("nicknames", defaultNicks);
 
       form.setValue("password", server.password || "");
@@ -88,7 +86,6 @@ export const EditServerModal = () => {
       form.setValue("channels", defaultChannels);
 
       form.setValue("useTls", server.useTls ?? false);
-      form.setValue("imageUrl", server.imageUrl || "");
     }
   }, [server, form]);
 
@@ -113,7 +110,6 @@ export const EditServerModal = () => {
           password: values.password || "",
           useTls: values.useTls,
           autoJoinChannels: channelArray,
-          imageUrl: values.imageUrl || "",
         });
 
         // Join the channels on IRC in case new ones were added
@@ -153,24 +149,6 @@ export const EditServerModal = () => {
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 flex-1 overflow-y-auto px-6 py-2">
-            <div className="flex items-center justify-center text-center">
-              <FormField
-                control={form.control}
-                name="imageUrl"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <FileUpload
-                        endpoint="serverImage"
-                        value={field.value || ""}
-                        onChange={field.onChange}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </div>
-
             <FormField
               control={form.control}
               name="name"
@@ -254,116 +232,101 @@ export const EditServerModal = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-2">
-                <FormLabel className="uppercase text-xs font-bold text-zinc-500 flex items-center justify-between">
-                  Nicknames
-                  <Plus 
-                    className="w-4 h-4 cursor-pointer hover:text-zinc-800 transition" 
-                    onClick={() => appendNick({ value: "" })} 
-                  />
-                </FormLabel>
-                {nickFields.map((field, index) => (
-                  <FormField
-                    key={field.id}
-                    control={form.control}
-                    name={`nicknames.${index}.value`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <div className="flex items-center gap-2">
-                            <Input
-                              disabled={isLoading}
-                              className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0"
-                              placeholder={index === 0 ? "ReactUser" : "Fallback Nick"}
-                              {...field}
-                            />
-                            {index > 0 && (
-                              <Trash 
-                                className="w-4 h-4 cursor-pointer text-zinc-500 hover:text-rose-500 transition shrink-0" 
-                                onClick={() => removeNick(index)} 
-                              />
-                            )}
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                ))}
-              </div>
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="uppercase text-xs font-bold text-zinc-500">
+                    Password (Optional)
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      type="password"
+                      disabled={isLoading}
+                      className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0 w-full"
+                      placeholder="Optional"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="uppercase text-xs font-bold text-zinc-500">
-                      Password (Optional)
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        disabled={isLoading}
-                        className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0"
-                        placeholder="Optional"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <div className="flex flex-col gap-2">
+              <FormLabel className="uppercase text-xs font-bold text-zinc-500 flex items-center justify-between">
+                Nicknames
+                <Plus 
+                  className="w-4 h-4 cursor-pointer hover:text-zinc-800 transition" 
+                  onClick={() => appendNick({ value: "" })} 
+                />
+              </FormLabel>
+              {nickFields.map((field, index) => (
+                <FormField
+                  key={field.id}
+                  control={form.control}
+                  name={`nicknames.${index}.value`}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            disabled={isLoading}
+                            className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0"
+                            placeholder={index === 0 ? "ReactUser" : "Fallback Nick"}
+                            {...field}
+                          />
+                          {index > 0 && (
+                            <Trash 
+                              className="w-4 h-4 cursor-pointer text-zinc-500 hover:text-rose-500 transition shrink-0" 
+                              onClick={() => removeNick(index)} 
+                            />
+                          )}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ))}
             </div>
 
             <div className="flex flex-col gap-2">
-                <FormLabel className="uppercase text-xs font-bold text-zinc-500 flex items-center justify-between">
-                  Channels
-                  <Plus 
-                    className="w-4 h-4 cursor-pointer hover:text-zinc-800 transition" 
-                    onClick={() => appendChannel({ value: "" })} 
-                  />
-                </FormLabel>
-                {channelFields.map((field, index) => (
-                  <FormField
-                    key={field.id}
-                    control={form.control}
-                    name={`channels.${index}.value`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center w-full bg-zinc-300/50 rounded-md overflow-hidden">
-                              <div className="px-3 bg-zinc-400/30 text-zinc-600 flex items-center justify-center h-full">
-                                <Hash className="w-4 h-4" />
-                              </div>
-                              <Input
-                                disabled={isLoading}
-                                className="bg-transparent border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0 rounded-none px-2"
-                                placeholder="general"
-                                {...field}
-                                onChange={(e) => {
-                                  let val = e.target.value;
-                                  if (val.startsWith('#')) {
-                                    val = val.substring(1);
-                                  }
-                                  field.onChange(val);
-                                }}
-                              />
-                            </div>
-                            {index > 0 && (
-                              <Trash 
-                                className="w-4 h-4 cursor-pointer text-zinc-500 hover:text-rose-500 transition shrink-0" 
-                                onClick={() => removeChannel(index)} 
-                              />
-                            )}
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                ))}
+              <FormLabel className="uppercase text-xs font-bold text-zinc-500 flex items-center justify-between">
+                Channels
+                <Plus 
+                  className="w-4 h-4 cursor-pointer hover:text-zinc-800 transition" 
+                  onClick={() => appendChannel({ value: "" })} 
+                />
+              </FormLabel>
+              {channelFields.map((field, index) => (
+                <FormField
+                  key={field.id}
+                  control={form.control}
+                  name={`channels.${index}.value`}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <div className="flex items-center gap-2">
+                          <ChannelInput
+                            disabled={isLoading}
+                            placeholder="general"
+                            {...field}
+                          />
+                          {index > 0 && (
+                            <Trash 
+                              className="w-4 h-4 cursor-pointer text-zinc-500 hover:text-rose-500 transition shrink-0" 
+                              onClick={() => removeChannel(index)} 
+                            />
+                          )}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ))}
             </div>
 
             <FormField

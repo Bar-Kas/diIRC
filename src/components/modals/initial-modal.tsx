@@ -72,7 +72,7 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
         name: values.name,
         host: values.host,
         port: values.port,
-        nickname: values.nickname,
+        nicknames: [values.nickname],
         password: values.password || "",
         useTls: values.useTls,
         autoJoinChannels: channelArray,

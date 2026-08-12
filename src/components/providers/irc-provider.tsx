@@ -33,7 +33,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             port: server.port || 6667,
             nicknames: server.nicknames && server.nicknames.length > 0 
               ? server.nicknames 
-              : [server.nickname || currentProfile.name.replace(/\s+/g, "") || "ReactUser"],
+              : [server.nicknames?.[0] || currentProfile.name.replace(/\s+/g, "") || "ReactUser"],
             realname: server.realname || "",
             password: server.password || "",
             channels: channels.length > 0 ? channels : ["test", "general"],
@@ -50,11 +50,12 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Listen for incoming messages across all connected IRC servers
   useEffect(() => {
-    let unlisten: () => void;
+    let isCancelled = false;
+    let unlistenFn: (() => void) | null = null;
 
     const setupListener = async () => {
       try {
-        const unlistenFn = await listen<IrcMessagePayload>("irc_message", (event) => {
+        const unlisten = await listen<IrcMessagePayload>("irc_message", (event) => {
           const { serverId, sender, content, channel, is_system } = event.payload;
 
           const activeServers = useMockStore.getState().servers;
@@ -92,7 +93,11 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
           }
         });
 
-        unlisten = unlistenFn;
+        if (isCancelled) {
+          unlisten();
+        } else {
+          unlistenFn = unlisten;
+        }
       } catch (error) {
         console.error("Failed to setup IRC listener:", error);
       }
@@ -101,8 +106,9 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     setupListener();
 
     return () => {
-      if (unlisten) {
-        unlisten();
+      isCancelled = true;
+      if (unlistenFn) {
+        unlistenFn();
       }
     };
   }, [addMessage]);

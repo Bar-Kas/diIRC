@@ -57,7 +57,7 @@ interface MockState {
   updateInviteCode: (serverId: string) => string;
 
   // Channel Actions
-  addChannel: (serverId: string, name: string, type: ChannelType) => Channel;
+  addChannel: (serverId: string, name: string, type: ChannelType, isTemporary?: boolean) => Channel;
   updateChannel: (serverId: string, channelId: string, name: string, type: ChannelType) => void;
   deleteChannel: (serverId: string, channelId: string) => void;
 
@@ -250,13 +250,14 @@ export const useMockStore = create<MockState>()(
         return newCode;
       },
 
-      addChannel: (serverId, name, type) => {
+      addChannel: (serverId, name, type, isTemporary) => {
         const newChannel: Channel = {
           id: `channel-${uuidv4().slice(0, 8)}`,
           name: name.toLowerCase().replace(/\s+/g, "-"),
           type,
           profileId: get().currentProfile.id,
           serverId,
+          isTemporary,
         };
 
         set((state) => ({
@@ -329,6 +330,18 @@ export const useMockStore = create<MockState>()(
       },
 
       addMessage: (channelId, member, content, fileUrl, isSystem) => {
+        const existingMsgs = get().messages[channelId] || [];
+        const lastMsg = existingMsgs[existingMsgs.length - 1];
+        if (
+          isSystem &&
+          lastMsg &&
+          lastMsg.isSystem &&
+          lastMsg.content === content &&
+          new Date().getTime() - new Date(lastMsg.createdAt).getTime() < 3000
+        ) {
+          return lastMsg;
+        }
+
         const newMessage: Message = {
           id: `msg-${uuidv4().slice(0, 8)}`,
           content,
@@ -422,6 +435,13 @@ export const useMockStore = create<MockState>()(
     {
       name: "diirc-store",
       version: 1,
+      partialize: (state) => ({
+        ...state,
+        servers: state.servers.map((s) => ({
+          ...s,
+          channels: s.channels.filter((c) => !c.isTemporary),
+        })),
+      }),
       migrate: (persistedState: any) => {
         if (!persistedState || !Array.isArray(persistedState.servers)) {
           return { servers: [], messages: {}, directMessages: {} };
