@@ -108,9 +108,11 @@ export const ChatMessages = ({
             {group.items.map((message: any, index: number) => {
               const prevMessage = group.items[index - 1] as any;
               const isSameAuthor = prevMessage && prevMessage.member?.id === message.member?.id;
+              const isPrevMessageSystem = prevMessage?.isSystem;
+              const isCurrentMessageSystem = message.isSystem;
 
               const isWithinTimeLimit = prevMessage && (new Date(message.createdAt).getTime() - new Date(prevMessage.createdAt).getTime() < 300000);
-              const isCompact = isSameAuthor && isWithinTimeLimit && !prevMessage.deleted && !message.fileUrl;
+              const isCompact = isSameAuthor && isWithinTimeLimit && !prevMessage.deleted && !message.fileUrl && !isPrevMessageSystem && !isCurrentMessageSystem;
 
               return (
                 <ChatItem

@@ -3,6 +3,7 @@ import { ModeToggle } from "@/components/mode-toggle";
 import { Separator } from "@/components/ui/separator";
 import { UserAvatar } from "@/components/user-avatar";
 import { useMockStore } from "@/lib/mock-store";
+import { useModal } from "@/hooks/use-modal-store";
 
 import { NavigationAction } from "./navigation-action";
 import { NavigationItem } from "./navigation-item";
@@ -10,6 +11,7 @@ import { NavigationItem } from "./navigation-item";
 export const NavigationSidebar = () => {
   const servers = useMockStore((state) => state.servers);
   const currentProfile = useMockStore((state) => state.currentProfile);
+  const { onOpen } = useModal();
 
   return (
     <div
@@ -32,9 +34,14 @@ export const NavigationSidebar = () => {
       </ScrollArea>
       <div className="pb-3 mt-auto flex items-center flex-col gap-y-4">
         <ModeToggle />
-        <div className="relative group cursor-pointer" title={currentProfile.name}>
+        <div
+          onClick={() => onOpen("settings")}
+          className="relative group cursor-pointer"
+          title={`${currentProfile.name} (Settings)`}
+        >
           <UserAvatar
             src={currentProfile.imageUrl}
+            name={currentProfile.name}
             className="h-[48px] w-[48px] border-2 border-indigo-500/50 hover:border-indigo-500 transition"
           />
         </div>

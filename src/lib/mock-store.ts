@@ -48,6 +48,10 @@ interface MockState {
   servers: Server[];
   messages: Record<string, Message[]>;
   directMessages: Record<string, DirectMessage[]>;
+  compactMode: boolean;
+
+  // Settings Actions
+  setCompactMode: (enabled: boolean) => void;
 
   // Server Actions
   addServer: (optionsOrName: string | AddServerOptions, imageUrl?: string) => Server;
@@ -83,6 +87,9 @@ export const useMockStore = create<MockState>()(
       servers: INITIAL_SERVERS,
       messages: INITIAL_MESSAGES,
       directMessages: INITIAL_DIRECT_MESSAGES,
+      compactMode: false,
+
+      setCompactMode: (enabled: boolean) => set({ compactMode: enabled }),
 
       addServer: (optionsOrName, imageUrlParam) => {
         const newServerId = `server-${uuidv4().slice(0, 8)}`;

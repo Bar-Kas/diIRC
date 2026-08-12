@@ -116,7 +116,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               id: `profile-${sender}`,
               userId: `user-${sender}`,
               name: sender,
-              imageUrl: "https://github.com/identicons/identicon.png",
+              imageUrl: "",
               email: `${sender}@irc.local`,
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),

@@ -57,6 +57,7 @@ export const ChatItem = ({
 
   const editMessage = useMockStore((state) => state.editMessage);
   const editDirectMessage = useMockStore((state) => state.editDirectMessage);
+  const compactMode = useMockStore((state) => state.compactMode);
 
   const onMemberClick = () => {
     if (member.id === currentMember.id) {
@@ -105,17 +106,17 @@ export const ChatItem = ({
       compact ? "py-[2px]" : "pt-3 pb-[2px] mt-2"
     )}>
       <div className="group flex gap-x-2 items-start w-full">
-        {!compact ? (
+        {!compactMode && !compact ? (
           <div onClick={onMemberClick} className="cursor-pointer hover:drop-shadow-md transition shrink-0">
-            <UserAvatar src={member.profile.imageUrl} className="h-10 w-10 md:h-10 md:w-10" />
+            <UserAvatar src={member.profile.imageUrl} name={member.profile.name} className="h-10 w-10 md:h-10 md:w-10" />
           </div>
-        ) : (
+        ) : !compactMode && compact ? (
           <div className="w-10 h-5 flex items-center justify-center shrink-0">
             <span className="text-[10px] text-zinc-400 dark:text-zinc-500 hidden group-hover:block select-none font-mono">
               {compactTime}
             </span>
           </div>
-        )}
+        ) : null}
         <div className="flex flex-col w-full">
           {!compact && (
             <div className="flex items-center gap-x-2">
