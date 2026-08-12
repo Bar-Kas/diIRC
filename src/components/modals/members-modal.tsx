@@ -88,18 +88,18 @@ export const MembersModal = () => {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={onClose}>
-      <DialogContent className="bg-white text-black overflow-hidden">
-        <DialogHeader className="pt-8 px-6">
-          <DialogTitle className="text-2xl text-center font-bold">
+      <DialogContent className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl overflow-hidden">
+        <DialogHeader className="pt-6 px-6">
+          <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
             Manage Members
           </DialogTitle>
           <DialogDescription 
-            className="text-center text-zinc-500"
+            className="text-center text-zinc-500 dark:text-zinc-400"
           >
             {server?.members?.length} Members
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="mt-8 max-h-[420px] pr-6">
+        <ScrollArea className="mt-6 max-h-[420px] px-6">
           {server?.members?.map((member: Member) => (
             <div key={member.id} className="flex items-center gap-x-2 mb-6">
 

@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { FileUpload } from "@/components/file-upload";
 import { useMockStore } from "@/lib/mock-store";
 
@@ -93,12 +94,15 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="bg-white text-black p-0 overflow-hidden max-w-md max-h-[90vh] flex flex-col">
-        <DialogHeader className="pt-6 px-6">
-          <DialogTitle className="text-2xl text-center font-bold">
+      <DialogContent
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden max-w-md max-h-[90vh] flex flex-col border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl"
+      >
+        <DialogHeader className="pt-6 px-6 space-y-1">
+          <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
             Connect to your first IRC Server
           </DialogTitle>
-          <DialogDescription className="text-center text-zinc-500">
+          <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400 text-xs sm:text-sm">
             Configure host, port, nickname, and channels to connect to your IRC server.
           </DialogDescription>
         </DialogHeader>
@@ -127,13 +131,13 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="uppercase text-xs font-bold text-zinc-500 dark:text-secondary/70">
+                  <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
                     Server Name
                   </FormLabel>
                   <FormControl>
                     <Input
                       disabled={isLoading}
-                      className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0"
+                      className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10"
                       placeholder="e.g. Local Ergo"
                       {...field}
                     />
@@ -150,13 +154,13 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
                   name="host"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="uppercase text-xs font-bold text-zinc-500">
+                      <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
                         Host / Address
                       </FormLabel>
                       <FormControl>
                         <Input
                           disabled={isLoading}
-                          className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0"
+                          className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10"
                           placeholder="127.0.0.1"
                           {...field}
                         />
@@ -172,14 +176,14 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
                   name="port"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="uppercase text-xs font-bold text-zinc-500">
+                      <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
                         Port
                       </FormLabel>
                       <FormControl>
                         <Input
                           type="number"
                           disabled={isLoading}
-                          className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0"
+                          className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10"
                           placeholder="6667"
                           {...field}
                         />
@@ -197,13 +201,13 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
                 name="nickname"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="uppercase text-xs font-bold text-zinc-500">
+                    <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
                       Nickname
                     </FormLabel>
                     <FormControl>
                       <Input
                         disabled={isLoading}
-                        className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0"
+                        className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10"
                         placeholder="ReactUser"
                         {...field}
                       />
@@ -218,14 +222,14 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="uppercase text-xs font-bold text-zinc-500">
+                    <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
                       Password (Optional)
                     </FormLabel>
                     <FormControl>
                       <Input
                         type="password"
                         disabled={isLoading}
-                        className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0"
+                        className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10"
                         placeholder="Optional"
                         {...field}
                       />
@@ -241,13 +245,13 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
               name="channels"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="uppercase text-xs font-bold text-zinc-500">
+                  <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
                     Channels (Comma separated)
                   </FormLabel>
                   <FormControl>
                     <Input
                       disabled={isLoading}
-                      className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0"
+                      className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10"
                       placeholder="#test, #general"
                       {...field}
                     />
@@ -261,33 +265,34 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
               control={form.control}
               name="useTls"
               render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-zinc-300/80 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-3.5 shadow-sm">
                   <div className="space-y-0.5">
-                    <FormLabel className="text-sm font-semibold">
+                    <FormLabel className="text-sm font-semibold text-zinc-900 dark:text-zinc-200 cursor-pointer">
                       Use TLS / SSL
                     </FormLabel>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                      Encrypt connection via TLS/SSL (default port 6697)
+                    </p>
                   </div>
                   <FormControl>
-                    <input
-                      type="checkbox"
+                    <Switch
                       checked={field.value}
-                      onChange={(e) => {
-                        field.onChange(e.target.checked);
-                        if (e.target.checked && form.getValues("port") === 6667) {
+                      onCheckedChange={(checked) => {
+                        field.onChange(checked);
+                        if (checked && form.getValues("port") === 6667) {
                           form.setValue("port", 6697);
-                        } else if (!e.target.checked && form.getValues("port") === 6697) {
+                        } else if (!checked && form.getValues("port") === 6697) {
                           form.setValue("port", 6667);
                         }
                       }}
-                      className="h-4 w-4 cursor-pointer rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                     />
                   </FormControl>
                 </FormItem>
               )}
             />
 
-            <DialogFooter className="bg-gray-100 -mx-6 -mb-2 px-6 py-4 mt-4">
-              <Button variant="primary" disabled={isLoading}>
+            <DialogFooter className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 -mx-6 -mb-2 px-6 py-4 mt-4 flex items-center justify-end">
+              <Button variant="primary" disabled={isLoading} className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 shadow-sm">
                 Connect & Add
               </Button>
             </DialogFooter>

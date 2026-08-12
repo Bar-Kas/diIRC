@@ -31,7 +31,6 @@ export const DeleteMessageModal = () => {
         deleteDirectMessage(String(query.conversationId), String(query.messageId));
       }
 
-
       onClose();
     } catch (error) {
       console.log(error);
@@ -42,33 +41,32 @@ export const DeleteMessageModal = () => {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={onClose}>
-      <DialogContent className="bg-white text-black p-0 overflow-hidden">
-        <DialogHeader className="pt-8 px-6">
-          <DialogTitle className="text-2xl text-center font-bold">
+      <DialogContent className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden max-w-md border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl">
+        <DialogHeader className="pt-6 px-6 space-y-2">
+          <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
             Delete Message
           </DialogTitle>
-          <DialogDescription className="text-center text-zinc-500">
+          <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400">
             Are you sure you want to do this? <br />
             The message will be permanently deleted.
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter className="bg-gray-100 px-6 py-4">
-          <div className="flex items-center justify-between w-full">
-            <Button
-              disabled={isLoading}
-              onClick={onClose}
-              variant="ghost"
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={isLoading}
-              variant="primary"
-              onClick={onClick}
-            >
-              Confirm
-            </Button>
-          </div>
+        <DialogFooter className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 px-6 py-4 flex items-center justify-between">
+          <Button
+            disabled={isLoading}
+            onClick={onClose}
+            variant="ghost"
+            className="text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white"
+          >
+            Cancel
+          </Button>
+          <Button
+            disabled={isLoading}
+            onClick={onClick}
+            className="bg-rose-600 hover:bg-rose-700 text-white font-medium px-6 shadow-sm"
+          >
+            Delete Message
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -62,7 +62,6 @@ export const MessageFileModal = () => {
         addDirectMessage(String(query.conversationId), currentMember, "Attachment", values.fileUrl);
       }
 
-
       handleClose();
     } catch (error) {
       console.log(error);
@@ -71,18 +70,18 @@ export const MessageFileModal = () => {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={handleClose}>
-      <DialogContent className="bg-white text-black p-0 overflow-hidden">
-        <DialogHeader className="pt-8 px-6">
-          <DialogTitle className="text-2xl text-center font-bold">
+      <DialogContent className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden max-w-md border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl">
+        <DialogHeader className="pt-6 px-6 space-y-1">
+          <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
             Add an attachment
           </DialogTitle>
-          <DialogDescription className="text-center text-zinc-500">
+          <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400">
             Send a file as a message
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-            <div className="space-y-8 px-6">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 pt-2">
+            <div className="space-y-6 px-6">
               <div className="flex items-center justify-center text-center">
                 <FormField
                   control={form.control}
@@ -101,8 +100,17 @@ export const MessageFileModal = () => {
                 />
               </div>
             </div>
-            <DialogFooter className="bg-gray-100 px-6 py-4">
-              <Button variant="primary" disabled={isLoading}>
+            <DialogFooter className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 px-6 py-4 flex items-center justify-between">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleClose}
+                disabled={isLoading}
+                className="text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white"
+              >
+                Cancel
+              </Button>
+              <Button variant="primary" disabled={isLoading} className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 shadow-sm">
                 Send
               </Button>
             </DialogFooter>

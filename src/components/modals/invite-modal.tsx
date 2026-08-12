@@ -52,26 +52,26 @@ export const InviteModal = () => {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={onClose}>
-      <DialogContent className="bg-white text-black p-0 overflow-hidden">
-        <DialogHeader className="pt-8 px-6">
-          <DialogTitle className="text-2xl text-center font-bold">
+      <DialogContent className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden max-w-md border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl">
+        <DialogHeader className="pt-6 px-6">
+          <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
             Invite Friends
           </DialogTitle>
         </DialogHeader>
         <div className="p-6">
           <Label
-            className="uppercase text-xs font-bold text-zinc-500 dark:text-secondary/70"
+            className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider"
           >
             Server invite link
           </Label>
           <div className="flex items-center mt-2 gap-x-2">
             <Input
               disabled={isLoading}
-              className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0"
+              className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 font-medium h-10"
               value={inviteUrl}
               readOnly
             />
-            <Button disabled={isLoading} onClick={onCopy} size="icon">
+            <Button disabled={isLoading} onClick={onCopy} size="icon" className="bg-indigo-600 hover:bg-indigo-700 text-white shrink-0 h-10 w-10">
               {copied 
                 ? <Check className="w-4 h-4" /> 
                 : <Copy className="w-4 h-4" />
@@ -83,10 +83,10 @@ export const InviteModal = () => {
             disabled={isLoading}
             variant="link"
             size="sm"
-            className="text-xs text-zinc-500 mt-4"
+            className="text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 mt-4 p-0"
           >
             Generate a new link
-            <RefreshCw className="w-4 h-4 ml-2" />
+            <RefreshCw className="w-3.5 h-3.5 ml-2" />
           </Button>
         </div>
       </DialogContent>

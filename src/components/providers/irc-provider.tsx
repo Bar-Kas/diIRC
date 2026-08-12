@@ -16,34 +16,74 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   const addMessage = useMockStore((state) => state.addMessage);
   const currentProfile = useMockStore((state) => state.currentProfile);
   const servers = useMockStore((state) => state.servers);
-  const connectedServersRef = useRef<Set<string>>(new Set());
+  const connectedConfigsRef = useRef<Map<string, string>>(new Map());
 
-  // Connect servers to IRC when servers list changes
+  // Connect / Reconnect servers to IRC when server configs or list change
   useEffect(() => {
+    const currentServerIds = new Set(servers.map((s) => s.id));
+
+    // Cleanup disconnected servers
+    connectedConfigsRef.current.forEach(async (_, serverId) => {
+      if (!currentServerIds.has(serverId)) {
+        connectedConfigsRef.current.delete(serverId);
+        try {
+          await invoke("disconnect_irc", { serverId });
+        } catch (e) {
+          console.error(`Failed to disconnect removed server ${serverId}:`, e);
+        }
+      }
+    });
+
     servers.forEach(async (server) => {
-      if (connectedServersRef.current.has(server.id)) return;
-      connectedServersRef.current.add(server.id);
+      const nicks = server.nicknames && server.nicknames.length > 0 
+        ? server.nicknames 
+        : [server.nicknames?.[0] || currentProfile.name.replace(/\s+/g, "") || "ReactUser"];
+      const channels = server.channels.map((c) => c.name);
+
+      const configHash = JSON.stringify({
+        host: server.host || "127.0.0.1",
+        port: server.port || 6667,
+        nicks,
+        password: server.password || "",
+        useTls: server.useTls || false,
+        channels: channels.length > 0 ? channels : ["test", "general"],
+      });
+
+      const prevHash = connectedConfigsRef.current.get(server.id);
+
+      // If configuration hasn't changed, skip
+      if (prevHash === configHash) return;
+
+      // Update stored hash
+      connectedConfigsRef.current.set(server.id, configHash);
 
       try {
-        const channels = server.channels.map((c) => c.name);
+        if (prevHash) {
+          console.log(`Config changed for IRC server ${server.name} (${server.id}), reconnecting with new nickname...`);
+          try {
+            await invoke("disconnect_irc", { serverId: server.id });
+          } catch (e) {
+            console.error(`Failed to disconnect before reconnecting:`, e);
+          }
+          await new Promise((res) => setTimeout(res, 400));
+        }
+
         await invoke("connect_irc", {
           params: {
             serverId: server.id,
             host: server.host || "127.0.0.1",
             port: server.port || 6667,
-            nicknames: server.nicknames && server.nicknames.length > 0 
-              ? server.nicknames 
-              : [server.nicknames?.[0] || currentProfile.name.replace(/\s+/g, "") || "ReactUser"],
+            nicknames: nicks,
             realname: server.realname || "",
             password: server.password || "",
             channels: channels.length > 0 ? channels : ["test", "general"],
             useTls: server.useTls || false,
           }
         });
-        console.log(`Connected IRC server ${server.name} (${server.id})`);
+        console.log(`Connected IRC server ${server.name} (${server.id}) with nicks:`, nicks);
       } catch (error) {
         console.error(`Failed to connect IRC for server ${server.name}:`, error);
-        connectedServersRef.current.delete(server.id);
+        connectedConfigsRef.current.delete(server.id);
       }
     });
   }, [servers, currentProfile.name]);

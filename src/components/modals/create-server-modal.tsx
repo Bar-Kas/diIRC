@@ -1,6 +1,7 @@
 import * as z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useFieldArray } from "react-hook-form";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
@@ -21,6 +22,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { ChannelInput } from "@/components/ui/channel-input";
 import { Plus, Trash } from "lucide-react";
 import { useModal } from "@/hooks/use-modal-store";
@@ -67,6 +69,20 @@ export const CreateServerModal = () => {
     control: form.control,
   });
 
+  useEffect(() => {
+    if (isModalOpen) {
+      form.reset({
+        name: "",
+        host: "127.0.0.1",
+        port: 6667,
+        nicknames: [{ value: currentProfile.name.replace(/\s+/g, "") || "ReactUser" }],
+        password: "",
+        channels: [{ value: "test" }, { value: "general" }],
+        useTls: false,
+      });
+    }
+  }, [isModalOpen, form, currentProfile]);
+
   const isLoading = form.formState.isSubmitting;
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
@@ -104,12 +120,15 @@ export const CreateServerModal = () => {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={handleClose}>
-      <DialogContent className="bg-white text-black p-0 overflow-hidden max-w-md max-h-[90vh] flex flex-col">
-        <DialogHeader className="pt-6 px-6">
-          <DialogTitle className="text-2xl text-center font-bold">
+      <DialogContent
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden max-w-md max-h-[90vh] flex flex-col border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl"
+      >
+        <DialogHeader className="pt-6 px-6 space-y-1">
+          <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
             Add IRC Server
           </DialogTitle>
-          <DialogDescription className="text-center text-zinc-500">
+          <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400 text-xs sm:text-sm">
             Configure host, port, nickname, and channels to connect to your IRC server.
           </DialogDescription>
         </DialogHeader>
@@ -120,13 +139,13 @@ export const CreateServerModal = () => {
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="uppercase text-xs font-bold text-zinc-500 dark:text-secondary/70">
+                  <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
                     Server Name
                   </FormLabel>
                   <FormControl>
                     <Input
                       disabled={isLoading}
-                      className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0"
+                      className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10"
                       placeholder="e.g. Local Ergo or Libera Chat"
                       {...field}
                     />
@@ -143,13 +162,13 @@ export const CreateServerModal = () => {
                   name="host"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="uppercase text-xs font-bold text-zinc-500">
+                      <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
                         Host / Address
                       </FormLabel>
                       <FormControl>
                         <Input
                           disabled={isLoading}
-                          className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0"
+                          className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10"
                           placeholder="127.0.0.1"
                           {...field}
                           onChange={(e) => {
@@ -178,7 +197,7 @@ export const CreateServerModal = () => {
                   name="port"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="uppercase text-xs font-bold text-zinc-500">
+                      <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
                         Port
                       </FormLabel>
                       <FormControl>
@@ -186,7 +205,7 @@ export const CreateServerModal = () => {
                           id="port-input"
                           type="number"
                           disabled={isLoading}
-                          className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0"
+                          className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10"
                           placeholder="6667"
                           {...field}
                         />
@@ -203,14 +222,14 @@ export const CreateServerModal = () => {
               name="password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="uppercase text-xs font-bold text-zinc-500">
+                  <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
                     Password (Optional)
                   </FormLabel>
                   <FormControl>
                     <Input
                       type="password"
                       disabled={isLoading}
-                      className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0 w-full"
+                      className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10 w-full"
                       placeholder="Optional"
                       {...field}
                     />
@@ -221,10 +240,10 @@ export const CreateServerModal = () => {
             />
 
             <div className="flex flex-col gap-2">
-              <FormLabel className="uppercase text-xs font-bold text-zinc-500 flex items-center justify-between">
+              <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider flex items-center justify-between">
                 Nicknames
                 <Plus 
-                  className="w-4 h-4 cursor-pointer hover:text-zinc-800 transition" 
+                  className="w-4 h-4 cursor-pointer text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100 transition" 
                   onClick={() => appendNick({ value: "" })} 
                 />
               </FormLabel>
@@ -239,13 +258,13 @@ export const CreateServerModal = () => {
                         <div className="flex items-center gap-2">
                           <Input
                             disabled={isLoading}
-                            className="bg-zinc-300/50 border-0 focus-visible:ring-0 text-black focus-visible:ring-offset-0"
+                            className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10"
                             placeholder={index === 0 ? "ReactUser" : "Fallback Nick"}
                             {...field}
                           />
                           {index > 0 && (
                             <Trash 
-                              className="w-4 h-4 cursor-pointer text-zinc-500 hover:text-rose-500 transition shrink-0" 
+                              className="w-4 h-4 cursor-pointer text-zinc-400 hover:text-rose-500 transition shrink-0" 
                               onClick={() => removeNick(index)} 
                             />
                           )}
@@ -259,10 +278,10 @@ export const CreateServerModal = () => {
             </div>
 
             <div className="flex flex-col gap-2">
-              <FormLabel className="uppercase text-xs font-bold text-zinc-500 flex items-center justify-between">
+              <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider flex items-center justify-between">
                 Channels
                 <Plus 
-                  className="w-4 h-4 cursor-pointer hover:text-zinc-800 transition" 
+                  className="w-4 h-4 cursor-pointer text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100 transition" 
                   onClick={() => appendChannel({ value: "" })} 
                 />
               </FormLabel>
@@ -282,7 +301,7 @@ export const CreateServerModal = () => {
                           />
                           {index > 0 && (
                             <Trash 
-                              className="w-4 h-4 cursor-pointer text-zinc-500 hover:text-rose-500 transition shrink-0" 
+                              className="w-4 h-4 cursor-pointer text-zinc-400 hover:text-rose-500 transition shrink-0" 
                               onClick={() => removeChannel(index)} 
                             />
                           )}
@@ -299,33 +318,43 @@ export const CreateServerModal = () => {
               control={form.control}
               name="useTls"
               render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-zinc-300/80 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-3.5 shadow-sm">
                   <div className="space-y-0.5">
-                    <FormLabel className="text-sm font-semibold">
+                    <FormLabel className="text-sm font-semibold text-zinc-900 dark:text-zinc-200 cursor-pointer">
                       Use TLS / SSL
                     </FormLabel>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                      Encrypt connection via TLS/SSL (default port 6697)
+                    </p>
                   </div>
                   <FormControl>
-                    <input
-                      type="checkbox"
+                    <Switch
                       checked={field.value}
-                      onChange={(e) => {
-                        field.onChange(e.target.checked);
-                        if (e.target.checked && form.getValues("port") === 6667) {
+                      onCheckedChange={(checked) => {
+                        field.onChange(checked);
+                        if (checked && form.getValues("port") === 6667) {
                           form.setValue("port", 6697);
-                        } else if (!e.target.checked && form.getValues("port") === 6697) {
+                        } else if (!checked && form.getValues("port") === 6697) {
                           form.setValue("port", 6667);
                         }
                       }}
-                      className="h-4 w-4 cursor-pointer rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                     />
                   </FormControl>
                 </FormItem>
               )}
             />
 
-            <DialogFooter className="bg-gray-100 -mx-6 -mb-2 px-6 py-4 mt-4">
-              <Button variant="primary" disabled={isLoading}>
+            <DialogFooter className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 -mx-6 -mb-2 px-6 py-4 mt-4 flex items-center justify-between">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleClose}
+                disabled={isLoading}
+                className="text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white"
+              >
+                Cancel
+              </Button>
+              <Button variant="primary" disabled={isLoading} className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 shadow-sm">
                 Connect & Add
               </Button>
             </DialogFooter>
