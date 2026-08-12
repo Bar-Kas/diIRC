@@ -63,6 +63,7 @@ export const ChatInput = ({
         addMessage(query.channelId, currentMember, values.content);
         try {
           await invoke("send_message", { 
+            serverId: activeServer.id,
             channel: name.startsWith("#") ? name : `#${name}`, 
             message: values.content 
           });

@@ -12,10 +12,12 @@ export const MainLayout = () => {
   const activeServer = servers.find((s) => s.id === serverId) || servers[0];
 
   useEffect(() => {
-    if (!serverId && servers.length > 0) {
+    if (!servers || servers.length === 0) {
+      navigate("/", { replace: true });
+    } else if (!activeServer) {
       navigate(`/servers/${servers[0].id}`, { replace: true });
     }
-  }, [serverId, servers, navigate]);
+  }, [serverId, activeServer, servers, navigate]);
 
   if (!activeServer) {
     return null;

@@ -1,34 +1,72 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useMockStore } from "@/lib/mock-store";
-import { v4 as uuidv4 } from "uuid";
 import { MemberRole } from "@/types";
 
 interface IrcMessagePayload {
+  serverId: string;
   sender: string;
   content: string;
   channel: string;
+  is_system?: boolean;
 }
 
 export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   const addMessage = useMockStore((state) => state.addMessage);
   const currentProfile = useMockStore((state) => state.currentProfile);
+  const servers = useMockStore((state) => state.servers);
+  const connectedServersRef = useRef<Set<string>>(new Set());
 
+  // Connect servers to IRC when servers list changes
+  useEffect(() => {
+    servers.forEach(async (server) => {
+      if (connectedServersRef.current.has(server.id)) return;
+      connectedServersRef.current.add(server.id);
+
+      try {
+        const channels = server.channels.map((c) => c.name);
+        await invoke("connect_irc", {
+          params: {
+            serverId: server.id,
+            host: server.host || "127.0.0.1",
+            port: server.port || 6667,
+            nicknames: server.nicknames && server.nicknames.length > 0 
+              ? server.nicknames 
+              : [server.nickname || currentProfile.name.replace(/\s+/g, "") || "ReactUser"],
+            realname: server.realname || "",
+            password: server.password || "",
+            channels: channels.length > 0 ? channels : ["test", "general"],
+            useTls: server.useTls || false,
+          }
+        });
+        console.log(`Connected IRC server ${server.name} (${server.id})`);
+      } catch (error) {
+        console.error(`Failed to connect IRC for server ${server.name}:`, error);
+        connectedServersRef.current.delete(server.id);
+      }
+    });
+  }, [servers, currentProfile.name]);
+
+  // Listen for incoming messages across all connected IRC servers
   useEffect(() => {
     let unlisten: () => void;
 
-    const setupIrc = async () => {
+    const setupListener = async () => {
       try {
-        // Connect to IRC when provider mounts
-        await invoke("connect_irc", { nickname: currentProfile.name.replace(/\s+/g, "") || "ReactUser" });
-        console.log("Connected to IRC");
-
-        // Listen for incoming messages
         const unlistenFn = await listen<IrcMessagePayload>("irc_message", (event) => {
-          const { sender, content, channel } = event.payload;
+          const { serverId, sender, content, channel, is_system } = event.payload;
+
+          const activeServers = useMockStore.getState().servers;
+          const targetServer = activeServers.find((s) => s.id === serverId) || activeServers[0];
           
-          // Map the sender to a mock member
+          if (!targetServer) return;
+
+          const cleanName = channel.replace(/^#/, "").toLowerCase();
+          const targetChannel = targetServer.channels.find(
+            (c) => c.name.toLowerCase() === cleanName
+          );
+
           const mockMember = {
             id: `irc-${sender}`,
             role: MemberRole.GUEST,
@@ -42,42 +80,32 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             },
-            serverId: "server-1",
+            serverId: targetServer.id,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           };
 
-          const cleanName = channel.replace(/^#/, "").toLowerCase();
-          const servers = useMockStore.getState().servers;
-          let targetChannelId = "channel-1";
-
-          for (const s of servers) {
-            const found = s.channels.find(
-              (c) => c.name.toLowerCase() === cleanName
-            );
-            if (found) {
-              targetChannelId = found.id;
-              break;
-            }
+          if (targetChannel) {
+            addMessage(targetChannel.id, mockMember as any, content, null, is_system);
+          } else if (targetServer.channels.length > 0) {
+            addMessage(targetServer.channels[0].id, mockMember as any, content, null, is_system);
           }
-
-          addMessage(targetChannelId, mockMember as any, content);
         });
-        
+
         unlisten = unlistenFn;
       } catch (error) {
-        console.error("Failed to connect to IRC:", error);
+        console.error("Failed to setup IRC listener:", error);
       }
     };
 
-    setupIrc();
+    setupListener();
 
     return () => {
       if (unlisten) {
         unlisten();
       }
     };
-  }, [addMessage, currentProfile.name]);
+  }, [addMessage]);
 
   return <>{children}</>;
 };

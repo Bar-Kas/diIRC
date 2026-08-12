@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { ChannelType } from "@/types";
 import { useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { invoke } from "@tauri-apps/api/core";
 
 import {
   Dialog,
@@ -78,6 +79,16 @@ export const CreateChannelModal = () => {
     try {
       if (activeServerId) {
         const newChannel = addChannel(activeServerId, values.name, values.type);
+        
+        try {
+          await invoke("join_channel", {
+            serverId: activeServerId,
+            channel: values.name
+          });
+        } catch (e) {
+          console.error("Failed to join channel on IRC:", e);
+        }
+
         form.reset();
         onClose();
         navigate(`/servers/${activeServerId}/channels/${newChannel.id}`);

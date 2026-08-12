@@ -26,6 +26,7 @@ interface ChatItemProps {
   channelId?: string;
   conversationId?: string;
   compact?: boolean;
+  isSystem?: boolean;
 }
 
 const roleIconMap = {
@@ -47,6 +48,7 @@ export const ChatItem = ({
   channelId,
   conversationId,
   compact = false,
+  isSystem = false,
 }: ChatItemProps) => {
   const [isEditing, setIsEditing] = useState(false);
   const { onOpen } = useModal();
@@ -81,6 +83,21 @@ export const ChatItem = ({
   const isOwner = currentMember.id === member.id;
   const canDeleteMessage = !deleted && (isAdmin || isModerator || isOwner);
   const canEditMessage = !deleted && isOwner && !fileUrl;
+
+  if (isSystem) {
+    return (
+      <div className="relative group flex items-center hover:bg-black/5 px-4 py-1 transition w-full">
+        <div className="w-10 flex justify-center shrink-0">
+          <ActionTooltip label={timestamp}>
+            <span className="text-zinc-500 font-bold">→</span>
+          </ActionTooltip>
+        </div>
+        <p className="text-sm text-zinc-500 italic ml-2">
+          {content}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className={cn(

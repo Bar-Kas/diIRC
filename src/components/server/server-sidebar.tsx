@@ -41,11 +41,12 @@ export const ServerSidebar = ({
     return null;
   }
 
-  const textChannels = server.channels.filter((channel) => channel.type === ChannelType.TEXT);
-  const audioChannels = server.channels.filter((channel) => channel.type === ChannelType.AUDIO);
-  const videoChannels = server.channels.filter((channel) => channel.type === ChannelType.VIDEO);
-  const members = server.members.filter((member) => member.profileId !== currentProfile.id);
-  const role = server.members.find((member) => member.profileId === currentProfile.id)?.role || MemberRole.ADMIN;
+  const channels = server.channels || [];
+  const textChannels = channels.filter((channel) => channel.type === ChannelType.TEXT);
+  const audioChannels = channels.filter((channel) => channel.type === ChannelType.AUDIO);
+  const videoChannels = channels.filter((channel) => channel.type === ChannelType.VIDEO);
+  const members = (server.members || []).filter((member) => member.profileId !== currentProfile?.id);
+  const role = (server.members || []).find((member) => member.profileId === currentProfile?.id)?.role || MemberRole.ADMIN;
 
   return (
     <div className="flex flex-col h-full text-primary w-full dark:bg-[#2B2D31] bg-[#F2F3F5]">

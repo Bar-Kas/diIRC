@@ -127,6 +127,7 @@ export const ChatMessages = ({
                   channelId={paramKey === "channelId" ? paramValue : undefined}
                   conversationId={paramKey === "conversationId" ? paramValue : undefined}
                   compact={isCompact}
+                  isSystem={message.isSystem}
                 />
               );
             })}

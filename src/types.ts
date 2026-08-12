@@ -48,6 +48,7 @@ export interface Message {
   member: Member;
   channelId: string;
   deleted: boolean;
+  isSystem?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -60,6 +61,7 @@ export interface DirectMessage {
   member: Member;
   conversationId: string;
   deleted: boolean;
+  isSystem?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -83,6 +85,13 @@ export interface Server {
   members: Member[];
   createdAt?: string;
   updatedAt?: string;
+  host?: string;
+  port?: number;
+  nicknames?: string[];
+  realname?: string;
+  password?: string;
+  useTls?: boolean;
+  autoJoinChannels?: string[];
 }
 
 export type ServerWithMembersWithProfiles = Server;
