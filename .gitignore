@@ -12,8 +12,13 @@
 /.next/
 /out/
 
-# production
+# production / build
 /build
+/dist
+src-tauri/target/
+
+# docker data
+/data
 
 # misc
 .DS_Store

@@ -10,7 +10,8 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3000,
+    port: 1420,
+    strictPort: true,
     host: true,
   },
 });

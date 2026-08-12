@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus } from "lucide-react";
 import { useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 import {
   Form,
@@ -60,6 +61,14 @@ export const ChatInput = ({
 
       if (type === "channel" && query?.channelId) {
         addMessage(query.channelId, currentMember, values.content);
+        try {
+          await invoke("send_message", { 
+            channel: name.startsWith("#") ? name : `#${name}`, 
+            message: values.content 
+          });
+        } catch (err) {
+          console.error("IRC Send error:", err);
+        }
       } else if (type === "conversation" && query?.conversationId) {
         addDirectMessage(query.conversationId, currentMember, values.content);
       }

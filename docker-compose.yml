@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  ircd:
+    image: ergochat/ergo:latest
+    container_name: irc-server
+    ports:
+      - "6667:6667"  # Zwykły port IRC (bez SSL)
+    volumes:
+      - ./data:/ircd-data
+    restart: unless-stopped

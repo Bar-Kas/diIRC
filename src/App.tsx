@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ModalProvider } from "@/components/providers/modal-provider";
 import { SocketProvider } from "@/components/providers/socket-provider";
+import { IrcProvider } from "@/components/providers/irc-provider";
 
 import { MainLayout } from "@/layouts/main-layout";
 import { SetupPage } from "@/pages/setup-page";
@@ -19,10 +20,11 @@ export function App() {
       storageKey="discord-theme"
     >
       <SocketProvider>
-        <BrowserRouter>
-          <ModalProvider />
-          <Routes>
-            <Route path="/" element={<SetupPage />} />
+        <IrcProvider>
+          <BrowserRouter>
+            <ModalProvider />
+            <Routes>
+              <Route path="/" element={<SetupPage />} />
             <Route path="/invite/:inviteCode" element={<InvitePage />} />
             <Route path="/servers/:serverId" element={<MainLayout />}>
               <Route index element={<ServerPage />} />
@@ -30,8 +32,9 @@ export function App() {
               <Route path="conversations/:memberId" element={<ConversationPage />} />
             </Route>
             <Route path="*" element={<SetupPage />} />
-          </Routes>
-        </BrowserRouter>
+            </Routes>
+          </BrowserRouter>
+        </IrcProvider>
       </SocketProvider>
     </ThemeProvider>
   );

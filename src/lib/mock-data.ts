@@ -38,14 +38,14 @@ export const MOCK_MEMBERS_PROFILES: Profile[] = [
 export const INITIAL_SERVERS: Server[] = [
   {
     id: "server-1",
-    name: "General Community",
+    name: "Local IRC (Ergo)",
     imageUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80",
     inviteCode: "community-invite-123",
     profileId: MOCK_PROFILE.id,
     channels: [
       {
         id: "channel-1",
-        name: "general",
+        name: "test",
         type: ChannelType.TEXT,
         profileId: MOCK_PROFILE.id,
         serverId: "server-1",
@@ -193,44 +193,14 @@ export const INITIAL_SERVERS: Server[] = [
 export const INITIAL_MESSAGES: Record<string, Message[]> = {
   "channel-1": [
     {
-      id: "msg-1",
-      content: "Welcome to the Discord Clone Static UI! Everything is running cleanly with React + Vite.",
+      id: "msg-irc-init",
+      content: "🟢 Connected to local IRC server (ergochat/ergo at 127.0.0.1:6667). Active channel: #test. Type a message below to send!",
       memberId: "member-1",
       member: INITIAL_SERVERS[0].members[0],
       channelId: "channel-1",
       deleted: false,
-      createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-      updatedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    },
-    {
-      id: "msg-1-b",
-      content: "When sending multiple messages in a row, consecutive messages from the same author are grouped seamlessly without repeating avatars!",
-      memberId: "member-1",
-      member: INITIAL_SERVERS[0].members[0],
-      channelId: "channel-1",
-      deleted: false,
-      createdAt: new Date(Date.now() - 3600000 * 2 + 15000).toISOString(),
-      updatedAt: new Date(Date.now() - 3600000 * 2 + 15000).toISOString(),
-    },
-    {
-      id: "msg-2",
-      content: "This UI is completely decoupled from any backend servers or Prisma DB. Modals and routes work dynamically!",
-      memberId: "member-2",
-      member: INITIAL_SERVERS[0].members[1],
-      channelId: "channel-1",
-      deleted: false,
-      createdAt: new Date(Date.now() - 3600000).toISOString(),
-      updatedAt: new Date(Date.now() - 3600000).toISOString(),
-    },
-    {
-      id: "msg-3",
-      content: "Check out the channel sidebar, direct messages, and server invite links!",
-      memberId: "member-3",
-      member: INITIAL_SERVERS[0].members[2],
-      channelId: "channel-1",
-      deleted: false,
-      createdAt: new Date(Date.now() - 1800000).toISOString(),
-      updatedAt: new Date(Date.now() - 1800000).toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
   ],
   "channel-2": [
