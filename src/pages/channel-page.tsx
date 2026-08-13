@@ -1,6 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 import { useMockStore } from "@/lib/mock-store";
+import { useUIStore } from "@/hooks/use-ui-store";
 import { ChannelType } from "@/types";
 import { ChatHeader } from "@/components/chat/chat-header";
 import { ChatInput } from "@/components/chat/chat-input";
@@ -13,6 +14,7 @@ export const ChannelPage = () => {
   const navigate = useNavigate();
   const servers = useMockStore((state) => state.servers);
   const currentProfile = useMockStore((state) => state.currentProfile);
+  const showMembersSidebar = useUIStore((state) => state.showMembersSidebar);
 
   const server = servers.find((s) => s.id === serverId);
   const channel = server?.channels.find((c) => c.id === channelId);
@@ -75,7 +77,7 @@ export const ChannelPage = () => {
             />
           )}
         </div>
-        <ChatMembersSidebar server={server} />
+        {showMembersSidebar && <ChatMembersSidebar server={server} />}
       </div>
     </div>
   );

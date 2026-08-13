@@ -1,7 +1,10 @@
-import { Hash } from "lucide-react";
+import { Hash, PanelLeft, Server, Users } from "lucide-react";
 
 import { MobileToggle } from "@/components/mobile-toggle";
 import { UserAvatar } from "@/components/user-avatar";
+import { ActionTooltip } from "@/components/action-tooltip";
+import { useUIStore } from "@/hooks/use-ui-store";
+import { cn } from "@/lib/utils";
 
 import { ChatVideoButton } from "./chat-video-button";
 
@@ -18,25 +21,82 @@ export const ChatHeader = ({
   type,
   imageUrl
 }: ChatHeaderProps) => {
+  const { 
+    showNavigationSidebar, 
+    toggleNavigationSidebar, 
+    showServerSidebar, 
+    toggleServerSidebar, 
+    showMembersSidebar, 
+    toggleMembersSidebar 
+  } = useUIStore();
+
   return (
-    <div className="text-md font-semibold px-3 flex items-center h-12 border-neutral-200 dark:border-neutral-800 border-b-2">
+    <div className="text-md font-semibold px-3 flex items-center h-12 border-neutral-200 dark:border-neutral-800 border-b-2 gap-x-2">
       <MobileToggle serverId={serverId} />
+      
+      <ActionTooltip 
+        side="bottom" 
+        label={showNavigationSidebar ? "Ukryj listę serwerów" : "Pokaż listę serwerów"}
+      >
+        <button
+          onClick={toggleNavigationSidebar}
+          className="hidden md:flex items-center justify-center p-1.5 rounded-lg hover:bg-zinc-200/60 dark:hover:bg-zinc-700/50 transition"
+        >
+          <Server className={cn(
+            "w-5 h-5 text-zinc-500 dark:text-zinc-400 transition",
+            showNavigationSidebar && "text-indigo-500 dark:text-indigo-400"
+          )} />
+        </button>
+      </ActionTooltip>
+
+      <ActionTooltip 
+        side="bottom" 
+        label={showServerSidebar ? "Ukryj listę kanałów" : "Pokaż listę kanałów"}
+      >
+        <button
+          onClick={toggleServerSidebar}
+          className="hidden md:flex items-center justify-center p-1.5 rounded-lg hover:bg-zinc-200/60 dark:hover:bg-zinc-700/50 transition mr-1"
+        >
+          <PanelLeft className={cn(
+            "w-5 h-5 text-zinc-500 dark:text-zinc-400 transition",
+            showServerSidebar && "text-indigo-500 dark:text-indigo-400"
+          )} />
+        </button>
+      </ActionTooltip>
+
       {type === "channel" && (
-        <Hash className="w-5 h-5 text-zinc-500 dark:text-zinc-400 mr-2" />
+        <Hash className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
       )}
       {type === "conversation" && (
         <UserAvatar 
           src={imageUrl}
           name={name}
-          className="h-8 w-8 md:h-8 md:w-8 mr-2"
+          className="h-8 w-8 md:h-8 md:w-8"
         />
       )}
       <p className="font-semibold text-md text-black dark:text-white">
         {name}
       </p>
-      <div className="ml-auto flex items-center">
+
+      <div className="ml-auto flex items-center gap-x-2">
         {type === "conversation" && (
           <ChatVideoButton />
+        )}
+        {type === "channel" && (
+          <ActionTooltip 
+            side="bottom" 
+            label={showMembersSidebar ? "Ukryj listę użytkowników" : "Pokaż listę użytkowników"}
+          >
+            <button
+              onClick={toggleMembersSidebar}
+              className="flex items-center justify-center p-1.5 rounded-lg hover:bg-zinc-200/60 dark:hover:bg-zinc-700/50 transition"
+            >
+              <Users className={cn(
+                "w-5 h-5 text-zinc-500 dark:text-zinc-400 transition",
+                showMembersSidebar && "text-indigo-500 dark:text-indigo-400"
+              )} />
+            </button>
+          </ActionTooltip>
         )}
       </div>
     </div>
