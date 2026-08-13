@@ -52,13 +52,23 @@ export const MessageFileModal = () => {
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
-      if (query?.channelId) {
-        const activeServer = servers.find((s) => s.id === query.serverId) || servers[0];
-        const currentMember = activeServer.members[0];
+      const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : servers[0];
+      const currentProfile = useMockStore.getState().currentProfile;
+      let currentMember = activeServer?.members.find((m) => m.profileId === currentProfile.id) || activeServer?.members[0];
+
+      if (activeServer?.nicknames?.[0] && currentMember) {
+        currentMember = {
+          ...currentMember,
+          profile: {
+            ...currentMember.profile,
+            name: activeServer.nicknames[0],
+          },
+        };
+      }
+
+      if (query?.channelId && currentMember) {
         addMessage(String(query.channelId), currentMember, "Attachment", values.fileUrl);
-      } else if (query?.conversationId) {
-        const activeServer = servers[0];
-        const currentMember = activeServer.members[0];
+      } else if (query?.conversationId && currentMember) {
         addDirectMessage(String(query.conversationId), currentMember, "Attachment", values.fileUrl);
       }
 

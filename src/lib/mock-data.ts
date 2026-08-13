@@ -3,9 +3,9 @@ import { Profile, Server, Message, DirectMessage } from "@/types";
 export const MOCK_PROFILE: Profile = {
   id: "profile-user-1",
   userId: "clerk-user-1",
-  name: "Kawish Ali",
+  name: "User",
   imageUrl: "",
-  email: "kawish@example.com",
+  email: "user@example.com",
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 };

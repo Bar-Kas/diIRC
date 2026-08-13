@@ -144,6 +144,8 @@ export const useMockStore = create<MockState>()(
           });
         }
 
+        const primaryNick = nicknames[0] || get().currentProfile.name.replace(/\s+/g, "") || "ReactUser";
+
         const newServer: Server = {
           id: newServerId,
           name,
@@ -162,7 +164,10 @@ export const useMockStore = create<MockState>()(
             {
               id: newMemberId,
               profileId: get().currentProfile.id,
-              profile: get().currentProfile,
+              profile: {
+                ...get().currentProfile,
+                name: primaryNick,
+              },
               serverId: newServerId,
             }
           ]
@@ -176,11 +181,17 @@ export const useMockStore = create<MockState>()(
       },
 
       updateServer: (serverId, optionsOrName, imageUrlParam) => {
-        set((state) => ({
-          servers: state.servers.map((s) => {
+        set((state) => {
+          const nextMessages = { ...state.messages };
+          const updatedServers = state.servers.map((s) => {
             if (s.id !== serverId) return s;
 
             if (typeof optionsOrName === "object") {
+              const newNicknames = optionsOrName.nicknames && optionsOrName.nicknames.length > 0
+                ? optionsOrName.nicknames
+                : s.nicknames;
+              const primaryNick = newNicknames && newNicknames.length > 0 ? newNicknames[0] : "ReactUser";
+
               const updatedChannels = optionsOrName.autoJoinChannels && optionsOrName.autoJoinChannels.length > 0
                 ? optionsOrName.autoJoinChannels.map((ch) => {
                     const cleanName = ch.trim().replace(/^#/, "").toLowerCase().replace(/\s+/g, "-");
@@ -195,18 +206,53 @@ export const useMockStore = create<MockState>()(
                   })
                 : s.channels;
 
+              const updatedMembers = s.members.map((m) => {
+                if (m.profileId === get().currentProfile.id || m.id.startsWith("member-")) {
+                  return {
+                    ...m,
+                    profile: {
+                      ...m.profile,
+                      name: primaryNick,
+                    },
+                  };
+                }
+                return m;
+              });
+
+              // Update any existing messages sent by the user in this server's channels
+              s.channels.forEach((ch) => {
+                if (nextMessages[ch.id]) {
+                  nextMessages[ch.id] = nextMessages[ch.id].map((msg) => {
+                    if (msg.member.profileId === get().currentProfile.id || msg.member.id.startsWith("member-")) {
+                      return {
+                        ...msg,
+                        member: {
+                          ...msg.member,
+                          profile: {
+                            ...msg.member.profile,
+                            name: primaryNick,
+                          },
+                        },
+                      };
+                    }
+                    return msg;
+                  });
+                }
+              });
+
               return {
                 ...s,
                 name: optionsOrName.name || s.name,
                 host: optionsOrName.host || s.host,
                 port: optionsOrName.port || s.port,
-                nicknames: optionsOrName.nicknames || s.nicknames,
+                nicknames: newNicknames,
                 realname: optionsOrName.realname ?? s.realname,
                 password: optionsOrName.password ?? s.password,
                 useTls: optionsOrName.useTls ?? s.useTls,
                 autoJoinChannels: optionsOrName.autoJoinChannels || s.autoJoinChannels,
                 imageUrl: optionsOrName.imageUrl || s.imageUrl,
                 channels: updatedChannels,
+                members: updatedMembers,
               };
             } else {
               return {
@@ -215,8 +261,13 @@ export const useMockStore = create<MockState>()(
                 imageUrl: imageUrlParam || s.imageUrl,
               };
             }
-          }),
-        }));
+          });
+
+          return {
+            servers: updatedServers,
+            messages: nextMessages,
+          };
+        });
       },
 
       deleteServer: (serverId) => {
@@ -329,7 +380,28 @@ export const useMockStore = create<MockState>()(
           if (exists) return state;
 
           const currentProfile = state.currentProfile;
-          if (name === currentProfile.name) return state;
+          const isOurNick = s.nicknames?.includes(name) || name === currentProfile.name;
+          if (isOurNick) {
+            const updatedMembers = s.members.map((m) => {
+              if (m.profileId === currentProfile.id || m.id.startsWith("member-")) {
+                return {
+                  ...m,
+                  profile: {
+                    ...m.profile,
+                    name,
+                  },
+                };
+              }
+              return m;
+            });
+            return {
+              servers: state.servers.map((serv) =>
+                serv.id === serverId
+                  ? { ...serv, members: updatedMembers }
+                  : serv
+              ),
+            };
+          }
 
           const mockMember: Member = {
             id: `irc-${name}`,
@@ -473,7 +545,7 @@ export const useMockStore = create<MockState>()(
     }),
     {
       name: "diirc-store",
-      version: 1,
+      version: 2,
       partialize: (state) => ({
         ...state,
         servers: state.servers.map((s) => ({
@@ -485,19 +557,63 @@ export const useMockStore = create<MockState>()(
         if (!persistedState || !Array.isArray(persistedState.servers)) {
           return { servers: [], messages: {}, directMessages: {} };
         }
-        const sanitizedServers = persistedState.servers.map((s: any) => ({
-          ...s,
-          host: s.host || "127.0.0.1",
-          port: s.port || 6667,
-          nicknames: s.nicknames || (s.nickname ? [s.nickname] : ["ReactUser"]),
-          channels: Array.isArray(s.channels) ? s.channels : [],
-          members: Array.isArray(s.members) ? s.members : [],
-          useTls: s.useTls ?? false,
-          autoJoinChannels: Array.isArray(s.autoJoinChannels) ? s.autoJoinChannels : ["general", "test"],
-        }));
+        const currentProfileId = persistedState.currentProfile?.id || MOCK_PROFILE.id;
+        const nextMessages = { ...(persistedState.messages || {}) };
+
+        const sanitizedServers = persistedState.servers.map((s: any) => {
+          const nicks = s.nicknames || (s.nickname ? [s.nickname] : ["ReactUser"]);
+          const primaryNick = nicks[0] || "ReactUser";
+
+          const members = (Array.isArray(s.members) ? s.members : []).map((m: any) => {
+            if (m.profileId === currentProfileId || m.id?.startsWith("member-")) {
+              return {
+                ...m,
+                profile: {
+                  ...m.profile,
+                  name: primaryNick,
+                },
+              };
+            }
+            return m;
+          });
+
+          if (Array.isArray(s.channels)) {
+            s.channels.forEach((ch: any) => {
+              if (nextMessages[ch.id]) {
+                nextMessages[ch.id] = nextMessages[ch.id].map((msg: any) => {
+                  if (msg.member?.profileId === currentProfileId || msg.member?.id?.startsWith("member-")) {
+                    return {
+                      ...msg,
+                      member: {
+                        ...msg.member,
+                        profile: {
+                          ...msg.member.profile,
+                          name: primaryNick,
+                        },
+                      },
+                    };
+                  }
+                  return msg;
+                });
+              }
+            });
+          }
+
+          return {
+            ...s,
+            host: s.host || "127.0.0.1",
+            port: s.port || 6667,
+            nicknames: nicks,
+            channels: Array.isArray(s.channels) ? s.channels : [],
+            members,
+            useTls: s.useTls ?? false,
+            autoJoinChannels: Array.isArray(s.autoJoinChannels) ? s.autoJoinChannels : ["general", "test"],
+          };
+        });
         return {
           ...persistedState,
           servers: sanitizedServers,
+          messages: nextMessages,
         };
       }
     }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Mic, MicOff, Video, VideoOff, PhoneOff, Monitor, ShieldCheck, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useMockStore } from "@/lib/mock-store";
 
 interface MediaRoomProps {
   chatId: string;
@@ -12,6 +13,8 @@ export const MediaRoom = ({ video, audio }: MediaRoomProps) => {
   const [isMuted, setIsMuted] = useState(!audio);
   const [isVideoOff, setIsVideoOff] = useState(!video);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const currentProfile = useMockStore((state) => state.currentProfile);
+  const userName = currentProfile.name || "User";
 
   return (
     <div className="flex-1 flex flex-col bg-[#111214] h-full relative overflow-hidden">
@@ -34,19 +37,19 @@ export const MediaRoom = ({ video, audio }: MediaRoomProps) => {
           {!isVideoOff ? (
             <img
               src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=600&auto=format&fit=crop&q=80"
-              alt="Kawish Ali"
+              alt={userName}
               className="w-full h-full object-cover"
             />
           ) : (
             <div className="flex flex-col items-center gap-y-2">
               <div className="h-20 w-20 rounded-full bg-indigo-500 flex items-center justify-center text-white text-2xl font-bold">
-                KA
+                {userName.slice(0, 2).toUpperCase()}
               </div>
               <span className="text-xs text-zinc-400">Camera Off</span>
             </div>
           )}
           <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-md text-xs text-white font-medium flex items-center gap-x-2">
-            <span>Kawish Ali (You)</span>
+            <span>{userName} (You)</span>
             {isMuted && <MicOff className="h-3.5 w-3.5 text-rose-500" />}
           </div>
         </div>

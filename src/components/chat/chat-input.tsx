@@ -57,7 +57,17 @@ export const ChatInput = ({
       const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : servers[0];
       if (!activeServer) return;
 
-      const currentMember = activeServer.members.find((m) => m.profileId === currentProfile.id) || activeServer.members[0];
+      let currentMember = activeServer.members.find((m) => m.profileId === currentProfile.id) || activeServer.members[0];
+      const primaryNick = activeServer.nicknames?.[0];
+      if (primaryNick && currentMember) {
+        currentMember = {
+          ...currentMember,
+          profile: {
+            ...currentMember.profile,
+            name: primaryNick,
+          },
+        };
+      }
 
       if (type === "channel" && query?.channelId) {
         addMessage(query.channelId, currentMember, values.content);
