@@ -10,6 +10,7 @@ import { useModal } from "@/hooks/use-modal-store";
 import { useMockStore } from "@/lib/mock-store";
 import { ChatItemAttachment } from "./chat-item-attachment";
 import { ChatItemEditForm } from "./chat-item-edit-form";
+import { LinkPreview } from "./link-preview";
 
 interface ChatItemProps {
   id: string;
@@ -53,6 +54,7 @@ export const ChatItem = ({
   const editMessage = useMockStore((state) => state.editMessage);
   const editDirectMessage = useMockStore((state) => state.editDirectMessage);
   const compactMode = useMockStore((state) => state.compactMode);
+  const enableLinkPreviews = useMockStore((state) => state.enableLinkPreviews);
 
   const onMemberClick = () => {
     if (member.id === currentMember.id) {
@@ -77,6 +79,33 @@ export const ChatItem = ({
   const isOwner = currentMember.id === member.id;
   const canDeleteMessage = !deleted && isOwner;
   const canEditMessage = !deleted && isOwner && !fileUrl;
+
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+
+  const renderContentWithLinks = (text: string) => {
+    if (deleted) return text;
+    const parts = text.split(urlRegex);
+    return parts.map((part, index) => {
+      if (part.match(urlRegex)) {
+        return (
+          <a
+            key={index}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-indigo-500 dark:text-indigo-400 hover:underline break-all"
+          >
+            {part}
+          </a>
+        );
+      }
+      return part;
+    });
+  };
+
+  const extractedUrls = enableLinkPreviews && !deleted && !fileUrl
+    ? Array.from(new Set(content.match(urlRegex) || []))
+    : [];
 
   if (isSystem) {
     return (
@@ -127,17 +156,22 @@ export const ChatItem = ({
           {fileUrl && <ChatItemAttachment fileUrl={fileUrl} content={content} />}
 
           {!fileUrl && !isEditing && (
-            <p className={cn(
-              "text-sm text-zinc-600 dark:text-zinc-300",
-              deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
-            )}>
-              {content}
-              {isUpdated && !deleted && (
-                <span className="text-[10px] mx-2 text-zinc-500 dark:text-zinc-400">
-                  (edited)
-                </span>
-              )}
-            </p>
+            <div className="space-y-1">
+              <p className={cn(
+                "text-sm text-zinc-600 dark:text-zinc-300",
+                deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
+              )}>
+                {renderContentWithLinks(content)}
+                {isUpdated && !deleted && (
+                  <span className="text-[10px] mx-2 text-zinc-500 dark:text-zinc-400">
+                    (edited)
+                  </span>
+                )}
+              </p>
+              {extractedUrls.map((url) => (
+                <LinkPreview key={url} url={url} />
+              ))}
+            </div>
           )}
 
           {!fileUrl && isEditing && (

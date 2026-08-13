@@ -48,9 +48,15 @@ interface MockState {
   messages: Record<string, Message[]>;
   directMessages: Record<string, DirectMessage[]>;
   compactMode: boolean;
+  enableLinkPreviews: boolean;
+  enableWebPagePreviews: boolean;
+  linkPreviewApiUrl: string;
 
   // Settings Actions
   setCompactMode: (enabled: boolean) => void;
+  setEnableLinkPreviews: (enabled: boolean) => void;
+  setEnableWebPagePreviews: (enabled: boolean) => void;
+  setLinkPreviewApiUrl: (url: string) => void;
 
   // Server Actions
   addServer: (optionsOrName: string | AddServerOptions, imageUrl?: string) => Server;
@@ -88,8 +94,14 @@ export const useMockStore = create<MockState>()(
       messages: INITIAL_MESSAGES,
       directMessages: INITIAL_DIRECT_MESSAGES,
       compactMode: false,
+      enableLinkPreviews: true,
+      enableWebPagePreviews: true,
+      linkPreviewApiUrl: "https://api.microlink.io",
 
       setCompactMode: (enabled: boolean) => set({ compactMode: enabled }),
+      setEnableLinkPreviews: (enabled: boolean) => set({ enableLinkPreviews: enabled }),
+      setEnableWebPagePreviews: (enabled: boolean) => set({ enableWebPagePreviews: enabled }),
+      setLinkPreviewApiUrl: (url: string) => set({ linkPreviewApiUrl: url }),
 
       addServer: (optionsOrName, imageUrlParam) => {
         const newServerId = `server-${uuidv4().slice(0, 8)}`;
