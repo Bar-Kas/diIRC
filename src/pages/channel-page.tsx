@@ -20,8 +20,10 @@ export const ChannelPage = () => {
   useEffect(() => {
     if (!server && servers.length > 0) {
       navigate(`/servers/${servers[0].id}`, { replace: true });
+    } else if (server && !channel) {
+      navigate(`/servers/${server.id}`, { replace: true });
     }
-  }, [server, servers, navigate]);
+  }, [server, channel, servers, navigate]);
 
   if (!server || !channel) {
     return null;

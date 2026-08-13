@@ -77,10 +77,10 @@ export const ServerSidebar = ({
         </div>
         <Separator className="bg-zinc-200 dark:bg-zinc-700 rounded-md my-2" />
         {[
-          { label: "Text Channels", type: ChannelType.TEXT, channels: textChannels },
-          { label: "Voice Channels", type: ChannelType.AUDIO, channels: audioChannels },
-          { label: "Video Channels", type: ChannelType.VIDEO, channels: videoChannels },
-        ].map((section) => !!section.channels?.length && (
+          { label: "Text Channels", type: ChannelType.TEXT, channels: textChannels, alwaysShow: true },
+          { label: "Voice Channels", type: ChannelType.AUDIO, channels: audioChannels, alwaysShow: false },
+          { label: "Video Channels", type: ChannelType.VIDEO, channels: videoChannels, alwaysShow: false },
+        ].map((section) => (section.alwaysShow || !!section.channels?.length) && (
           <div key={section.type} className="mb-2">
             <ServerSection
               sectionType="channels"

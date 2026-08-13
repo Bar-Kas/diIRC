@@ -10,7 +10,6 @@ export type ModalType =
   | "leaveServer" 
   | "deleteServer" 
   | "deleteChannel" 
-  | "editChannel" 
   | "messageFile" 
   | "deleteMessage"
   | "settings";
