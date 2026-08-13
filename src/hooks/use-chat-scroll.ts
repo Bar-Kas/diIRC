@@ -6,6 +6,7 @@ type ChatScrollProps = {
   shouldLoadMore: boolean;
   loadMore: () => void;
   count: number;
+  chatId?: string;
 };
 
 export const useChatScroll = ({
@@ -14,8 +15,14 @@ export const useChatScroll = ({
   shouldLoadMore,
   loadMore,
   count,
+  chatId,
 }: ChatScrollProps) => {
   const [hasInitialized, setHasInitialized] = useState(false);
+
+  // Reset initialized state when channel/conversation ID changes
+  useEffect(() => {
+    setHasInitialized(false);
+  }, [chatId]);
 
   useEffect(() => {
     const topDiv = chatRef?.current;
@@ -38,26 +45,38 @@ export const useChatScroll = ({
   useEffect(() => {
     const bottomDiv = bottomRef?.current;
     const topDiv = chatRef.current;
-    const shouldAutoScroll = () => {
-      if (!hasInitialized && bottomDiv) {
-        setHasInitialized(true);
-        return true;
-      }
 
-      if (!topDiv) {
-        return false;
-      }
+    if (!topDiv && !bottomDiv) return;
 
-      const distanceFromBottom = topDiv.scrollHeight - topDiv.scrollTop - topDiv.clientHeight;
-      return distanceFromBottom <= 100;
+    const scrollToBottom = (behavior: ScrollBehavior = "auto") => {
+      if (topDiv) {
+        topDiv.scrollTop = topDiv.scrollHeight;
+      }
+      bottomDiv?.scrollIntoView({ behavior });
     };
 
-    if (shouldAutoScroll()) {
-      setTimeout(() => {
-        bottomRef.current?.scrollIntoView({
-          behavior: "smooth",
-        });
-      }, 100);
+    if (!hasInitialized) {
+      setHasInitialized(true);
+      scrollToBottom("auto");
+      const timer1 = setTimeout(() => scrollToBottom("auto"), 50);
+      const timer2 = setTimeout(() => scrollToBottom("auto"), 150);
+      const timer3 = setTimeout(() => scrollToBottom("auto"), 300);
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+        clearTimeout(timer3);
+      };
+    } else {
+      const distanceFromBottom = topDiv
+        ? topDiv.scrollHeight - topDiv.scrollTop - topDiv.clientHeight
+        : 0;
+
+      if (distanceFromBottom <= 100) {
+        const timer = setTimeout(() => {
+          scrollToBottom("smooth");
+        }, 50);
+        return () => clearTimeout(timer);
+      }
     }
-  }, [bottomRef, chatRef, count, hasInitialized]);
+  }, [bottomRef, chatRef, count, hasInitialized, chatId]);
 };

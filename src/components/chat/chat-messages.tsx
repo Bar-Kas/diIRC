@@ -54,7 +54,8 @@ export const ChatMessages = ({
     bottomRef,
     loadMore: fetchNextPage,
     shouldLoadMore: !isFetchingNextPage && !!hasNextPage,
-    count: data?.pages?.[0]?.items?.length ?? 0,
+    count: data?.pages?.reduce((acc, page) => acc + (page.items?.length || 0), 0) ?? 0,
+    chatId,
   });
 
   if (status === "loading") {
