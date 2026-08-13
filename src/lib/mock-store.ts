@@ -17,6 +17,8 @@ import {
   MOCK_PROFILE 
 } from "./mock-data";
 import { v4 as uuidv4 } from "uuid";
+import { ImageUploadConfig, UrlAuthRule } from "./upload/types";
+
 
 export interface AddServerOptions {
   name: string;
@@ -51,12 +53,17 @@ interface MockState {
   enableLinkPreviews: boolean;
   enableWebPagePreviews: boolean;
   linkPreviewApiUrl: string;
+  uploadConfig: ImageUploadConfig;
+  urlAuthRules: UrlAuthRule[];
 
   // Settings Actions
   setCompactMode: (enabled: boolean) => void;
   setEnableLinkPreviews: (enabled: boolean) => void;
   setEnableWebPagePreviews: (enabled: boolean) => void;
   setLinkPreviewApiUrl: (url: string) => void;
+  setUploadConfig: (config: ImageUploadConfig) => void;
+  addUrlAuthRule: (rule: Omit<UrlAuthRule, "id">) => void;
+  removeUrlAuthRule: (id: string) => void;
 
   // Server Actions
   addServer: (optionsOrName: string | AddServerOptions, imageUrl?: string) => Server;
@@ -97,11 +104,28 @@ export const useMockStore = create<MockState>()(
       enableLinkPreviews: true,
       enableWebPagePreviews: true,
       linkPreviewApiUrl: "https://api.microlink.io",
+      uploadConfig: {
+        provider: "litterbox",
+        litterboxTime: "24h",
+      },
+      urlAuthRules: [],
 
       setCompactMode: (enabled: boolean) => set({ compactMode: enabled }),
       setEnableLinkPreviews: (enabled: boolean) => set({ enableLinkPreviews: enabled }),
       setEnableWebPagePreviews: (enabled: boolean) => set({ enableWebPagePreviews: enabled }),
       setLinkPreviewApiUrl: (url: string) => set({ linkPreviewApiUrl: url }),
+      setUploadConfig: (config: ImageUploadConfig) => set({ uploadConfig: config }),
+      addUrlAuthRule: (rule) =>
+        set((state) => ({
+          urlAuthRules: [
+            ...state.urlAuthRules,
+            { ...rule, id: `auth-rule-${uuidv4().slice(0, 8)}` },
+          ],
+        })),
+      removeUrlAuthRule: (id) =>
+        set((state) => ({
+          urlAuthRules: state.urlAuthRules.filter((r) => r.id !== id),
+        })),
 
       addServer: (optionsOrName, imageUrlParam) => {
         const newServerId = `server-${uuidv4().slice(0, 8)}`;

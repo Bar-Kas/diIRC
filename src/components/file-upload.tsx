@@ -1,6 +1,8 @@
-import { useRef } from "react";
-import { FileIcon, UploadCloud, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { FileIcon, UploadCloud, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useMockStore } from "@/lib/mock-store";
+import { uploadImage } from "@/lib/upload/services";
 
 interface FileUploadProps {
   onChange: (url?: string) => void;
@@ -13,15 +15,45 @@ export const FileUpload = ({
   value,
 }: FileUploadProps) => {
   const inputRef = useRef<HTMLInputElement>(null);
-  const fileType = value?.split(".").pop()?.split("?")[0];
+  const uploadConfig = useMockStore((state) => state.uploadConfig);
+  const [isUploading, setIsUploading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const fileType = value?.split(".").pop()?.split("?")[0]?.toLowerCase();
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (!file) return;
+
+    if (uploadConfig.provider !== "disabled") {
+      try {
+        setIsUploading(true);
+        setErrorMsg(null);
+        const remoteUrl = await uploadImage(file, uploadConfig);
+        onChange(remoteUrl);
+      } catch (err: any) {
+        console.error("FileUpload error:", err);
+        setErrorMsg(err?.message || "Upload failed");
+        // Fallback to blob URL if upload fails so user can still see preview
+        const localUrl = URL.createObjectURL(file);
+        onChange(localUrl);
+      } finally {
+        setIsUploading(false);
+      }
+    } else {
       const localUrl = URL.createObjectURL(file);
       onChange(localUrl);
     }
   };
+
+  if (isUploading) {
+    return (
+      <div className="border-2 border-dashed border-indigo-500 rounded-lg p-6 flex flex-col items-center justify-center bg-indigo-500/5">
+        <Loader2 className="h-8 w-8 text-indigo-500 animate-spin mb-2" />
+        <p className="text-xs font-semibold text-indigo-500">Uploading to {uploadConfig.provider}...</p>
+      </div>
+    );
+  }
 
   if (value && fileType !== "pdf") {
     return (
@@ -68,7 +100,7 @@ export const FileUpload = ({
   return (
     <div 
       onClick={() => inputRef.current?.click()}
-      className="border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer hover:border-indigo-500 dark:hover:border-indigo-500 transition group bg-zinc-50 dark:bg-zinc-900/50"
+      className="border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer hover:border-indigo-500 dark:hover:border-indigo-500 transition group bg-zinc-50 dark:bg-zinc-900/50 w-full"
     >
       <input
         ref={inputRef}
@@ -84,8 +116,11 @@ export const FileUpload = ({
         Choose a file or drag and drop
       </p>
       <p className="text-xs text-zinc-400 mt-1">
-        PNG, JPG, GIF or PDF
+        PNG, JPG, GIF or PDF (Active Provider: {uploadConfig.provider})
       </p>
+      {errorMsg && (
+        <p className="text-xs text-rose-500 mt-1 font-semibold">⚠️ {errorMsg}</p>
+      )}
       <Button 
         type="button" 
         variant="secondary" 

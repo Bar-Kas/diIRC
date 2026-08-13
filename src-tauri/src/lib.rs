@@ -293,6 +293,8 @@ pub fn run() {
         .manage(IrcState {
             senders: Mutex::new(HashMap::new()),
         })
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![connect_irc, send_message, disconnect_irc, join_channel])
         .setup(|app| {
             if cfg!(debug_assertions) {
