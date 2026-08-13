@@ -1,16 +1,10 @@
 import { 
-  Check,
   Gavel,
   Loader2,
-  MoreVertical, 
-  Shield, 
-  ShieldAlert, 
-  ShieldCheck,
-  ShieldQuestion
+  MoreVertical
 } from "lucide-react";
 import { useState } from "react";
-import { Member, MemberRole, ServerWithMembersWithProfiles } from "@/types";
-
+import { Member, ServerWithMembersWithProfiles } from "@/types";
 
 import {
   Dialog,
@@ -35,16 +29,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useMockStore } from "@/lib/mock-store";
 
-const roleIconMap = {
-  [MemberRole.GUEST]: null,
-  [MemberRole.MODERATOR]: <ShieldCheck className="h-4 w-4 ml-2 text-indigo-500" />,
-  [MemberRole.ADMIN]: <ShieldAlert className="h-4 w-4 text-rose-500" />
-};
-
 export const MembersModal = () => {
   const { onOpen, isOpen, onClose, type, data } = useModal();
   const [loadingId, setLoadingId] = useState("");
-  const updateMemberRole = useMockStore((state) => state.updateMemberRole);
   const removeMember = useMockStore((state) => state.removeMember);
   const servers = useMockStore((state) => state.servers);
 
@@ -57,23 +44,6 @@ export const MembersModal = () => {
       setLoadingId(memberId);
       if (server?.id) {
         removeMember(server.id, memberId);
-        const updated = servers.find((s) => s.id === server.id);
-        if (updated) {
-          onOpen("members", { server: updated });
-        }
-      }
-    } catch (error) {
-      console.log(error);
-    } finally {
-      setLoadingId("");
-    }
-  };
-
-  const onRoleChange = async (memberId: string, role: MemberRole) => {
-    try {
-      setLoadingId(memberId);
-      if (server?.id) {
-        updateMemberRole(server.id, memberId, role);
         const updated = servers.find((s) => s.id === server.id);
         if (updated) {
           onOpen("members", { server: updated });
@@ -107,7 +77,6 @@ export const MembersModal = () => {
               <div className="flex flex-col gap-y-1">
                 <div className="text-xs font-semibold flex items-center gap-x-1">
                   {member.profile.name}
-                  {roleIconMap[member.role]}
                 </div>
                 <p className="text-xs text-zinc-500">
                   {member.profile.email}
@@ -120,43 +89,7 @@ export const MembersModal = () => {
                       <MoreVertical className="h-4 w-4 text-zinc-500" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent side="left">
-                      <DropdownMenuSub>
-                        <DropdownMenuSubTrigger
-                          className="flex items-center"
-                        >
-                          <ShieldQuestion
-                            className="w-4 h-4 mr-2"
-                          />
-                          <span>Role</span>
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuPortal>
-                          <DropdownMenuSubContent>
-                            <DropdownMenuItem
-                              onClick={() => onRoleChange(member.id, MemberRole.GUEST)}
-                            >
-                              <Shield className="h-4 w-4 mr-2" />
-                              Guest
-                              {member.role === MemberRole.GUEST && (
-                                <Check
-                                  className="h-4 w-4 ml-auto"
-                                />
-                              )}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => onRoleChange(member.id, MemberRole.MODERATOR)}
-                            >
-                              <ShieldCheck className="h-4 w-4 mr-2" />
-                              Moderator
-                              {member.role === MemberRole.MODERATOR && (
-                                <Check
-                                  className="h-4 w-4 ml-auto"
-                                />
-                              )}
-                            </DropdownMenuItem>
-                          </DropdownMenuSubContent>
-                        </DropdownMenuPortal>
-                      </DropdownMenuSub>
-                      <DropdownMenuSeparator />
+
                       <DropdownMenuItem
                         onClick={() => onKick(member.id)}
                       >

@@ -1,7 +1,6 @@
 import { 
   Channel, 
   ChannelType, 
-  MemberRole,
   Server
 } from "@/types";
 import { Edit, Hash, Lock, Mic, Trash, Video } from "lucide-react";
@@ -14,7 +13,6 @@ import { ModalType, useModal } from "@/hooks/use-modal-store";
 interface ServerChannelProps {
   channel: Channel;
   server: Server;
-  role?: MemberRole;
 }
 
 const iconMap = {
@@ -25,8 +23,7 @@ const iconMap = {
 
 export const ServerChannel = ({
   channel,
-  server,
-  role
+  server
 }: ServerChannelProps) => {
   const { onOpen } = useModal();
   const params = useParams();
@@ -60,7 +57,7 @@ export const ServerChannel = ({
       )}>
         {channel.name}
       </p>
-      {channel.name !== "general" && role !== MemberRole.GUEST && (
+      {channel.name !== "general" && (
         <div className="ml-auto flex items-center gap-x-2">
           <ActionTooltip label="Edit">
             <Edit

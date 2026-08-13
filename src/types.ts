@@ -1,8 +1,3 @@
-export enum MemberRole {
-  ADMIN = "ADMIN",
-  MODERATOR = "MODERATOR",
-  GUEST = "GUEST"
-}
 
 export enum ChannelType {
   TEXT = "TEXT",
@@ -22,7 +17,6 @@ export interface Profile {
 
 export interface Member {
   id: string;
-  role: MemberRole;
   profileId: string;
   profile: Profile;
   serverId: string;

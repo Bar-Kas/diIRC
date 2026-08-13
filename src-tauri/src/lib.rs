@@ -14,6 +14,14 @@ struct IrcMessage {
     is_system: bool,
 }
 
+#[derive(Serialize, Clone)]
+struct IrcUserEvent {
+    server_id: String,
+    channel: String,
+    users: Vec<String>,
+    event_type: String,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IrcConnectParams {
@@ -108,12 +116,20 @@ async fn connect_irc(
                                 };
                                 let payload = IrcMessage {
                                     server_id: stream_server_id.clone(),
-                                    sender: sender_name,
+                                    sender: sender_name.clone(),
                                     content,
                                     channel,
                                     is_system: false,
                                 };
                                 let _ = app.emit("irc_message", payload);
+
+                                let payload_users = IrcUserEvent {
+                                    server_id: stream_server_id.clone(),
+                                    channel: "".to_string(),
+                                    users: vec![sender_name],
+                                    event_type: "JOIN".to_string(), // Treat speaking as joined
+                                };
+                                let _ = app.emit("irc_user_event", payload_users);
                             }
                         }
                         Command::JOIN(channel, _, _) => {
@@ -130,12 +146,67 @@ async fn connect_irc(
                                 };
                                 let payload = IrcMessage {
                                     server_id: stream_server_id.clone(),
-                                    sender: sender_name,
+                                    sender: sender_name.clone(),
                                     content: format!("{} has joined", full_source),
-                                    channel,
+                                    channel: channel.clone(),
                                     is_system: true,
                                 };
                                 let _ = app.emit("irc_message", payload);
+
+                                let payload_users = IrcUserEvent {
+                                    server_id: stream_server_id.clone(),
+                                    channel,
+                                    users: vec![sender_name],
+                                    event_type: "JOIN".to_string(),
+                                };
+                                let _ = app.emit("irc_user_event", payload_users);
+                            }
+                        }
+                        Command::PART(channel, _) => {
+                            if let Some(source) = message.prefix {
+                                let sender_name = match source.clone() {
+                                    Prefix::Nickname(nick, _, _) => nick,
+                                    Prefix::ServerName(name) => name,
+                                };
+                                let payload_users = IrcUserEvent {
+                                    server_id: stream_server_id.clone(),
+                                    channel,
+                                    users: vec![sender_name],
+                                    event_type: "PART".to_string(),
+                                };
+                                let _ = app.emit("irc_user_event", payload_users);
+                            }
+                        }
+                        Command::QUIT(_) => {
+                            if let Some(source) = message.prefix {
+                                let sender_name = match source.clone() {
+                                    Prefix::Nickname(nick, _, _) => nick,
+                                    Prefix::ServerName(name) => name,
+                                };
+                                let payload_users = IrcUserEvent {
+                                    server_id: stream_server_id.clone(),
+                                    channel: "".to_string(),
+                                    users: vec![sender_name],
+                                    event_type: "QUIT".to_string(),
+                                };
+                                let _ = app.emit("irc_user_event", payload_users);
+                            }
+                        }
+                        Command::Response(Response::RPL_NAMREPLY, ref args) => {
+                            if args.len() >= 4 {
+                                let channel = &args[2];
+                                let users_str = &args[3];
+                                let users: Vec<String> = users_str.split_whitespace().map(|s| {
+                                    let clean = s.trim_start_matches(&['@', '+', '%', '~', '&'][..]);
+                                    clean.to_string()
+                                }).collect();
+                                let payload = IrcUserEvent {
+                                    server_id: stream_server_id.clone(),
+                                    channel: channel.to_string(),
+                                    users,
+                                    event_type: "NAMES".to_string(),
+                                };
+                                let _ = app.emit("irc_user_event", payload);
                             }
                         }
                         _ => {}

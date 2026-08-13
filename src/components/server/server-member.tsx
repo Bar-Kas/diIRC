@@ -1,4 +1,4 @@
-import { Member, MemberRole, Profile, Server } from "@/types";
+import { Member, Profile, Server } from "@/types";
 import { ShieldAlert, ShieldCheck } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 
@@ -10,11 +10,6 @@ interface ServerMemberProps {
   server: Server;
 }
 
-const roleIconMap = {
-  [MemberRole.GUEST]: null,
-  [MemberRole.MODERATOR]: <ShieldCheck className="h-4 w-4 ml-2 text-indigo-500" />,
-  [MemberRole.ADMIN]: <ShieldAlert className="h-4 w-4 ml-2 text-rose-500" />
-};
 
 export const ServerMember = ({
   member,
@@ -22,8 +17,6 @@ export const ServerMember = ({
 }: ServerMemberProps) => {
   const params = useParams();
   const navigate = useNavigate();
-
-  const icon = roleIconMap[member.role];
 
   const onClick = () => {
     navigate(`/servers/${params?.serverId}/conversations/${member.id}`);
@@ -52,7 +45,6 @@ export const ServerMember = ({
       >
         {member.profile.name}
       </p>
-      {icon}
     </button>
   );
 };

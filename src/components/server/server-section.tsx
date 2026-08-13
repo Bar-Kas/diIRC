@@ -1,4 +1,4 @@
-import { ChannelType, MemberRole, ServerWithMembersWithProfiles } from "@/types";
+import { ChannelType, ServerWithMembersWithProfiles } from "@/types";
 import { Plus, Settings } from "lucide-react";
 
 import { ActionTooltip } from "@/components/action-tooltip";
@@ -6,7 +6,6 @@ import { useModal } from "@/hooks/use-modal-store";
 
 interface ServerSectionProps {
   label: string;
-  role?: MemberRole;
   sectionType: "channels" | "members";
   channelType?: ChannelType;
   server?: ServerWithMembersWithProfiles;
@@ -14,7 +13,6 @@ interface ServerSectionProps {
 
 export const ServerSection = ({
   label,
-  role,
   sectionType,
   channelType,
   server,
@@ -26,7 +24,7 @@ export const ServerSection = ({
       <p className="text-xs uppercase font-semibold text-zinc-500 dark:text-zinc-400">
         {label}
       </p>
-      {role !== MemberRole.GUEST && sectionType === "channels" && (
+      {sectionType === "channels" && (
         <ActionTooltip label="Join Channel" side="top">
           <button
             onClick={() => onOpen("createChannel", { channelType, server })}

@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useMockStore } from "@/lib/mock-store";
-import { MemberRole } from "@/types";
 
 interface IrcMessagePayload {
   serverId: string;
@@ -12,10 +11,19 @@ interface IrcMessagePayload {
   is_system?: boolean;
 }
 
+interface IrcUserEventPayload {
+  server_id: string;
+  channel: string;
+  users: string[];
+  event_type: string;
+}
+
 export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   const addMessage = useMockStore((state) => state.addMessage);
   const currentProfile = useMockStore((state) => state.currentProfile);
   const servers = useMockStore((state) => state.servers);
+  const addServerMember = useMockStore((state) => state.addServerMember);
+  const removeServerMember = useMockStore((state) => state.removeServerMember);
   const connectedConfigsRef = useRef<Map<string, string>>(new Map());
 
   // Connect / Reconnect servers to IRC when server configs or list change
@@ -110,7 +118,6 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
           const mockMember = {
             id: `irc-${sender}`,
-            role: MemberRole.GUEST,
             profileId: `profile-${sender}`,
             profile: {
               id: `profile-${sender}`,
@@ -145,13 +152,41 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
     setupListener();
 
+    let unlistenUsersFn: (() => void) | null = null;
+    const setupUsersListener = async () => {
+      try {
+        const unlistenUsers = await listen<IrcUserEventPayload>("irc_user_event", (event) => {
+          const { server_id, users, event_type } = event.payload;
+
+          if (event_type === "NAMES" || event_type === "JOIN") {
+            users.forEach(u => addServerMember(server_id, u));
+          } else if (event_type === "PART" || event_type === "QUIT") {
+            users.forEach(u => removeServerMember(server_id, u));
+          }
+        });
+
+        if (isCancelled) {
+          unlistenUsers();
+        } else {
+          unlistenUsersFn = unlistenUsers;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC users listener:", error);
+      }
+    };
+
+    setupUsersListener();
+
     return () => {
       isCancelled = true;
       if (unlistenFn) {
         unlistenFn();
       }
+      if (unlistenUsersFn) {
+        unlistenUsersFn();
+      }
     };
-  }, [addMessage]);
+  }, [addMessage, addServerMember, removeServerMember]);
 
   return <>{children}</>;
 };

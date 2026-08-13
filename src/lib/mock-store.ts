@@ -8,8 +8,7 @@ import {
   Message, 
   DirectMessage, 
   Profile, 
-  ChannelType, 
-  MemberRole 
+  ChannelType
 } from "@/types";
 import { 
   INITIAL_SERVERS, 
@@ -66,8 +65,9 @@ interface MockState {
   deleteChannel: (serverId: string, channelId: string) => void;
 
   // Member Actions
-  updateMemberRole: (serverId: string, memberId: string, role: MemberRole) => void;
   removeMember: (serverId: string, memberId: string) => void;
+  addServerMember: (serverId: string, name: string) => void;
+  removeServerMember: (serverId: string, name: string) => void;
 
   // Message Actions
   addMessage: (channelId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean) => Message;
@@ -161,7 +161,6 @@ export const useMockStore = create<MockState>()(
           members: [
             {
               id: newMemberId,
-              role: MemberRole.ADMIN,
               profileId: get().currentProfile.id,
               profile: get().currentProfile,
               serverId: newServerId,
@@ -311,26 +310,59 @@ export const useMockStore = create<MockState>()(
         });
       },
 
-      updateMemberRole: (serverId, memberId, role) => {
-        set((state) => ({
-          servers: state.servers.map((s) =>
-            s.id === serverId
-              ? {
-                  ...s,
-                  members: s.members.map((m) =>
-                    m.id === memberId ? { ...m, role } : m
-                  ),
-                }
-              : s
-          ),
-        }));
-      },
-
       removeMember: (serverId, memberId) => {
         set((state) => ({
           servers: state.servers.map((s) =>
             s.id === serverId
               ? { ...s, members: s.members.filter((m) => m.id !== memberId) }
+              : s
+          ),
+        }));
+      },
+
+      addServerMember: (serverId, name) => {
+        set((state) => {
+          const s = state.servers.find(s => s.id === serverId);
+          if (!s) return state;
+
+          const exists = s.members.find(m => m.profile.name === name);
+          if (exists) return state;
+
+          const currentProfile = state.currentProfile;
+          if (name === currentProfile.name) return state;
+
+          const mockMember: Member = {
+            id: `irc-${name}`,
+            profileId: `profile-${name}`,
+            profile: {
+              id: `profile-${name}`,
+              userId: `user-${name}`,
+              name: name,
+              imageUrl: "",
+              email: `${name}@irc.local`,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+            serverId: serverId,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          return {
+            servers: state.servers.map((serv) =>
+              serv.id === serverId
+                ? { ...serv, members: [...serv.members, mockMember] }
+                : serv
+            ),
+          };
+        });
+      },
+
+      removeServerMember: (serverId, name) => {
+        set((state) => ({
+          servers: state.servers.map((s) =>
+            s.id === serverId
+              ? { ...s, members: s.members.filter(m => m.profile.name !== name) }
               : s
           ),
         }));

@@ -1,5 +1,5 @@
-import { Member, MemberRole, Profile } from "@/types";
-import { Edit, ShieldAlert, ShieldCheck, Trash } from "lucide-react";
+import { Member, Profile } from "@/types";
+import { Edit, Trash } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -29,11 +29,6 @@ interface ChatItemProps {
   isSystem?: boolean;
 }
 
-const roleIconMap = {
-  [MemberRole.GUEST]: null,
-  [MemberRole.MODERATOR]: <ShieldCheck className="h-4 w-4 ml-2 text-indigo-500" />,
-  [MemberRole.ADMIN]: <ShieldAlert className="h-4 w-4 ml-2 text-rose-500" />,
-};
 
 export const ChatItem = ({
   id,
@@ -79,10 +74,8 @@ export const ChatItem = ({
     }
   };
 
-  const isAdmin = currentMember.role === MemberRole.ADMIN;
-  const isModerator = currentMember.role === MemberRole.MODERATOR;
   const isOwner = currentMember.id === member.id;
-  const canDeleteMessage = !deleted && (isAdmin || isModerator || isOwner);
+  const canDeleteMessage = !deleted && isOwner;
   const canEditMessage = !deleted && isOwner && !fileUrl;
 
   if (isSystem) {
@@ -124,9 +117,6 @@ export const ChatItem = ({
                 <p onClick={onMemberClick} className="font-semibold text-sm hover:underline cursor-pointer">
                   {member.profile.name}
                 </p>
-                <ActionTooltip label={member.role}>
-                  {roleIconMap[member.role]}
-                </ActionTooltip>
               </div>
               <span className="text-xs text-zinc-500 dark:text-zinc-400">
                 {timestamp}

@@ -1,16 +1,13 @@
-import { ChannelType, MemberRole } from "@/types";
-import { Hash, Mic, ShieldAlert, ShieldCheck, Video } from "lucide-react";
+import { ChannelType } from "@/types";
+import { Hash, Mic, Video } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useMockStore } from "@/lib/mock-store";
-
 import { ServerHeader } from "./server-header";
 import { ServerSearch } from "./server-search";
 import { ServerSection } from "./server-section";
 import { ServerChannel } from "./server-channel";
-import { ServerMember } from "./server-member";
 
 interface ServerSidebarProps {
   serverId: string;
@@ -21,13 +18,6 @@ const iconMap = {
   [ChannelType.AUDIO]: <Mic className="mr-2 h-4 w-4" />,
   [ChannelType.VIDEO]: <Video className="mr-2 h-4 w-4" />
 };
-
-const roleIconMap = {
-  [MemberRole.GUEST]: null,
-  [MemberRole.MODERATOR]: <ShieldCheck className="h-4 w-4 mr-2 text-indigo-500" />,
-  [MemberRole.ADMIN]: <ShieldAlert className="h-4 w-4 mr-2 text-rose-500" />
-};
-
 export const ServerSidebar = ({
   serverId
 }: ServerSidebarProps) => {
@@ -45,14 +35,11 @@ export const ServerSidebar = ({
   const textChannels = channels.filter((channel) => channel.type === ChannelType.TEXT);
   const audioChannels = channels.filter((channel) => channel.type === ChannelType.AUDIO);
   const videoChannels = channels.filter((channel) => channel.type === ChannelType.VIDEO);
-  const members = (server.members || []).filter((member) => member.profileId !== currentProfile?.id);
-  const role = (server.members || []).find((member) => member.profileId === currentProfile?.id)?.role || MemberRole.ADMIN;
 
   return (
     <div className="flex flex-col h-full text-primary w-full dark:bg-[#2B2D31] bg-[#F2F3F5]">
       <ServerHeader
         server={server}
-        role={role}
       />
       <ScrollArea className="flex-1 px-3">
         <div className="mt-2">
@@ -84,16 +71,7 @@ export const ServerSidebar = ({
                   name: channel.name,
                   icon: iconMap[channel.type],
                 }))
-              },
-              {
-                label: "Members",
-                type: "member",
-                data: members?.map((member) => ({
-                  id: member.id,
-                  name: member.profile.name,
-                  icon: roleIconMap[member.role],
-                }))
-              },
+              }
             ]}
           />
         </div>
@@ -107,7 +85,6 @@ export const ServerSidebar = ({
             <ServerSection
               sectionType="channels"
               channelType={section.type}
-              role={role}
               label={section.label}
               server={server}
             />
@@ -116,32 +93,12 @@ export const ServerSidebar = ({
                 <ServerChannel
                   key={channel.id}
                   channel={channel}
-                  role={role}
                   server={server}
                 />
               ))}
             </div>
           </div>
         ))}
-        {!!members?.length && (
-          <div className="mb-2">
-            <ServerSection
-              sectionType="members"
-              role={role}
-              label="Members"
-              server={server}
-            />
-            <div className="space-y-[2px]">
-              {members.map((member) => (
-                <ServerMember
-                  key={member.id}
-                  member={member}
-                  server={server}
-                />
-              ))}
-            </div>
-          </div>
-        )}
       </ScrollArea>
     </div>
   );

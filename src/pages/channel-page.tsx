@@ -6,6 +6,7 @@ import { ChatHeader } from "@/components/chat/chat-header";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatMessages } from "@/components/chat/chat-messages";
 import { MediaRoom } from "@/components/media-room";
+import { ChatMembersSidebar } from "@/components/chat/chat-members-sidebar";
 
 export const ChannelPage = () => {
   const { serverId, channelId } = useParams();
@@ -35,40 +36,45 @@ export const ChannelPage = () => {
         serverId={server.id}
         type="channel"
       />
-      {channel.type === ChannelType.TEXT && (
-        <>
-          <ChatMessages
-            member={currentMember}
-            name={channel.name}
-            chatId={channel.id}
-            type="channel"
-            paramKey="channelId"
-            paramValue={channel.id}
-          />
-          <ChatInput
-            name={channel.name}
-            type="channel"
-            query={{
-              channelId: channel.id,
-              serverId: channel.serverId,
-            }}
-          />
-        </>
-      )}
-      {channel.type === ChannelType.AUDIO && (
-        <MediaRoom
-          chatId={channel.id}
-          video={false}
-          audio={true}
-        />
-      )}
-      {channel.type === ChannelType.VIDEO && (
-        <MediaRoom
-          chatId={channel.id}
-          video={true}
-          audio={true}
-        />
-      )}
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-col flex-1 h-full min-w-0">
+          {channel.type === ChannelType.TEXT && (
+            <>
+              <ChatMessages
+                member={currentMember}
+                name={channel.name}
+                chatId={channel.id}
+                type="channel"
+                paramKey="channelId"
+                paramValue={channel.id}
+              />
+              <ChatInput
+                name={channel.name}
+                type="channel"
+                query={{
+                  channelId: channel.id,
+                  serverId: channel.serverId,
+                }}
+              />
+            </>
+          )}
+          {channel.type === ChannelType.AUDIO && (
+            <MediaRoom
+              chatId={channel.id}
+              video={false}
+              audio={true}
+            />
+          )}
+          {channel.type === ChannelType.VIDEO && (
+            <MediaRoom
+              chatId={channel.id}
+              video={true}
+              audio={true}
+            />
+          )}
+        </div>
+        <ChatMembersSidebar server={server} />
+      </div>
     </div>
   );
 };
