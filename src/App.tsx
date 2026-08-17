@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ModalProvider } from "@/components/providers/modal-provider";
@@ -12,6 +13,20 @@ import { ConversationPage } from "@/pages/conversation-page";
 import { InvitePage } from "@/pages/invite-page";
 
 export function App() {
+  useEffect(() => {
+    // Prevent default native webview right-click context menu on images
+    const handleContextMenu = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && target.tagName === "IMG") {
+        // If not handled by Radix ContextMenu, prevent native browser context menu from breaking app window
+        e.preventDefault();
+      }
+    };
+
+    window.addEventListener("contextmenu", handleContextMenu);
+    return () => window.removeEventListener("contextmenu", handleContextMenu);
+  }, []);
+
   return (
     <ThemeProvider
       attribute="class"

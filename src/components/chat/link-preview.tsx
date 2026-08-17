@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { ExternalLink, Globe } from "lucide-react";
 import { useMockStore } from "@/lib/mock-store";
+import { isImageUrl } from "@/lib/image-utils";
+import { useModal } from "@/hooks/use-modal-store";
+import { ImageContextMenu } from "@/components/image-context-menu";
+import { openExternalUrl } from "@/lib/system-utils";
+import { SmartImage } from "@/components/chat/smart-image";
 
 interface LinkPreviewProps {
   url: string;
@@ -18,6 +23,7 @@ interface OpenGraphData {
 const ogCache = new Map<string, OpenGraphData | null>();
 
 export const LinkPreview: React.FC<LinkPreviewProps> = ({ url }) => {
+  const { onOpen } = useModal();
   const linkPreviewApiUrl = useMockStore((state) => state.linkPreviewApiUrl);
   const enableWebPagePreviews = useMockStore((state) => state.enableWebPagePreviews);
 
@@ -26,19 +32,7 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url }) => {
   const [error, setError] = useState<boolean>(false);
 
   // 1. Helper: Detect Direct Image URLs
-  const isImage = (link: string) => {
-    const cleanUrl = link.split("?")[0].toLowerCase();
-    return (
-      cleanUrl.endsWith(".png") ||
-      cleanUrl.endsWith(".jpg") ||
-      cleanUrl.endsWith(".jpeg") ||
-      cleanUrl.endsWith(".gif") ||
-      cleanUrl.endsWith(".webp") ||
-      cleanUrl.endsWith(".svg") ||
-      cleanUrl.includes("images.unsplash.com") ||
-      cleanUrl.includes("i.imgur.com")
-    );
-  };
+  const isImage = (link: string) => isImageUrl(link);
 
   // 2. Helper: Detect Direct Video URLs
   const isVideo = (link: string) => {
@@ -140,18 +134,21 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url }) => {
   // A) Render Direct Image Preview
   if (isDirectImage) {
     return (
-      <div className="mt-2 max-w-md rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-950/20 dark:bg-black/30 group relative">
-        <a href={url} target="_blank" rel="noopener noreferrer" className="block relative">
-          <img
-            src={url}
-            alt="Embedded Content"
-            className="max-h-[300px] w-auto max-w-full object-cover rounded-lg transition hover:opacity-95"
-            loading="lazy"
-            onError={(e) => {
-              (e.target as HTMLElement).style.display = "none";
-            }}
-          />
-        </a>
+      <div className="mt-2 w-fit max-w-md rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800/80 group relative shadow-sm">
+        <ImageContextMenu url={url}>
+          <button
+            type="button"
+            onClick={() => onOpen("imagePreview", { url })}
+            className="block relative cursor-zoom-in text-left w-full h-full"
+          >
+            <SmartImage
+              src={url}
+              alt="Embedded Content"
+              className="max-h-[320px] max-w-full w-auto h-auto object-contain rounded-lg transition hover:opacity-95 block"
+              loading="lazy"
+            />
+          </button>
+        </ImageContextMenu>
       </div>
     );
   }
@@ -225,15 +222,14 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url }) => {
 
       {/* Title */}
       {ogData.title && (
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-semibold text-indigo-600 dark:text-indigo-400 hover:underline text-sm leading-snug flex items-center gap-x-1.5"
+        <button
+          type="button"
+          onClick={() => openExternalUrl(url)}
+          className="font-semibold text-indigo-600 dark:text-indigo-400 hover:underline text-sm leading-snug flex items-center gap-x-1.5 text-left"
         >
           <span>{ogData.title}</span>
           <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition shrink-0" />
-        </a>
+        </button>
       )}
 
       {/* Description */}
@@ -245,18 +241,21 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url }) => {
 
       {/* Preview Image */}
       {ogData.image && (
-        <div className="mt-1 rounded-md overflow-hidden border border-zinc-200 dark:border-zinc-700/60 max-h-[220px] bg-zinc-950/20">
-          <a href={url} target="_blank" rel="noopener noreferrer">
-            <img
-              src={ogData.image}
-              alt={ogData.title || "Link preview image"}
-              className="w-full h-full max-h-[220px] object-cover transition hover:scale-[1.01]"
-              loading="lazy"
-              onError={(e) => {
-                (e.target as HTMLElement).style.display = "none";
-              }}
-            />
-          </a>
+        <div className="mt-1 w-fit max-w-full rounded-md overflow-hidden border border-zinc-200 dark:border-zinc-700/60 max-h-[220px]">
+          <ImageContextMenu url={ogData.image}>
+            <button
+              type="button"
+              onClick={() => onOpen("imagePreview", { url: ogData.image })}
+              className="block cursor-zoom-in text-left w-full h-full"
+            >
+              <SmartImage
+                src={ogData.image}
+                alt={ogData.title || "Link preview image"}
+                className="w-full h-full max-h-[220px] object-contain transition hover:scale-[1.01] block"
+                loading="lazy"
+              />
+            </button>
+          </ImageContextMenu>
         </div>
       )}
     </div>

@@ -1,0 +1,120 @@
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { save } from "@tauri-apps/plugin-dialog";
+import { writeFile } from "@tauri-apps/plugin-fs";
+
+/**
+ * Opens a URL in the OS default system browser via Tauri plugin-opener,
+ * falling back to window.open if running in standard web browser.
+ */
+export async function openExternalUrl(url: string): Promise<void> {
+  if (!url) return;
+  try {
+    await openUrl(url);
+  } catch (err) {
+    console.warn("Tauri plugin-opener failed, using fallback:", err);
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
+
+/**
+ * Copies plain text to the system clipboard via Tauri clipboard manager plugin,
+ * falling back to navigator.clipboard.
+ */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  if (!text) return false;
+  try {
+    await writeText(text);
+    return true;
+  } catch (err) {
+    console.warn("Tauri clipboard plugin failed, trying browser clipboard API:", err);
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (fallbackErr) {
+      console.error("Clipboard copy failed:", fallbackErr);
+      return false;
+    }
+  }
+}
+
+/**
+ * Extracts a clean filename from a URL or uses a fallback.
+ */
+export function getFilenameFromUrl(url: string, defaultName = "downloaded_image.png"): string {
+  try {
+    const parsed = new URL(url);
+    const pathname = parsed.pathname;
+    const basename = pathname.split("/").pop();
+    if (basename && basename.includes(".")) {
+      return decodeURIComponent(basename);
+    }
+  } catch (_) {
+    // Return defaultName on parse error
+  }
+  return defaultName;
+}
+
+/**
+ * Saves an image URL to the user's local filesystem using Tauri dialog and fs plugins,
+ * falling back to standard browser link download.
+ */
+export async function saveImageToFile(url: string, suggestedName?: string): Promise<boolean> {
+  if (!url) return false;
+
+  const fileName = suggestedName || getFilenameFromUrl(url);
+  const extension = fileName.split(".").pop()?.toLowerCase() || "png";
+
+  try {
+    // 1. Open native system Save File Dialog
+    const selectedPath = await save({
+      defaultPath: fileName,
+      filters: [
+        {
+          name: "Image",
+          extensions: [extension, "png", "jpg", "jpeg", "webp", "gif", "svg"].filter(
+            (v, i, a) => a.indexOf(v) === i
+          ),
+        },
+      ],
+    });
+
+    if (!selectedPath) {
+      // User cancelled save dialog
+      return false;
+    }
+
+    // 2. Fetch image content as ArrayBuffer
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: HTTP ${response.status}`);
+    }
+
+    const buffer = await response.arrayBuffer();
+
+    // 3. Write binary data directly to disk via Tauri FS plugin
+    await writeFile(selectedPath, new Uint8Array(buffer));
+    return true;
+  } catch (err) {
+    console.warn("Tauri system save failed, using browser download fallback:", err);
+
+    // Fallback: Web browser download link
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+      return true;
+    } catch (fallbackErr) {
+      console.error("Browser download fallback failed:", fallbackErr);
+      return false;
+    }
+  }
+}

@@ -411,10 +411,10 @@ export const EditServerModal = () => {
         >
           <DialogHeader className="pt-6 px-6 space-y-2">
             <DialogTitle className="text-xl text-center font-bold text-zinc-900 dark:text-zinc-100">
-              Czy na pewno chcesz zapisać zmiany?
+              Are you sure you want to save changes?
             </DialogTitle>
             <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400 text-sm">
-              Wprowadzone zmiany w ustawieniach serwera <span className="font-semibold text-indigo-600 dark:text-indigo-400">{server?.name}</span> zostaną zapisane.
+              The changes made to server settings for <span className="font-semibold text-indigo-600 dark:text-indigo-400">{server?.name}</span> will be saved.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 px-6 py-4 flex items-center justify-between mt-4">
@@ -425,7 +425,7 @@ export const EditServerModal = () => {
               disabled={isLoading}
               className="text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white"
             >
-              Anuluj
+              Cancel
             </Button>
             <Button
               type="button"
@@ -433,7 +433,7 @@ export const EditServerModal = () => {
               disabled={isLoading}
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 shadow-sm"
             >
-              Tak, zapisz
+              Yes, save
             </Button>
           </DialogFooter>
         </DialogContent>

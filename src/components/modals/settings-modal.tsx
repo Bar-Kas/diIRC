@@ -180,20 +180,20 @@ export const SettingsModal = () => {
                   Image Upload Provider
                 </label>
               </div>
-              {uploadConfig.provider === "catbox" && (
-                <span className="text-xs px-2 py-0.5 font-bold rounded bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30">
-                  Permanent Hosting
-                </span>
-              )}
               {uploadConfig.provider === "litterbox" && (
                 <span className="text-xs px-2 py-0.5 font-bold rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
                   Temporary Hosting
                 </span>
               )}
+              {uploadConfig.provider === "pomf" && (
+                <span className="text-xs px-2 py-0.5 font-bold rounded bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30">
+                  POMF Hosting
+                </span>
+              )}
             </div>
 
             <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-              Wybierz usługę lub własny serwer do przesłania zdjęć wklejonych z ze schowka lub pliku. IRCem zostanie wysłany sam link.
+              Select a service for uploading images pasted from clipboard or files. A direct link will be sent to the IRC chat.
             </p>
 
             {/* Provider Selection Dropdown */}
@@ -202,45 +202,29 @@ export const SettingsModal = () => {
               onChange={(e) => handleProviderChange(e.target.value as ImageUploadProvider)}
               className="w-full bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              <option value="disabled">🚫 Wyłączone (Upload wyłączony)</option>
+              <option value="disabled">🚫 Disabled (Upload disabled)</option>
               <option value="litterbox" className="text-amber-600 font-bold">
-                ⚠️ Litterbox (Publiczny, wygasanie 1h - 72h)
+                ⚠️ Litterbox (Public, expiration 1h - 72h)
               </option>
-              <option value="catbox" className="text-rose-600 font-bold">
-                ⛔ Catbox.moe (Publiczny, na stałe - brak wygasania)
+              <option value="pomf" className="text-indigo-600 font-bold">
+                🐱 POMF / Pomf.cat (Public)
               </option>
-              <option value="microbin">⚡ Microbin (Self-Hosted / Rust)</option>
-              <option value="zipline">🚀 Zipline (Self-Hosted / Token API)</option>
-              <option value="s3">🪣 S3 Compatible (MinIO, R2, AWS)</option>
             </select>
-
-            {/* Dynamic Warnings below dropdown */}
-            {uploadConfig.provider === "catbox" && (
-              <div className="rounded-lg bg-rose-500/10 border border-rose-500/30 p-3 space-y-1 text-xs text-rose-600 dark:text-rose-400">
-                <div className="flex items-center gap-x-1.5 font-bold">
-                  <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
-                  Ostrzeżenie (Catbox.moe):
-                </div>
-                <p className="text-[11px] leading-relaxed opacity-90">
-                  Wszystkie wklejone zdjęcia lądują na stałe na publicznym serwerze Catbox bez opcji automatycznego wygasania. Każdy, kto pozna link, ma dostęp do pliku!
-                </p>
-              </div>
-            )}
 
             {/* Litterbox Warning & Retention Config */}
             {uploadConfig.provider === "litterbox" && (
               <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 space-y-2 text-xs text-amber-600 dark:text-amber-400">
                 <div className="flex items-center gap-x-1.5 font-bold">
                   <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-                  Informacja (Litterbox Temporary):
+                  Information (Litterbox Temporary):
                 </div>
                 <p className="text-[11px] leading-relaxed opacity-90">
-                  Zdjęcia wygasają automatycznie po wybranym czasie. Pozostają publiczne do momentu usunięcia.
+                  Images expire automatically after the selected duration. They remain public until deleted.
                 </p>
 
                 <div className="pt-1 flex items-center justify-between">
                   <label className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                    Czas przechowywania (Retention):
+                    Retention duration:
                   </label>
                   <select
                     value={uploadConfig.litterboxTime || "24h"}
@@ -249,153 +233,31 @@ export const SettingsModal = () => {
                     }
                     className="bg-white dark:bg-[#1e1f22] border border-amber-500/40 rounded px-2 py-1 text-xs font-semibold text-zinc-900 dark:text-zinc-100"
                   >
-                    <option value="1h">1 Godzina</option>
-                    <option value="12h">12 Godzin</option>
-                    <option value="24h">24 Godziny (Domyślne)</option>
-                    <option value="72h">72 Godziny (3 Dni)</option>
+                    <option value="1h">1 Hour</option>
+                    <option value="12h">12 Hours</option>
+                    <option value="24h">24 Hours (Default)</option>
+                    <option value="72h">72 Hours (3 Days)</option>
                   </select>
                 </div>
               </div>
             )}
 
-            {/* Catbox Optional Userhash */}
-            {uploadConfig.provider === "catbox" && (
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                  Userhash (Opcjonalny klucz konta Catbox)
-                </label>
-                <Input
-                  type="password"
-                  value={uploadConfig.catboxUserhash || ""}
-                  onChange={(e) => setUploadConfig({ ...uploadConfig, catboxUserhash: e.target.value })}
-                  placeholder="Klucz konta Catbox z ustawień profilu"
-                  className="bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-xs"
-                />
-              </div>
-            )}
-
-            {/* Microbin Form Fields */}
-            {uploadConfig.provider === "microbin" && (
+            {/* POMF Configuration */}
+            {uploadConfig.provider === "pomf" && (
               <div className="space-y-3 pt-1">
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    Microbin Server URL
+                    POMF Server Address (Upload URL)
                   </label>
                   <Input
-                    value={uploadConfig.microbinUrl || ""}
-                    onChange={(e) => setUploadConfig({ ...uploadConfig, microbinUrl: e.target.value })}
-                    placeholder="https://microbin.moj-serwer.pl"
+                    value={uploadConfig.pomfUrl || ""}
+                    onChange={(e) => setUploadConfig({ ...uploadConfig, pomfUrl: e.target.value })}
+                    placeholder="https://pomf.cat/upload.php"
                     className="bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-xs"
                   />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    Hasło / Token Auth (Opcjonalne)
-                  </label>
-                  <Input
-                    type="password"
-                    value={uploadConfig.microbinPassword || ""}
-                    onChange={(e) => setUploadConfig({ ...uploadConfig, microbinPassword: e.target.value })}
-                    placeholder="Hasło z konfiguracji Microbin"
-                    className="bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-xs"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Zipline Form Fields */}
-            {uploadConfig.provider === "zipline" && (
-              <div className="space-y-3 pt-1">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    Zipline Server URL
-                  </label>
-                  <Input
-                    value={uploadConfig.ziplineUrl || ""}
-                    onChange={(e) => setUploadConfig({ ...uploadConfig, ziplineUrl: e.target.value })}
-                    placeholder="https://zipline.moj-serwer.pl"
-                    className="bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    Authorization Token (API Key)
-                  </label>
-                  <Input
-                    type="password"
-                    value={uploadConfig.ziplineToken || ""}
-                    onChange={(e) => setUploadConfig({ ...uploadConfig, ziplineToken: e.target.value })}
-                    placeholder="Wklej Zipline Token"
-                    className="bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-xs"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* S3 Form Fields */}
-            {uploadConfig.provider === "s3" && (
-              <div className="space-y-3 pt-1">
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                      S3 Endpoint
-                    </label>
-                    <Input
-                      value={uploadConfig.s3Endpoint || ""}
-                      onChange={(e) => setUploadConfig({ ...uploadConfig, s3Endpoint: e.target.value })}
-                      placeholder="https://s3.amazonaws.com"
-                      className="bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                      Bucket Name
-                    </label>
-                    <Input
-                      value={uploadConfig.s3Bucket || ""}
-                      onChange={(e) => setUploadConfig({ ...uploadConfig, s3Bucket: e.target.value })}
-                      placeholder="my-irc-uploads"
-                      className="bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-xs"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                      Access Key ID
-                    </label>
-                    <Input
-                      value={uploadConfig.s3AccessKey || ""}
-                      onChange={(e) => setUploadConfig({ ...uploadConfig, s3AccessKey: e.target.value })}
-                      placeholder="AKIA..."
-                      className="bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                      Secret Access Key
-                    </label>
-                    <Input
-                      type="password"
-                      value={uploadConfig.s3SecretKey || ""}
-                      onChange={(e) => setUploadConfig({ ...uploadConfig, s3SecretKey: e.target.value })}
-                      placeholder="Secret Key"
-                      className="bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-xs"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    Public URL Prefix (Opcjonalny)
-                  </label>
-                  <Input
-                    value={uploadConfig.s3PublicUrlPrefix || ""}
-                    onChange={(e) => setUploadConfig({ ...uploadConfig, s3PublicUrlPrefix: e.target.value })}
-                    placeholder="https://cdn.mojadomena.pl"
-                    className="bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-xs"
-                  />
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                    Leave default address <code className="text-indigo-400">https://pomf.cat/upload.php</code> or enter your custom POMF instance address.
+                  </p>
                 </div>
               </div>
             )}
@@ -406,12 +268,12 @@ export const SettingsModal = () => {
             <div className="flex items-center gap-x-2">
               <Key className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
               <label className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                Autoryzacja odczytu obrazów (Nagłówki URL)
+                Image Read Authorization (URL Headers)
               </label>
             </div>
 
             <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-              Zdefiniuj nagłówki HTTP (np. tokeny), które mają być wysyłane przy pobieraniu i podglądzie zdjęć z określonych domyślnych przedrostków URL.
+              Define HTTP headers (e.g., tokens) to be sent when fetching and previewing images from specified URL prefixes.
             </p>
 
             {/* List of rules */}
@@ -440,7 +302,7 @@ export const SettingsModal = () => {
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-zinc-400 dark:text-zinc-500 italic">Brak skonfigurowanych reguł autoryzacji odczytu.</p>
+              <p className="text-xs text-zinc-400 dark:text-zinc-500 italic">No read authorization rules configured.</p>
             )}
 
             {/* Form to add new rule */}
@@ -449,7 +311,7 @@ export const SettingsModal = () => {
                 <Input
                   value={newRulePrefix}
                   onChange={(e) => setNewRulePrefix(e.target.value)}
-                  placeholder="Prefix URL (np. https://private-host.org/)"
+                  placeholder="URL Prefix (e.g. https://private-host.org/)"
                   className="bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-xs"
                 />
               </div>
@@ -457,13 +319,13 @@ export const SettingsModal = () => {
                 <Input
                   value={newRuleHeaderName}
                   onChange={(e) => setNewRuleHeaderName(e.target.value)}
-                  placeholder="Nagłówek (Authorization / X-Api-Key)"
+                  placeholder="Header (Authorization / X-Api-Key)"
                   className="bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-xs font-mono"
                 />
                 <Input
                   value={newRuleHeaderValue}
                   onChange={(e) => setNewRuleHeaderValue(e.target.value)}
-                  placeholder="Wartość (Bearer token / key)"
+                  placeholder="Value (Bearer token / key)"
                   className="bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-xs font-mono"
                 />
               </div>
@@ -473,7 +335,7 @@ export const SettingsModal = () => {
                 size="sm"
                 className="w-full text-xs font-semibold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60"
               >
-                <Plus className="w-3.5 h-3.5 mr-1" /> Dodaj regułę autoryzacji
+                <Plus className="w-3.5 h-3.5 mr-1" /> Add Authorization Rule
               </Button>
             </form>
           </div>

@@ -1,11 +1,21 @@
-version: '3.8'
-
 services:
   ircd:
     image: ergochat/ergo:latest
     container_name: irc-server
     ports:
-      - "6667:6667"  # Zwykły port IRC (bez SSL)
+      - "6667:6667"  # Plain IRC port (non-SSL)
     volumes:
       - ./data:/ircd-data
+    restart: unless-stopped
+
+  pomf:
+    build: ./docker/pomf
+    container_name: pomf-server
+    ports:
+      - "9999:9999"
+    environment:
+      - PORT=9999
+      - DOMAIN=http://localhost:9999
+    volumes:
+      - ./data/pomf-uploads:/app/uploads
     restart: unless-stopped

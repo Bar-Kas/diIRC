@@ -143,7 +143,7 @@ export const CreateChannelModal = () => {
                             <HelpCircle className="w-4 h-4 text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300 transition cursor-pointer" />
                           </TooltipTrigger>
                           <TooltipContent side="top" className="max-w-xs text-xs">
-                            Po restarcie aplikacji użytkownik nie zostanie automatycznie dołączony do kanału jeżeli ta opcja jest zaznaczona.
+                            When checked, you will not automatically rejoin this channel after restarting the application.
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>

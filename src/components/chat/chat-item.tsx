@@ -12,6 +12,9 @@ import { ChatItemAttachment } from "./chat-item-attachment";
 import { ChatItemEditForm } from "./chat-item-edit-form";
 import { LinkPreview } from "./link-preview";
 
+import { isImageUrl } from "@/lib/image-utils";
+import { openExternalUrl } from "@/lib/system-utils";
+
 interface ChatItemProps {
   id: string;
   content: string;
@@ -87,21 +90,30 @@ export const ChatItem = ({
     const parts = text.split(urlRegex);
     return parts.map((part, index) => {
       if (part.match(urlRegex)) {
+        if (enableLinkPreviews && isImageUrl(part)) {
+          // Hide raw image URL text because it will be rendered as an image card below
+          return null;
+        }
         return (
-          <a
+          <button
             key={index}
-            href={part}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-indigo-500 dark:text-indigo-400 hover:underline break-all"
+            type="button"
+            onClick={() => openExternalUrl(part)}
+            className="text-indigo-500 dark:text-indigo-400 hover:underline break-all inline text-left p-0 bg-transparent border-none font-normal"
           >
             {part}
-          </a>
+          </button>
         );
       }
       return part;
     });
   };
+
+  // Check if there is any visible text remaining after hiding image URLs
+  const renderedElements = renderContentWithLinks(content);
+  const hasVisibleText = Array.isArray(renderedElements)
+    ? renderedElements.some((item) => item !== null && typeof item === "string" ? item.trim().length > 0 : item !== null)
+    : Boolean(renderedElements);
 
   const extractedUrls = enableLinkPreviews && !deleted && !fileUrl
     ? Array.from(new Set(content.match(urlRegex) || []))
@@ -157,17 +169,19 @@ export const ChatItem = ({
 
           {!fileUrl && !isEditing && (
             <div className="space-y-1">
-              <p className={cn(
-                "text-sm text-zinc-600 dark:text-zinc-300",
-                deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
-              )}>
-                {renderContentWithLinks(content)}
-                {isUpdated && !deleted && (
-                  <span className="text-[10px] mx-2 text-zinc-500 dark:text-zinc-400">
-                    (edited)
-                  </span>
-                )}
-              </p>
+              {(hasVisibleText || deleted || isUpdated) && (
+                <p className={cn(
+                  "text-sm text-zinc-600 dark:text-zinc-300",
+                  deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
+                )}>
+                  {renderContentWithLinks(content)}
+                  {isUpdated && !deleted && (
+                    <span className="text-[10px] mx-2 text-zinc-500 dark:text-zinc-400">
+                      (edited)
+                    </span>
+                  )}
+                </p>
+              )}
               {extractedUrls.map((url) => (
                 <LinkPreview key={url} url={url} />
               ))}

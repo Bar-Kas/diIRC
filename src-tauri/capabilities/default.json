@@ -12,6 +12,8 @@
     "clipboard-manager:allow-write-image",
     "fs:default",
     "fs:allow-read",
-    "fs:allow-exists"
+    "fs:allow-exists",
+    "opener:default",
+    "dialog:default"
   ]
 }

@@ -3,6 +3,7 @@ import { FileIcon, UploadCloud, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useMockStore } from "@/lib/mock-store";
 import { uploadImage } from "@/lib/upload/services";
+import { openExternalUrl } from "@/lib/system-utils";
 
 interface FileUploadProps {
   onChange: (url?: string) => void;
@@ -78,14 +79,13 @@ export const FileUpload = ({
     return (
       <div className="relative flex items-center p-2 mt-2 rounded-md bg-background/10 border">
         <FileIcon className="h-10 w-10 fill-indigo-200 stroke-indigo-400" />
-        <a 
-          href={value}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="ml-2 text-sm text-indigo-500 dark:text-indigo-400 hover:underline truncate max-w-[200px]"
+        <button 
+          type="button"
+          onClick={() => openExternalUrl(value)}
+          className="ml-2 text-sm text-indigo-500 dark:text-indigo-400 hover:underline truncate max-w-[200px] text-left"
         >
           Attachment.pdf
-        </a>
+        </button>
         <button
           onClick={() => onChange("")}
           className="bg-rose-500 text-white p-1 rounded-full absolute -top-2 -right-2 shadow-sm"

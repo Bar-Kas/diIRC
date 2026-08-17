@@ -38,17 +38,17 @@ export const ServerPage = () => {
             <Hash className="w-8 h-8 text-zinc-500 dark:text-zinc-400" />
           </div>
           <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
-            Brak kanałów na serwerze
+            No channels on server
           </h2>
           <p className="text-zinc-500 dark:text-zinc-400 text-sm max-w-xs">
-            Ten serwer nie posiada obecnie żadnego kanału. Dołącz do istniejącego kanału lub utwórz nowy.
+            This server currently has no channels. Join an existing channel or create a new one.
           </p>
           <Button
             onClick={() => onOpen("createChannel", { server })}
             className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-2 flex items-center gap-x-2"
           >
             <Plus className="w-4 h-4" />
-            Dołącz / Stwórz kanał
+            Join / Create channel
           </Button>
         </div>
       </div>

@@ -36,7 +36,7 @@ export const ChatHeader = ({
       
       <ActionTooltip 
         side="bottom" 
-        label={showNavigationSidebar ? "Ukryj listę serwerów" : "Pokaż listę serwerów"}
+        label={showNavigationSidebar ? "Hide server list" : "Show server list"}
       >
         <button
           onClick={toggleNavigationSidebar}
@@ -51,7 +51,7 @@ export const ChatHeader = ({
 
       <ActionTooltip 
         side="bottom" 
-        label={showServerSidebar ? "Ukryj listę kanałów" : "Pokaż listę kanałów"}
+        label={showServerSidebar ? "Hide channel list" : "Show channel list"}
       >
         <button
           onClick={toggleServerSidebar}
@@ -85,7 +85,7 @@ export const ChatHeader = ({
         {type === "channel" && (
           <ActionTooltip 
             side="bottom" 
-            label={showMembersSidebar ? "Ukryj listę użytkowników" : "Pokaż listę użytkowników"}
+            label={showMembersSidebar ? "Hide user list" : "Show user list"}
           >
             <button
               onClick={toggleMembersSidebar}

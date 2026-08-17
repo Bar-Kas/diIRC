@@ -1,21 +1,11 @@
-export type ImageUploadProvider = 'disabled' | 'catbox' | 'litterbox' | 's3' | 'microbin' | 'zipline';
+export type ImageUploadProvider = 'disabled' | 'litterbox' | 'pomf';
 
 export type LitterboxTime = '1h' | '12h' | '24h' | '72h';
 
 export interface ImageUploadConfig {
   provider: ImageUploadProvider;
-  catboxUserhash?: string;
   litterboxTime?: LitterboxTime;
-  s3Endpoint?: string;
-  s3Bucket?: string;
-  s3AccessKey?: string;
-  s3SecretKey?: string;
-  s3Region?: string;
-  s3PublicUrlPrefix?: string;
-  microbinUrl?: string;
-  microbinPassword?: string;
-  ziplineUrl?: string;
-  ziplineToken?: string;
+  pomfUrl?: string;
 }
 
 export interface UrlAuthRule {
