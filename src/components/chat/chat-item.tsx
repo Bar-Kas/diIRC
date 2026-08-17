@@ -1,15 +1,12 @@
 import { Member, Profile } from "@/types";
-import { Edit, Trash } from "lucide-react";
-import { useState } from "react";
+import { Reply } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { UserAvatar } from "@/components/user-avatar";
 import { ActionTooltip } from "@/components/action-tooltip";
 import { cn } from "@/lib/utils";
-import { useModal } from "@/hooks/use-modal-store";
 import { useMockStore } from "@/lib/mock-store";
 import { ChatItemAttachment } from "./chat-item-attachment";
-import { ChatItemEditForm } from "./chat-item-edit-form";
 import { LinkPreview } from "./link-preview";
 
 import { isImageUrl } from "@/lib/image-utils";
@@ -26,7 +23,6 @@ interface ChatItemProps {
   fileUrl: string | null;
   deleted: boolean;
   currentMember: Member;
-  isUpdated: boolean;
   channelId?: string;
   conversationId?: string;
   compact?: boolean;
@@ -43,20 +39,14 @@ export const ChatItem = ({
   fileUrl,
   deleted,
   currentMember,
-  isUpdated,
   channelId,
   conversationId,
   compact = false,
   isSystem = false,
 }: ChatItemProps) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const { onOpen } = useModal();
   const params = useParams();
   const navigate = useNavigate();
 
-  const openConversation = useMockStore((state) => state.openConversation);
-  const editMessage = useMockStore((state) => state.editMessage);
-  const editDirectMessage = useMockStore((state) => state.editDirectMessage);
   const compactMode = useMockStore((state) => state.compactMode);
   const enableLinkPreviews = useMockStore((state) => state.enableLinkPreviews);
 
@@ -88,23 +78,6 @@ export const ChatItem = ({
     useMockStore.getState().openConversation(server.id, targetMember.id);
     navigate(`/servers/${server.id}/conversations/${targetMember.id}`);
   };
-
-  const handleEditSubmit = async (values: { content: string }) => {
-    try {
-      if (channelId) {
-        editMessage(channelId, id, values.content);
-      } else if (conversationId) {
-        editDirectMessage(conversationId, id, values.content);
-      }
-      setIsEditing(false);
-    } catch (error) {
-      console.error("Failed to edit message:", error);
-    }
-  };
-
-  const isOwner = currentMember.id === member.id;
-  const canDeleteMessage = !deleted && isOwner;
-  const canEditMessage = !deleted && isOwner && !fileUrl;
 
   const urlRegex = /(https?:\/\/[^\s]+)/g;
 
@@ -190,19 +163,14 @@ export const ChatItem = ({
 
           {fileUrl && <ChatItemAttachment fileUrl={fileUrl} content={content} />}
 
-          {!fileUrl && !isEditing && (
+          {!fileUrl && (
             <div className="space-y-1">
-              {(hasVisibleText || deleted || isUpdated) && (
+              {(hasVisibleText || deleted) && (
                 <p className={cn(
                   "text-sm text-zinc-600 dark:text-zinc-300",
                   deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
                 )}>
                   {renderContentWithLinks(content)}
-                  {isUpdated && !deleted && (
-                    <span className="text-[10px] mx-2 text-zinc-500 dark:text-zinc-400">
-                      (edited)
-                    </span>
-                  )}
                 </p>
               )}
               {extractedUrls.map((url) => (
@@ -210,36 +178,16 @@ export const ChatItem = ({
               ))}
             </div>
           )}
-
-          {!fileUrl && isEditing && (
-            <ChatItemEditForm
-              initialContent={content}
-              onSubmit={handleEditSubmit}
-              onCancel={() => setIsEditing(false)}
-            />
-          )}
         </div>
       </div>
-      {canDeleteMessage && (
-        <div className="hidden group-hover:flex items-center gap-x-2 absolute p-1 -top-2 right-5 bg-white dark:bg-zinc-800 border rounded-sm">
-          {canEditMessage && (
-            <ActionTooltip label="Edit">
-              <Edit
-                onClick={() => setIsEditing(true)}
-                className="cursor-pointer ml-auto w-4 h-4 text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition"
-              />
-            </ActionTooltip>
-          )}
-          <ActionTooltip label="Delete">
-            <Trash
-              onClick={() => onOpen("deleteMessage", { 
-                query: { channelId, conversationId, messageId: id },
-              })}
-              className="cursor-pointer ml-auto w-4 h-4 text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition"
-            />
-          </ActionTooltip>
-        </div>
-      )}
+      <div className="hidden group-hover:flex items-center gap-x-2 absolute p-1 -top-2 right-5 bg-white dark:bg-zinc-800 border rounded-sm">
+        <ActionTooltip label="Answer">
+          <Reply
+            className="cursor-pointer ml-auto w-4 h-4 text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition"
+          />
+        </ActionTooltip>
+      </div>
     </div>
   );
 };
+

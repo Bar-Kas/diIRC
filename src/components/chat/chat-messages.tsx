@@ -126,7 +126,6 @@ export const ChatMessages = ({
                   deleted={message.deleted}
                   timestamp={format(new Date(message.createdAt), DATE_FORMAT)}
                   compactTime={format(new Date(message.createdAt), TIME_FORMAT)}
-                  isUpdated={message.updatedAt !== message.createdAt}
                   channelId={paramKey === "channelId" ? paramValue : undefined}
                   conversationId={paramKey === "conversationId" ? paramValue : undefined}
                   compact={isCompact}

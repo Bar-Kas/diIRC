@@ -84,7 +84,6 @@ interface MockState {
 
   // Message Actions
   addMessage: (channelId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean) => Message;
-  editMessage: (channelId: string, messageId: string, content: string) => void;
   deleteMessage: (channelId: string, messageId: string) => void;
 
   // Direct Message Actions
@@ -92,7 +91,6 @@ interface MockState {
   openConversation: (serverId: string, memberId: string) => void;
   closeConversation: (serverId: string, memberId: string) => void;
   addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null) => DirectMessage;
-  editDirectMessage: (conversationId: string, messageId: string, content: string) => void;
   deleteDirectMessage: (conversationId: string, messageId: string) => void;
 }
 
@@ -527,17 +525,6 @@ export const useMockStore = create<MockState>()(
         return newMessage;
       },
 
-      editMessage: (channelId, messageId, content) => {
-        set((state) => ({
-          messages: {
-            ...state.messages,
-            [channelId]: (state.messages[channelId] || []).map((m) =>
-              m.id === messageId ? { ...m, content, updatedAt: new Date().toISOString() } : m
-            ),
-          },
-        }));
-      },
-
       deleteMessage: (channelId, messageId) => {
         set((state) => ({
           messages: {
@@ -611,17 +598,6 @@ export const useMockStore = create<MockState>()(
         });
 
         return newDm;
-      },
-
-      editDirectMessage: (conversationId, messageId, content) => {
-        set((state) => ({
-          directMessages: {
-            ...state.directMessages,
-            [conversationId]: (state.directMessages[conversationId] || []).map((m) =>
-              m.id === messageId ? { ...m, content, updatedAt: new Date().toISOString() } : m
-            ),
-          },
-        }));
       },
 
       deleteDirectMessage: (conversationId, messageId) => {
