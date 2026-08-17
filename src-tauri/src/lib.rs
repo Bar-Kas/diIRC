@@ -237,12 +237,7 @@ async fn send_message(
 ) -> Result<(), String> {
     let senders = state.senders.lock().await;
     if let Some(sender) = senders.get(&server_id) {
-        let formatted_channel = if channel.starts_with('#') {
-            channel
-        } else {
-            format!("#{}", channel)
-        };
-        sender.send_privmsg(&formatted_channel, &message).map_err(|e| e.to_string())?;
+        sender.send_privmsg(&channel, &message).map_err(|e| e.to_string())?;
         Ok(())
     } else {
         Err(format!("Not connected to server {}", server_id))

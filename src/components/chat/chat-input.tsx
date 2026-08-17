@@ -348,6 +348,15 @@ export const ChatInput = ({
           }
         } else if (type === "conversation" && query?.conversationId) {
           addDirectMessage(query.conversationId, currentMember, line);
+          try {
+            await invoke("send_message", { 
+              serverId: activeServer.id,
+              channel: name, 
+              message: line 
+            });
+          } catch (err) {
+            console.error("IRC PM Send error:", err);
+          }
         }
       }
 

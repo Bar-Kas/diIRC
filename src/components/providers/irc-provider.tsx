@@ -111,6 +111,25 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
           
           if (!targetServer) return;
 
+          const isChannelMsg = channel.startsWith("#") || channel.startsWith("&");
+
+          if (!isChannelMsg) {
+            // Private Message (PM)
+            const store = useMockStore.getState();
+            let senderMember = store.addServerMember(targetServer.id, sender);
+
+            const currentMember = targetServer.members.find(
+              (m) => m.profileId === store.currentProfile.id
+            ) || targetServer.members[0];
+
+            if (senderMember && currentMember) {
+              const conversationId = [currentMember.id, senderMember.id].sort().join("-");
+              store.addDirectMessage(conversationId, senderMember, content, null);
+              store.openConversation(targetServer.id, senderMember.id);
+            }
+            return;
+          }
+
           const cleanName = channel.replace(/^#/, "").toLowerCase();
           const targetChannel = targetServer.channels.find(
             (c) => c.name.toLowerCase() === cleanName

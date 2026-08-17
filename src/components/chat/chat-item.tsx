@@ -54,16 +54,39 @@ export const ChatItem = ({
   const params = useParams();
   const navigate = useNavigate();
 
+  const openConversation = useMockStore((state) => state.openConversation);
   const editMessage = useMockStore((state) => state.editMessage);
   const editDirectMessage = useMockStore((state) => state.editDirectMessage);
   const compactMode = useMockStore((state) => state.compactMode);
   const enableLinkPreviews = useMockStore((state) => state.enableLinkPreviews);
 
-  const onMemberClick = () => {
-    if (member.id === currentMember.id) {
+  const onMemberClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    const activeServers = useMockStore.getState().servers;
+    const serverId = params?.serverId || activeServers[0]?.id;
+    if (!serverId) return;
+
+    if (currentMember.id === member.id || currentMember.profile.name.toLowerCase() === member.profile.name.toLowerCase()) {
       return;
     }
-    navigate(`/servers/${params?.serverId}/conversations/${member.id}`);
+
+    const server = activeServers.find((s) => s.id === serverId) || activeServers[0];
+    if (!server) return;
+
+    let targetMember = server.members.find(
+      (m) => m.id === member.id || m.profile.name.toLowerCase() === member.profile.name.toLowerCase()
+    );
+
+    if (!targetMember) {
+      targetMember = useMockStore.getState().addServerMember(server.id, member.profile.name);
+    }
+
+    if (!targetMember) return;
+
+    useMockStore.getState().openConversation(server.id, targetMember.id);
+    navigate(`/servers/${server.id}/conversations/${targetMember.id}`);
   };
 
   const handleEditSubmit = async (values: { content: string }) => {

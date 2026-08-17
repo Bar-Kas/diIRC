@@ -79,7 +79,7 @@ interface MockState {
 
   // Member Actions
   removeMember: (serverId: string, memberId: string) => void;
-  addServerMember: (serverId: string, name: string) => void;
+  addServerMember: (serverId: string, name: string) => Member | undefined;
   removeServerMember: (serverId: string, name: string) => void;
 
   // Message Actions
@@ -88,6 +88,9 @@ interface MockState {
   deleteMessage: (channelId: string, messageId: string) => void;
 
   // Direct Message Actions
+  activeConversations: Record<string, string[]>;
+  openConversation: (serverId: string, memberId: string) => void;
+  closeConversation: (serverId: string, memberId: string) => void;
   addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null) => DirectMessage;
   editDirectMessage: (conversationId: string, messageId: string, content: string) => void;
   deleteDirectMessage: (conversationId: string, messageId: string) => void;
@@ -100,6 +103,7 @@ export const useMockStore = create<MockState>()(
       servers: INITIAL_SERVERS,
       messages: INITIAL_MESSAGES,
       directMessages: INITIAL_DIRECT_MESSAGES,
+      activeConversations: {},
       compactMode: false,
       enableLinkPreviews: true,
       enableWebPagePreviews: true,
@@ -408,28 +412,36 @@ export const useMockStore = create<MockState>()(
       },
 
       addServerMember: (serverId, name) => {
+        let resultMember: Member | undefined;
         set((state) => {
           const s = state.servers.find(s => s.id === serverId);
           if (!s) return state;
 
-          const exists = s.members.find(m => m.profile.name === name);
-          if (exists) return state;
+          const exists = s.members.find(m => m.profile.name.toLowerCase() === name.toLowerCase());
+          if (exists) {
+            resultMember = exists;
+            return state;
+          }
 
           const currentProfile = state.currentProfile;
           const isOurNick = s.nicknames?.includes(name) || name === currentProfile.name;
           if (isOurNick) {
+            let updatedSelf: Member | undefined;
             const updatedMembers = s.members.map((m) => {
               if (m.profileId === currentProfile.id || m.id.startsWith("member-")) {
-                return {
+                const updated = {
                   ...m,
                   profile: {
                     ...m.profile,
                     name,
                   },
                 };
+                if (!updatedSelf) updatedSelf = updated;
+                return updated;
               }
               return m;
             });
+            resultMember = updatedSelf;
             return {
               servers: state.servers.map((serv) =>
                 serv.id === serverId
@@ -456,6 +468,8 @@ export const useMockStore = create<MockState>()(
             updatedAt: new Date().toISOString(),
           };
 
+          resultMember = mockMember;
+
           return {
             servers: state.servers.map((serv) =>
               serv.id === serverId
@@ -464,6 +478,7 @@ export const useMockStore = create<MockState>()(
             ),
           };
         });
+        return resultMember;
       },
 
       removeServerMember: (serverId, name) => {
@@ -534,6 +549,31 @@ export const useMockStore = create<MockState>()(
         }));
       },
 
+      openConversation: (serverId, memberId) => {
+        set((state) => {
+          const current = state.activeConversations[serverId] || [];
+          if (current.includes(memberId)) return state;
+          return {
+            activeConversations: {
+              ...state.activeConversations,
+              [serverId]: [...current, memberId],
+            },
+          };
+        });
+      },
+
+      closeConversation: (serverId, memberId) => {
+        set((state) => {
+          const current = state.activeConversations[serverId] || [];
+          return {
+            activeConversations: {
+              ...state.activeConversations,
+              [serverId]: current.filter((id) => id !== memberId),
+            },
+          };
+        });
+      },
+
       addDirectMessage: (conversationId, member, content, fileUrl) => {
         const newDm: DirectMessage = {
           id: `dm-${uuidv4().slice(0, 8)}`,
@@ -547,12 +587,28 @@ export const useMockStore = create<MockState>()(
           updatedAt: new Date().toISOString(),
         };
 
-        set((state) => ({
-          directMessages: {
-            ...state.directMessages,
-            [conversationId]: [...(state.directMessages[conversationId] || []), newDm],
-          },
-        }));
+        set((state) => {
+          const serverId = member.serverId;
+          const currentConvs = serverId ? state.activeConversations[serverId] || [] : [];
+          const updatedConvs = serverId && !currentConvs.includes(member.id)
+            ? [...currentConvs, member.id]
+            : currentConvs;
+
+          return {
+            directMessages: {
+              ...state.directMessages,
+              [conversationId]: [...(state.directMessages[conversationId] || []), newDm],
+            },
+            ...(serverId
+              ? {
+                  activeConversations: {
+                    ...state.activeConversations,
+                    [serverId]: updatedConvs,
+                  },
+                }
+              : {}),
+          };
+        });
 
         return newDm;
       },
