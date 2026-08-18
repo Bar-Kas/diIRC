@@ -56,6 +56,8 @@ export const ChatInput = ({
   const servers = useMockStore((state) => state.servers);
   const currentProfile = useMockStore((state) => state.currentProfile);
   const uploadConfig = useMockStore((state) => state.uploadConfig);
+  const ircConnectedServers = useMockStore((state) => state.ircConnectedServers);
+  const { onOpen } = useModal();
 
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -322,6 +324,12 @@ export const ChatInput = ({
       const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : servers[0];
       if (!activeServer) return;
 
+      const isConnected = !!ircConnectedServers[activeServer.id];
+      if (!isConnected) {
+        onOpen("ircError");
+        return;
+      }
+
       let currentMember = activeServer.members.find((m) => m.profileId === currentProfile.id) || activeServer.members[0];
       const primaryNick = activeServer.nicknames?.[0];
       if (primaryNick && currentMember) {
@@ -336,26 +344,32 @@ export const ChatInput = ({
 
       for (const line of linesToSend) {
         if (type === "channel" && query?.channelId) {
-          addMessage(query.channelId, currentMember, line);
           try {
             await invoke("send_message", { 
               serverId: activeServer.id,
               channel: name.startsWith("#") ? name : `#${name}`, 
               message: line 
             });
+            addMessage(query.channelId, currentMember, line);
           } catch (err) {
             console.error("IRC Send error:", err);
+            onOpen("ircError");
+            form.setValue("content", textContent);
+            return;
           }
         } else if (type === "conversation" && query?.conversationId) {
-          addDirectMessage(query.conversationId, currentMember, line);
           try {
             await invoke("send_message", { 
               serverId: activeServer.id,
               channel: name, 
               message: line 
             });
+            addDirectMessage(query.conversationId, currentMember, line);
           } catch (err) {
             console.error("IRC PM Send error:", err);
+            onOpen("ircError");
+            form.setValue("content", textContent);
+            return;
           }
         }
       }

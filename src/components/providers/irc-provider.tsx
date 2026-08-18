@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useMockStore } from "@/lib/mock-store";
+import { Server } from "@/types";
 
 interface IrcMessagePayload {
   serverId: string;
@@ -25,7 +26,41 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   const addServerMember = useMockStore((state) => state.addServerMember);
   const removeServerMember = useMockStore((state) => state.removeServerMember);
   const updateChannelMembers = useMockStore((state) => state.updateChannelMembers);
+  const setIrcConnected = useMockStore((state) => state.setIrcConnected);
   const connectedConfigsRef = useRef<Map<string, string>>(new Map());
+  const connectingRef = useRef<Set<string>>(new Set());
+
+  const attemptConnect = useCallback(async (server: Server) => {
+    if (connectingRef.current.has(server.id)) return;
+    connectingRef.current.add(server.id);
+
+    const nicks = server.nicknames && server.nicknames.length > 0 
+      ? server.nicknames 
+      : [server.nicknames?.[0] || currentProfile.name.replace(/\s+/g, "") || "ReactUser"];
+    const channels = server.channels.map((c) => c.name);
+
+    try {
+      await invoke("connect_irc", {
+        params: {
+          serverId: server.id,
+          host: server.host || "127.0.0.1",
+          port: server.port || 6667,
+          nicknames: nicks,
+          realname: server.realname || "",
+          password: server.password || "",
+          channels: channels.length > 0 ? channels : ["test", "general"],
+          useTls: server.useTls || false,
+        }
+      });
+      setIrcConnected(server.id, true);
+      console.log(`Connected IRC server ${server.name} (${server.id}) with nicks:`, nicks);
+    } catch (error) {
+      console.error(`Failed to connect IRC for server ${server.name}:`, error);
+      setIrcConnected(server.id, false);
+    } finally {
+      connectingRef.current.delete(server.id);
+    }
+  }, [currentProfile.name, setIrcConnected]);
 
   // Connect / Reconnect servers to IRC when server configs or list change
   useEffect(() => {
@@ -35,6 +70,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     connectedConfigsRef.current.forEach(async (_, serverId) => {
       if (!currentServerIds.has(serverId)) {
         connectedConfigsRef.current.delete(serverId);
+        setIrcConnected(serverId, false);
         try {
           await invoke("disconnect_irc", { serverId });
         } catch (e) {
@@ -66,36 +102,34 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
       // Update stored hash
       connectedConfigsRef.current.set(server.id, configHash);
 
-      try {
-        if (prevHash) {
-          console.log(`Config changed for IRC server ${server.name} (${server.id}), reconnecting with new nickname...`);
-          try {
-            await invoke("disconnect_irc", { serverId: server.id });
-          } catch (e) {
-            console.error(`Failed to disconnect before reconnecting:`, e);
-          }
-          await new Promise((res) => setTimeout(res, 400));
+      if (prevHash) {
+        console.log(`Config changed for IRC server ${server.name} (${server.id}), reconnecting...`);
+        try {
+          await invoke("disconnect_irc", { serverId: server.id });
+        } catch (e) {
+          console.error(`Failed to disconnect before reconnecting:`, e);
         }
-
-        await invoke("connect_irc", {
-          params: {
-            serverId: server.id,
-            host: server.host || "127.0.0.1",
-            port: server.port || 6667,
-            nicknames: nicks,
-            realname: server.realname || "",
-            password: server.password || "",
-            channels: channels.length > 0 ? channels : ["test", "general"],
-            useTls: server.useTls || false,
-          }
-        });
-        console.log(`Connected IRC server ${server.name} (${server.id}) with nicks:`, nicks);
-      } catch (error) {
-        console.error(`Failed to connect IRC for server ${server.name}:`, error);
-        connectedConfigsRef.current.delete(server.id);
+        await new Promise((res) => setTimeout(res, 400));
       }
+
+      await attemptConnect(server);
     });
-  }, [servers, currentProfile.name]);
+  }, [servers, attemptConnect, setIrcConnected]);
+
+  // Auto-reconnect loop every 5 seconds for disconnected servers
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const { ircConnectedServers, servers: currentServers } = useMockStore.getState();
+      currentServers.forEach((server) => {
+        if (!ircConnectedServers[server.id] && !connectingRef.current.has(server.id)) {
+          console.log(`Auto-reconnecting to IRC server ${server.name}...`);
+          attemptConnect(server);
+        }
+      });
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [attemptConnect]);
 
   // Listen for incoming messages across all connected IRC servers
   useEffect(() => {
@@ -192,6 +226,32 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
     setupUsersListener();
 
+    let unlistenStatusFn: (() => void) | null = null;
+    const setupStatusListener = async () => {
+      try {
+        const unlistenStatus = await listen<{ server_id: string; connected: boolean }>(
+          "irc_status",
+          (event) => {
+            const { server_id, connected } = event.payload;
+            setIrcConnected(server_id, connected);
+            if (!connected) {
+              connectedConfigsRef.current.delete(server_id);
+            }
+          }
+        );
+
+        if (isCancelled) {
+          unlistenStatus();
+        } else {
+          unlistenStatusFn = unlistenStatus;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC status listener:", error);
+      }
+    };
+
+    setupStatusListener();
+
     return () => {
       isCancelled = true;
       if (unlistenFn) {
@@ -200,8 +260,11 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
       if (unlistenUsersFn) {
         unlistenUsersFn();
       }
+      if (unlistenStatusFn) {
+        unlistenStatusFn();
+      }
     };
-  }, [addMessage, addServerMember, removeServerMember]);
+  }, [addMessage, addServerMember, removeServerMember, setIrcConnected]);
 
   return <>{children}</>;
 };

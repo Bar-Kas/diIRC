@@ -2,6 +2,7 @@ import { Channel, Member, Server } from "@/types";
 import { UserAvatar } from "@/components/user-avatar";
 import { useNavigate } from "react-router-dom";
 import { useMockStore } from "@/lib/mock-store";
+import { cn } from "@/lib/utils";
 
 interface ChatMembersSidebarProps {
   server: Server;
@@ -16,6 +17,9 @@ export const ChatMembersSidebar = ({
   const openConversation = useMockStore((state) => state.openConversation);
   const currentProfile = useMockStore((state) => state.currentProfile);
   const channelMembersMap = useMockStore((state) => state.channelMembers);
+  const ircConnectedServers = useMockStore((state) => state.ircConnectedServers);
+
+  const isConnected = !!ircConnectedServers[server.id];
 
   // Nasz nick pochodzi zawsze z ustawień serwera (server.nicknames[0])
   // i tworzymy syntetyczny wpis na podstawie currentProfile + nicku IRC
@@ -97,11 +101,11 @@ export const ChatMembersSidebar = ({
         <h3 className="uppercase text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2 px-2">
           Users — {totalCount}
         </h3>
-        <div className="space-y-[2px]">
+        <div className={cn("space-y-[2px] transition-all duration-300", !isConnected && "grayscale opacity-60 pointer-events-none")}>
           {selfMember && (
             <>
-              <div key={selfMember.id}>{renderMember(selfMember, true)}</div>
-              <div className="my-1.5 border-b border-zinc-200 dark:border-zinc-700/60" />
+              <div key={selfMember.id} className="pointer-events-auto">{renderMember(selfMember, true)}</div>
+              <div className="my-1.5 border-b border-zinc-200 dark:border-zinc-700/60 pointer-events-none" />
             </>
           )}
           {otherMembers.map((member) => (

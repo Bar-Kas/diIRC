@@ -55,6 +55,10 @@ interface MockState {
   linkPreviewApiUrl: string;
   uploadConfig: ImageUploadConfig;
   urlAuthRules: UrlAuthRule[];
+  ircConnectedServers: Record<string, boolean>;
+
+  // Connection Actions
+  setIrcConnected: (serverId: string, isConnected: boolean) => void;
 
   // Settings Actions
   setCompactMode: (enabled: boolean) => void;
@@ -113,6 +117,15 @@ export const useMockStore = create<MockState>()(
         litterboxTime: "24h",
       },
       urlAuthRules: [],
+      ircConnectedServers: {},
+
+      setIrcConnected: (serverId: string, isConnected: boolean) =>
+        set((state) => ({
+          ircConnectedServers: {
+            ...state.ircConnectedServers,
+            [serverId]: isConnected,
+          },
+        })),
 
       setCompactMode: (enabled: boolean) => set({ compactMode: enabled }),
       setEnableLinkPreviews: (enabled: boolean) => set({ enableLinkPreviews: enabled }),

@@ -11,7 +11,8 @@ export type ModalType =
   | "deleteServer" 
   | "deleteChannel" 
   | "settings"
-  | "imagePreview";
+  | "imagePreview"
+  | "ircError";
 
 interface ModalData {
   server?: Server;

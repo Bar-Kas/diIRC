@@ -10,6 +10,7 @@ import { DeleteServerModal } from "@/components/modals/delete-server-modal";
 import { DeleteChannelModal } from "@/components/modals/delete-channel-modal";
 import { SettingsModal } from "@/components/modals/settings-modal";
 import { ImagePreviewModal } from "@/components/modals/image-preview-modal";
+import { IrcErrorModal } from "@/components/modals/irc-error-modal";
 
 export const ModalProvider = () => {
   const [isMounted, setIsMounted] = useState(false);
@@ -34,6 +35,7 @@ export const ModalProvider = () => {
       <DeleteChannelModal />
       <SettingsModal />
       <ImagePreviewModal />
+      <IrcErrorModal />
     </>
   );
 };

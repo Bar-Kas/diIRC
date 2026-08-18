@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use futures::prelude::*;
 use irc::client::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -22,6 +23,12 @@ struct IrcUserEvent {
     event_type: String,
 }
 
+#[derive(Serialize, Clone)]
+struct IrcStatusEvent {
+    server_id: String,
+    connected: bool,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IrcConnectParams {
@@ -40,7 +47,7 @@ struct IrcConnectParams {
 }
 
 struct IrcState {
-    senders: Mutex<HashMap<String, Sender>>,
+    senders: Arc<Mutex<HashMap<String, Sender>>>,
 }
 
 #[tauri::command]
@@ -54,6 +61,10 @@ async fn connect_irc(
     {
         let senders = state.senders.lock().await;
         if senders.contains_key(&server_id) {
+            let _ = app.emit("irc_status", IrcStatusEvent {
+                server_id: server_id.clone(),
+                connected: true,
+            });
             return Ok(());
         }
     }
@@ -81,24 +92,51 @@ async fn connect_irc(
         port: Some(params.port),
         channels: formatted_channels,
         use_tls: Some(params.use_tls),
+        ping_time: Some(15),
+        ping_timeout: Some(10),
         ..Config::default()
     };
     
     log::info!("Connecting to IRC with nick: {:?}, alt_nicks: {:?}, user: {:?}, realname: {:?}", config.nickname, config.alt_nicks, config.username, config.realname);
 
-    let mut client = Client::from_config(config).await.map_err(|e| e.to_string())?;
-    client.identify().map_err(|e| e.to_string())?;
+    let mut client = Client::from_config(config).await.map_err(|e| {
+        let _ = app.emit("irc_status", IrcStatusEvent {
+            server_id: server_id.clone(),
+            connected: false,
+        });
+        e.to_string()
+    })?;
+
+    client.identify().map_err(|e| {
+        let _ = app.emit("irc_status", IrcStatusEvent {
+            server_id: server_id.clone(),
+            connected: false,
+        });
+        e.to_string()
+    })?;
 
     let sender = client.sender();
     state.senders.lock().await.insert(server_id.clone(), sender);
 
+    let _ = app.emit("irc_status", IrcStatusEvent {
+        server_id: server_id.clone(),
+        connected: true,
+    });
+
     let stream_server_id = server_id.clone();
+    let senders_clone = state.senders.clone();
+    let app_clone = app.clone();
 
     tauri::async_runtime::spawn(async move {
         let mut stream = match client.stream() {
             Ok(s) => s,
             Err(e) => {
                 log::error!("Failed to open stream for server {}: {}", stream_server_id, e);
+                senders_clone.lock().await.remove(&stream_server_id);
+                let _ = app_clone.emit("irc_status", IrcStatusEvent {
+                    server_id: stream_server_id,
+                    connected: false,
+                });
                 return;
             }
         };
@@ -121,15 +159,15 @@ async fn connect_irc(
                                     channel: channel.clone(),
                                     is_system: false,
                                 };
-                                let _ = app.emit("irc_message", payload);
+                                let _ = app_clone.emit("irc_message", payload);
 
                                 let payload_users = IrcUserEvent {
                                     server_id: stream_server_id.clone(),
                                     channel: channel.clone(),
                                     users: vec![sender_name],
-                                    event_type: "JOIN".to_string(), // Treat speaking as joined
+                                    event_type: "JOIN".to_string(),
                                 };
-                                let _ = app.emit("irc_user_event", payload_users);
+                                let _ = app_clone.emit("irc_user_event", payload_users);
                             }
                         }
                         Command::JOIN(channel, _, _) => {
@@ -151,7 +189,7 @@ async fn connect_irc(
                                     channel: channel.clone(),
                                     is_system: true,
                                 };
-                                let _ = app.emit("irc_message", payload);
+                                let _ = app_clone.emit("irc_message", payload);
 
                                 let payload_users = IrcUserEvent {
                                     server_id: stream_server_id.clone(),
@@ -159,7 +197,7 @@ async fn connect_irc(
                                     users: vec![sender_name],
                                     event_type: "JOIN".to_string(),
                                 };
-                                let _ = app.emit("irc_user_event", payload_users);
+                                let _ = app_clone.emit("irc_user_event", payload_users);
                             }
                         }
                         Command::PART(channel, _) => {
@@ -174,7 +212,7 @@ async fn connect_irc(
                                     users: vec![sender_name],
                                     event_type: "PART".to_string(),
                                 };
-                                let _ = app.emit("irc_user_event", payload_users);
+                                let _ = app_clone.emit("irc_user_event", payload_users);
                             }
                         }
                         Command::QUIT(_) => {
@@ -189,7 +227,7 @@ async fn connect_irc(
                                     users: vec![sender_name],
                                     event_type: "QUIT".to_string(),
                                 };
-                                let _ = app.emit("irc_user_event", payload_users);
+                                let _ = app_clone.emit("irc_user_event", payload_users);
                             }
                         }
                         Command::Response(Response::RPL_NAMREPLY, ref args) => {
@@ -206,7 +244,7 @@ async fn connect_irc(
                                     users,
                                     event_type: "NAMES".to_string(),
                                 };
-                                let _ = app.emit("irc_user_event", payload);
+                                let _ = app_clone.emit("irc_user_event", payload);
                             }
                         }
                         _ => {}
@@ -219,6 +257,11 @@ async fn connect_irc(
         }
 
         log::warn!("IRC [{}] Stream closed!", stream_server_id);
+        senders_clone.lock().await.remove(&stream_server_id);
+        let _ = app_clone.emit("irc_status", IrcStatusEvent {
+            server_id: stream_server_id,
+            connected: false,
+        });
 
         // Keep client alive in task scope
         let _ = client;
@@ -230,6 +273,7 @@ async fn connect_irc(
 
 #[tauri::command]
 async fn send_message(
+    app: AppHandle,
     state: State<'_, IrcState>,
     server_id: String,
     channel: String,
@@ -237,7 +281,15 @@ async fn send_message(
 ) -> Result<(), String> {
     let senders = state.senders.lock().await;
     if let Some(sender) = senders.get(&server_id) {
-        sender.send_privmsg(&channel, &message).map_err(|e| e.to_string())?;
+        if let Err(e) = sender.send_privmsg(&channel, &message) {
+            drop(senders);
+            state.senders.lock().await.remove(&server_id);
+            let _ = app.emit("irc_status", IrcStatusEvent {
+                server_id: server_id.clone(),
+                connected: false,
+            });
+            return Err(e.to_string());
+        }
         Ok(())
     } else {
         Err(format!("Not connected to server {}", server_id))
@@ -246,6 +298,7 @@ async fn send_message(
 
 #[tauri::command]
 async fn join_channel(
+    app: AppHandle,
     state: State<'_, IrcState>,
     server_id: String,
     channel: String,
@@ -259,10 +312,16 @@ async fn join_channel(
             format!("#{}", channel)
         };
         log::info!("Sending JOIN {}", formatted_channel);
-        sender.send_join(&formatted_channel).map_err(|e| {
+        if let Err(e) = sender.send_join(&formatted_channel) {
             log::error!("Error sending JOIN: {}", e);
-            e.to_string()
-        })?;
+            drop(senders);
+            state.senders.lock().await.remove(&server_id);
+            let _ = app.emit("irc_status", IrcStatusEvent {
+                server_id: server_id.clone(),
+                connected: false,
+            });
+            return Err(e.to_string());
+        }
         Ok(())
     } else {
         log::error!("Not connected to server {}", server_id);
@@ -272,6 +331,7 @@ async fn join_channel(
 
 #[tauri::command]
 async fn disconnect_irc(
+    app: AppHandle,
     state: State<'_, IrcState>,
     server_id: String,
 ) -> Result<(), String> {
@@ -279,6 +339,10 @@ async fn disconnect_irc(
     if let Some(sender) = senders.remove(&server_id) {
         let _ = sender.send_quit("Client disconnected");
     }
+    let _ = app.emit("irc_status", IrcStatusEvent {
+        server_id: server_id.clone(),
+        connected: false,
+    });
     Ok(())
 }
 
@@ -286,7 +350,7 @@ async fn disconnect_irc(
 pub fn run() {
     tauri::Builder::default()
         .manage(IrcState {
-            senders: Mutex::new(HashMap::new()),
+            senders: Arc::new(Mutex::new(HashMap::new())),
         })
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_fs::init())

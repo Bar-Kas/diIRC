@@ -6,6 +6,8 @@ import { ActionTooltip } from "@/components/action-tooltip";
 import { useUIStore } from "@/hooks/use-ui-store";
 import { cn } from "@/lib/utils";
 
+import { ConnectionStatus } from "@/components/connection-status";
+
 interface ChatHeaderProps {
   serverId: string;
   name: string;
@@ -76,7 +78,9 @@ export const ChatHeader = ({
         {name}
       </p>
 
-      <div className="ml-auto flex items-center gap-x-2">
+      <div className="ml-auto flex items-center gap-x-3">
+        <ConnectionStatus />
+
         <ActionTooltip 
           side="bottom" 
           label={showMembersSidebar ? "Hide user list" : "Show user list"}
