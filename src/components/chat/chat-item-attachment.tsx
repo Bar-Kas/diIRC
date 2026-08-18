@@ -1,9 +1,15 @@
+import { useEffect, useState } from "react";
 import { FileIcon, ExternalLink } from "lucide-react";
 import { useModal } from "@/hooks/use-modal-store";
 import { ImageContextMenu } from "@/components/image-context-menu";
 import { openExternalUrl, getFilenameFromUrl } from "@/lib/system-utils";
 import { SmartImage } from "@/components/chat/smart-image";
-import { isImageUrl, isVideoUrl } from "@/lib/image-utils";
+import { 
+  isImageUrl, 
+  isVideoUrl, 
+  checkIsMediaUrlAsync, 
+  subscribeImageCache 
+} from "@/lib/image-utils";
 
 interface ChatItemAttachmentProps {
   fileUrl: string;
@@ -12,6 +18,20 @@ interface ChatItemAttachmentProps {
 
 export const ChatItemAttachment = ({ fileUrl, content }: ChatItemAttachmentProps) => {
   const { onOpen } = useModal();
+  const [, setCacheTick] = useState(0);
+
+  useEffect(() => {
+    const unsubscribe = subscribeImageCache(() => {
+      setCacheTick((prev) => prev + 1);
+    });
+    
+    if (!isImageUrl(fileUrl) && !isVideoUrl(fileUrl)) {
+      checkIsMediaUrlAsync(fileUrl);
+    }
+
+    return unsubscribe;
+  }, [fileUrl]);
+
   const isImage = isImageUrl(fileUrl);
   const isVideo = isVideoUrl(fileUrl);
 
@@ -41,6 +61,7 @@ export const ChatItemAttachment = ({ fileUrl, content }: ChatItemAttachmentProps
         <video
           src={fileUrl}
           controls
+          playsInline
           className="max-h-[320px] w-full rounded-lg"
           preload="metadata"
         />
@@ -50,7 +71,8 @@ export const ChatItemAttachment = ({ fileUrl, content }: ChatItemAttachmentProps
 
   // Generic File Attachment (PDF, ZIP, DOCX, TXT, etc.)
   const filename = getFilenameFromUrl(fileUrl, "Attachment");
-  const ext = filename.split(".").pop()?.toUpperCase() || "FILE";
+  const parts = filename.split(".");
+  const ext = parts.length > 1 ? parts.pop()?.toUpperCase() : "FILE";
 
   return (
     <div className="relative flex items-center gap-x-3 p-3 mt-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 max-w-sm group">
