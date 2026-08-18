@@ -120,7 +120,9 @@ export const ChatItem = ({
       <div className="relative group flex items-center hover:bg-black/5 px-4 py-1 transition w-full">
         <div className="w-10 flex justify-center shrink-0">
           <ActionTooltip label={timestamp}>
-            <span className="text-zinc-500 font-bold">→</span>
+            <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-mono select-none">
+              {compactTime}
+            </span>
           </ActionTooltip>
         </div>
         <p className="text-sm text-zinc-500 italic ml-2">
