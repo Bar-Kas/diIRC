@@ -81,6 +81,8 @@ interface MockState {
   removeMember: (serverId: string, memberId: string) => void;
   addServerMember: (serverId: string, name: string) => Member | undefined;
   removeServerMember: (serverId: string, name: string) => void;
+  channelMembers: Record<string, string[]>;
+  updateChannelMembers: (serverId: string, channelName: string, users: string[], eventType: "NAMES" | "JOIN" | "PART" | "QUIT") => void;
 
   // Message Actions
   addMessage: (channelId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean) => Message;
@@ -487,6 +489,59 @@ export const useMockStore = create<MockState>()(
               : s
           ),
         }));
+      },
+
+      channelMembers: {},
+
+      updateChannelMembers: (serverId, channelName, users, eventType) => {
+        // Ensure all users exist as server members
+        users.forEach((u) => {
+          if (u && u.trim()) {
+            get().addServerMember(serverId, u.trim());
+          }
+        });
+
+        const cleanChan = channelName ? channelName.trim().replace(/^#/, "").toLowerCase() : "";
+
+        set((state) => {
+          const targetServer = state.servers.find((s) => s.id === serverId);
+          if (!targetServer) return state;
+
+          const updatedChannelMembers = { ...state.channelMembers };
+
+          if (cleanChan) {
+            const targetChannel = targetServer.channels.find(
+              (c) => c.name.toLowerCase().replace(/^#/, "") === cleanChan
+            );
+
+            if (targetChannel) {
+              const chId = targetChannel.id;
+              const currentUsers = updatedChannelMembers[chId] || [];
+
+              if (eventType === "NAMES") {
+                updatedChannelMembers[chId] = Array.from(new Set(users));
+              } else if (eventType === "JOIN") {
+                updatedChannelMembers[chId] = Array.from(new Set([...currentUsers, ...users]));
+              } else if (eventType === "PART") {
+                const toRemove = new Set(users.map((u) => u.toLowerCase()));
+                updatedChannelMembers[chId] = currentUsers.filter((u) => !toRemove.has(u.toLowerCase()));
+              }
+            }
+          }
+
+          if (eventType === "QUIT") {
+            const toRemove = new Set(users.map((u) => u.toLowerCase()));
+            targetServer.channels.forEach((c) => {
+              if (updatedChannelMembers[c.id]) {
+                updatedChannelMembers[c.id] = updatedChannelMembers[c.id].filter(
+                  (u) => !toRemove.has(u.toLowerCase())
+                );
+              }
+            });
+          }
+
+          return { channelMembers: updatedChannelMembers };
+        });
       },
 
       addMessage: (channelId, member, content, fileUrl, isSystem) => {

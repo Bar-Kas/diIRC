@@ -57,7 +57,7 @@ export const ChannelPage = () => {
             }}
           />
         </div>
-        {showMembersSidebar && <ChatMembersSidebar server={server} />}
+        {showMembersSidebar && <ChatMembersSidebar server={server} channel={channel} />}
       </div>
     </div>
   );

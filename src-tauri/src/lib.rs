@@ -118,14 +118,14 @@ async fn connect_irc(
                                     server_id: stream_server_id.clone(),
                                     sender: sender_name.clone(),
                                     content,
-                                    channel,
+                                    channel: channel.clone(),
                                     is_system: false,
                                 };
                                 let _ = app.emit("irc_message", payload);
 
                                 let payload_users = IrcUserEvent {
                                     server_id: stream_server_id.clone(),
-                                    channel: "".to_string(),
+                                    channel: channel.clone(),
                                     users: vec![sender_name],
                                     event_type: "JOIN".to_string(), // Treat speaking as joined
                                 };

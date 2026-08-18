@@ -24,6 +24,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   const servers = useMockStore((state) => state.servers);
   const addServerMember = useMockStore((state) => state.addServerMember);
   const removeServerMember = useMockStore((state) => state.removeServerMember);
+  const updateChannelMembers = useMockStore((state) => state.updateChannelMembers);
   const connectedConfigsRef = useRef<Map<string, string>>(new Map());
 
   // Connect / Reconnect servers to IRC when server configs or list change
@@ -175,13 +176,8 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     const setupUsersListener = async () => {
       try {
         const unlistenUsers = await listen<IrcUserEventPayload>("irc_user_event", (event) => {
-          const { server_id, users, event_type } = event.payload;
-
-          if (event_type === "NAMES" || event_type === "JOIN") {
-            users.forEach(u => addServerMember(server_id, u));
-          } else if (event_type === "PART" || event_type === "QUIT") {
-            users.forEach(u => removeServerMember(server_id, u));
-          }
+          const { server_id, channel, users, event_type } = event.payload;
+          updateChannelMembers(server_id, channel, users, event_type as any);
         });
 
         if (isCancelled) {
