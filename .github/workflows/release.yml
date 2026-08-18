@@ -44,8 +44,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__
-          releaseName: 'diIRC v__VERSION__'
+          tagName: ${{ github.ref_name }}
+          releaseName: 'diIRC ${{ github.ref_name }}'
           releaseBody: 'See the assets to download the release for your platform.'
           releaseDraft: true
           prerelease: false
