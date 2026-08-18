@@ -1,11 +1,12 @@
-import { Fragment, useRef, ElementRef } from "react";
+import { useEffect, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { format } from "date-fns";
-import { Member, Message, Profile } from "@/types";
+import { Member, Message } from "@/types";
 import { Loader2, ServerCrash } from "lucide-react";
 
 import { useChatQuery } from "@/hooks/use-chat-query";
 import { useChatSocket } from "@/hooks/use-chat-socket";
-import { useChatScroll } from "@/hooks/use-chat-scroll";
+import { useMockStore } from "@/lib/mock-store";
 
 import { ChatWelcome } from "./chat-welcome";
 import { ChatItem } from "./chat-item";
@@ -17,6 +18,7 @@ interface ChatMessagesProps {
   name: string;
   member: Member;
   chatId: string;
+  serverId: string;
   paramKey: "channelId" | "conversationId";
   paramValue: string;
   type: "channel" | "conversation";
@@ -26,6 +28,7 @@ export const ChatMessages = ({
   name,
   member,
   chatId,
+  serverId,
   paramKey,
   paramValue,
   type,
@@ -33,15 +36,19 @@ export const ChatMessages = ({
   const queryKey = `chat:${chatId}`;
   const addKey = `chat:${chatId}:messages`;
   const updateKey = `chat:${chatId}:messages:update`;
-
-  const chatRef = useRef<ElementRef<"div">>(null);
-  const bottomRef = useRef<ElementRef<"div">>(null);
+  const chatRef = useRef<HTMLDivElement>(null);
+  const rowElementsRef = useRef(new Map<string, HTMLDivElement>());
+  const shouldStickToBottomRef = useRef(true);
+  const hasInitializedRef = useRef(false);
+  const isLoadingOlderRef = useRef(false);
+  const prependScrollRef = useRef<{ height: number; top: number } | null>(null);
+  const layoutFrameRef = useRef<number | null>(null);
+  const loadChatHistory = useMockStore((state) => state.loadChatHistory);
+  const loadOlderHistory = useMockStore((state) => state.loadOlderHistory);
+  const historyHasMore = useMockStore((state) => state.historyHasMore);
 
   const {
     data,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
     status,
   } = useChatQuery({
     queryKey,
@@ -49,22 +56,148 @@ export const ChatMessages = ({
     paramValue,
   });
   useChatSocket({ queryKey, addKey, updateKey });
-  useChatScroll({
-    chatRef,
-    bottomRef,
-    loadMore: fetchNextPage,
-    shouldLoadMore: !isFetchingNextPage && !!hasNextPage,
-    count: data?.pages?.reduce((acc, page) => acc + (page.items?.length || 0), 0) ?? 0,
-    chatId,
+
+  const items = data?.pages.flatMap((page) => page.items as Message[]) || [];
+  const historyTarget = type === "channel" && !name.startsWith("#") ? `#${name}` : name;
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => chatRef.current,
+    getItemKey: (index) => items[index]?.id ?? index,
+    estimateSize: () => 72,
+    overscan: 8,
+    useAnimationFrameWithResizeObserver: true,
   });
+
+  useEffect(() => {
+    hasInitializedRef.current = false;
+    shouldStickToBottomRef.current = true;
+    isLoadingOlderRef.current = false;
+    prependScrollRef.current = null;
+    void loadChatHistory(
+      type,
+      chatId,
+      serverId,
+      historyTarget,
+    );
+  }, [chatId, historyTarget, loadChatHistory, serverId, type]);
+
+  const handleChatScroll = () => {
+    const element = chatRef.current;
+    if (!element) return;
+
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    shouldStickToBottomRef.current = distanceFromBottom <= 100;
+
+    if (
+      element.scrollTop > 24
+      || !historyHasMore
+      || isLoadingOlderRef.current
+      || items.length === 0
+    ) {
+      return;
+    }
+
+    isLoadingOlderRef.current = true;
+    prependScrollRef.current = {
+      height: element.scrollHeight,
+      top: element.scrollTop,
+    };
+
+    void loadOlderHistory(type, chatId, serverId, historyTarget).then((loaded) => {
+      if (!loaded) {
+        prependScrollRef.current = null;
+        isLoadingOlderRef.current = false;
+        return;
+      }
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const currentElement = chatRef.current;
+          const snapshot = prependScrollRef.current;
+          if (currentElement && snapshot) {
+            currentElement.scrollTop = snapshot.top + currentElement.scrollHeight - snapshot.height;
+          }
+          prependScrollRef.current = null;
+          isLoadingOlderRef.current = false;
+        });
+      });
+    });
+  };
+
+  useEffect(() => {
+    if (items.length === 0) return;
+
+    let followUpFrame: number | undefined;
+    const frame = requestAnimationFrame(() => {
+      if (!hasInitializedRef.current || shouldStickToBottomRef.current) {
+        virtualizer.scrollToEnd({ behavior: "auto" });
+        followUpFrame = requestAnimationFrame(() => {
+          if (shouldStickToBottomRef.current) {
+            virtualizer.scrollToEnd({ behavior: "auto" });
+          }
+        });
+      }
+      hasInitializedRef.current = true;
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+      if (followUpFrame !== undefined) cancelAnimationFrame(followUpFrame);
+    };
+  }, [chatId, items.length, virtualizer]);
+
+  useEffect(() => {
+    const refreshLayout = () => {
+      if (
+        document.visibilityState !== "visible"
+        || !shouldStickToBottomRef.current
+        || items.length === 0
+      ) {
+        return;
+      }
+
+      if (layoutFrameRef.current !== null) {
+        cancelAnimationFrame(layoutFrameRef.current);
+      }
+      layoutFrameRef.current = requestAnimationFrame(() => {
+        layoutFrameRef.current = null;
+        virtualizer.scrollToEnd({ behavior: "auto" });
+      });
+    };
+
+    window.addEventListener("focus", refreshLayout);
+    window.addEventListener("resize", refreshLayout);
+    document.addEventListener("visibilitychange", refreshLayout);
+
+    return () => {
+      window.removeEventListener("focus", refreshLayout);
+      window.removeEventListener("resize", refreshLayout);
+      document.removeEventListener("visibilitychange", refreshLayout);
+      if (layoutFrameRef.current !== null) {
+        cancelAnimationFrame(layoutFrameRef.current);
+        layoutFrameRef.current = null;
+      }
+    };
+  }, [items.length, virtualizer]);
+
+  const remeasureRow = (messageId: string) => {
+    requestAnimationFrame(() => {
+      const element = rowElementsRef.current.get(messageId);
+      const index = items.findIndex((item) => item.id === messageId);
+      if (element && index >= 0) {
+        virtualizer.resizeItem(index, element.offsetHeight);
+        if (shouldStickToBottomRef.current) {
+          virtualizer.scrollToEnd({ behavior: "auto" });
+        }
+      }
+    });
+  };
 
   if (status === "loading") {
     return (
       <div className="flex flex-col flex-1 justify-center items-center">
         <Loader2 className="h-7 w-7 text-zinc-500 animate-spin my-4" />
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          Loading messages...
-        </p>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">Loading messages...</p>
       </div>
     );
   }
@@ -73,51 +206,57 @@ export const ChatMessages = ({
     return (
       <div className="flex flex-col flex-1 justify-center items-center">
         <ServerCrash className="h-7 w-7 text-zinc-500 my-4" />
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          Something went wrong!
-        </p>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">Something went wrong!</p>
       </div>
     );
   }
 
   return (
-    <div ref={chatRef} className="flex-1 flex flex-col py-4 overflow-y-auto">
-      {!hasNextPage && <div className="flex-1" />}
-      {!hasNextPage && (
-        <ChatWelcome
-          type={type}
-          name={name}
-        />
-      )}
-      {hasNextPage && (
-        <div className="flex justify-center">
-          {isFetchingNextPage ? (
-            <Loader2 className="h-6 w-6 text-zinc-500 animate-spin my-4" />
-          ) : (
-            <button
-              onClick={() => fetchNextPage()}
-              className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-400 text-xs my-4 dark:hover:text-zinc-300 transition"
-            >
-              Load previous messages
-            </button>
-          )}
+    <div
+      ref={chatRef}
+      onScroll={handleChatScroll}
+      className="flex-1 min-h-0 flex flex-col py-4 overflow-y-auto"
+    >
+      {items.length === 0 ? (
+        <div className="flex flex-1 flex-col justify-end">
+          <ChatWelcome type={type} name={name} />
         </div>
-      )}
-      <div className="flex flex-col mt-auto">
-        {data?.pages?.map((group, i) => (
-          <Fragment key={i}>
-            {group.items.map((message: any, index: number) => {
-              const prevMessage = group.items[index - 1] as any;
-              const isSameAuthor = prevMessage && prevMessage.member?.id === message.member?.id;
-              const isPrevMessageSystem = prevMessage?.isSystem;
-              const isCurrentMessageSystem = message.isSystem;
+      ) : (
+        <div
+          className="relative w-full shrink-0"
+          style={{ height: `${virtualizer.getTotalSize()}px` }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const message = items[virtualRow.index];
+            const prevMessage = items[virtualRow.index - 1];
+            const isSameAuthor = prevMessage?.member?.id === message.member?.id;
+            const isWithinTimeLimit = prevMessage
+              && new Date(message.createdAt).getTime() - new Date(prevMessage.createdAt).getTime() < 300000;
+            const isCompact = Boolean(
+              isSameAuthor
+              && isWithinTimeLimit
+              && !prevMessage.deleted
+              && !message.fileUrl
+              && !prevMessage.isSystem
+              && !message.isSystem,
+            );
 
-              const isWithinTimeLimit = prevMessage && (new Date(message.createdAt).getTime() - new Date(prevMessage.createdAt).getTime() < 300000);
-              const isCompact = isSameAuthor && isWithinTimeLimit && !prevMessage.deleted && !message.fileUrl && !isPrevMessageSystem && !isCurrentMessageSystem;
-
-              return (
+            return (
+              <div
+                key={message.id}
+                data-index={virtualRow.index}
+                ref={(element) => {
+                  if (element) {
+                    rowElementsRef.current.set(message.id, element);
+                    virtualizer.measureElement(element);
+                  } else {
+                    rowElementsRef.current.delete(message.id);
+                  }
+                }}
+                className="absolute left-0 top-0 w-full flow-root"
+                style={{ transform: `translateY(${virtualRow.start}px)` }}
+              >
                 <ChatItem
-                  key={message.id}
                   id={message.id}
                   currentMember={member}
                   member={message.member}
@@ -130,13 +269,13 @@ export const ChatMessages = ({
                   conversationId={paramKey === "conversationId" ? paramValue : undefined}
                   compact={isCompact}
                   isSystem={message.isSystem}
+                  onContentSizeChange={() => remeasureRow(message.id)}
                 />
-              );
-            })}
-          </Fragment>
-        ))}
-      </div>
-      <div ref={bottomRef} />
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };

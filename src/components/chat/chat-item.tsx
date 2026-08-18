@@ -27,6 +27,7 @@ interface ChatItemProps {
   conversationId?: string;
   compact?: boolean;
   isSystem?: boolean;
+  onContentSizeChange?: () => void;
 }
 
 
@@ -43,6 +44,7 @@ export const ChatItem = ({
   conversationId,
   compact = false,
   isSystem = false,
+  onContentSizeChange,
 }: ChatItemProps) => {
   const params = useParams();
   const navigate = useNavigate();
@@ -163,7 +165,13 @@ export const ChatItem = ({
             </div>
           )}
 
-          {fileUrl && <ChatItemAttachment fileUrl={fileUrl} content={content} />}
+          {fileUrl && (
+            <ChatItemAttachment
+              fileUrl={fileUrl}
+              content={content}
+              onContentSizeChange={onContentSizeChange}
+            />
+          )}
 
           {!fileUrl && (
             <div className="space-y-1">
@@ -176,7 +184,11 @@ export const ChatItem = ({
                 </p>
               )}
               {extractedUrls.map((url) => (
-                <LinkPreview key={url} url={url} />
+                <LinkPreview
+                  key={url}
+                  url={url}
+                  onContentSizeChange={onContentSizeChange}
+                />
               ))}
             </div>
           )}

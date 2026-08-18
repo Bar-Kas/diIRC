@@ -7,9 +7,14 @@ import { SmartImage } from "@/components/chat/smart-image";
 interface ChatItemAttachmentProps {
   fileUrl: string;
   content: string;
+  onContentSizeChange?: () => void;
 }
 
-export const ChatItemAttachment = ({ fileUrl, content }: ChatItemAttachmentProps) => {
+export const ChatItemAttachment = ({
+  fileUrl,
+  content,
+  onContentSizeChange,
+}: ChatItemAttachmentProps) => {
   const { onOpen } = useModal();
   const fileType = fileUrl.split(".").pop()?.toLowerCase();
   const isPDF = fileType === "pdf";
@@ -28,6 +33,8 @@ export const ChatItemAttachment = ({ fileUrl, content }: ChatItemAttachmentProps
               src={fileUrl}
               alt={content}
               className="max-h-[320px] max-w-full w-auto h-auto object-contain rounded-lg transition hover:opacity-95 block"
+              onImageLoad={onContentSizeChange}
+              onImageError={onContentSizeChange}
             />
           </button>
         </ImageContextMenu>

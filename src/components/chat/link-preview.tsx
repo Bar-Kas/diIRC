@@ -9,6 +9,7 @@ import { SmartImage } from "@/components/chat/smart-image";
 
 interface LinkPreviewProps {
   url: string;
+  onContentSizeChange?: () => void;
 }
 
 interface OpenGraphData {
@@ -22,7 +23,7 @@ interface OpenGraphData {
 // In-memory cache for fetched OpenGraph metadata to avoid duplicate network calls
 const ogCache = new Map<string, OpenGraphData | null>();
 
-export const LinkPreview: React.FC<LinkPreviewProps> = ({ url }) => {
+export const LinkPreview: React.FC<LinkPreviewProps> = ({ url, onContentSizeChange }) => {
   const { onOpen } = useModal();
   const linkPreviewApiUrl = useMockStore((state) => state.linkPreviewApiUrl);
   const enableWebPagePreviews = useMockStore((state) => state.enableWebPagePreviews);
@@ -146,6 +147,8 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url }) => {
               alt="Embedded Content"
               className="max-h-[320px] max-w-full w-auto h-auto object-contain rounded-lg transition hover:opacity-95 block"
               loading="lazy"
+              onImageLoad={onContentSizeChange}
+              onImageError={onContentSizeChange}
             />
           </button>
         </ImageContextMenu>
@@ -162,6 +165,8 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url }) => {
           controls
           className="max-h-[320px] w-full rounded-lg"
           preload="metadata"
+          onLoadedMetadata={onContentSizeChange}
+          onLoadedData={onContentSizeChange}
         />
       </div>
     );
@@ -178,6 +183,7 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url }) => {
             className="absolute top-0 left-0 w-full h-full border-0 rounded-lg"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
+            onLoad={onContentSizeChange}
           />
         </div>
       </div>
@@ -253,6 +259,8 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url }) => {
                 alt={ogData.title || "Link preview image"}
                 className="w-full h-full max-h-[220px] object-contain transition hover:scale-[1.01] block"
                 loading="lazy"
+                onImageLoad={onContentSizeChange}
+                onImageError={onContentSizeChange}
               />
             </button>
           </ImageContextMenu>
