@@ -1,8 +1,9 @@
-import { FileIcon } from "lucide-react";
+import { FileIcon, ExternalLink } from "lucide-react";
 import { useModal } from "@/hooks/use-modal-store";
 import { ImageContextMenu } from "@/components/image-context-menu";
-import { openExternalUrl } from "@/lib/system-utils";
+import { openExternalUrl, getFilenameFromUrl } from "@/lib/system-utils";
 import { SmartImage } from "@/components/chat/smart-image";
+import { isImageUrl, isVideoUrl } from "@/lib/image-utils";
 
 interface ChatItemAttachmentProps {
   fileUrl: string;
@@ -11,9 +12,8 @@ interface ChatItemAttachmentProps {
 
 export const ChatItemAttachment = ({ fileUrl, content }: ChatItemAttachmentProps) => {
   const { onOpen } = useModal();
-  const fileType = fileUrl.split(".").pop()?.toLowerCase();
-  const isPDF = fileType === "pdf";
-  const isImage = !isPDF;
+  const isImage = isImageUrl(fileUrl);
+  const isVideo = isVideoUrl(fileUrl);
 
   if (isImage) {
     return (
@@ -26,7 +26,7 @@ export const ChatItemAttachment = ({ fileUrl, content }: ChatItemAttachmentProps
           >
             <SmartImage
               src={fileUrl}
-              alt={content}
+              alt={content || "Attachment"}
               className="max-h-[320px] max-w-full w-auto h-auto object-contain rounded-lg transition hover:opacity-95 block"
             />
           </button>
@@ -35,20 +35,42 @@ export const ChatItemAttachment = ({ fileUrl, content }: ChatItemAttachmentProps
     );
   }
 
-  if (isPDF) {
+  if (isVideo) {
     return (
-      <div className="relative flex items-center p-2 mt-1 rounded-md bg-background/10">
-        <FileIcon className="h-10 w-10 fill-indigo-200 stroke-indigo-400" />
-        <button 
-          type="button"
-          onClick={() => openExternalUrl(fileUrl)}
-          className="ml-2 text-sm text-indigo-500 dark:text-indigo-400 hover:underline text-left"
-        >
-          PDF File
-        </button>
+      <div className="mt-2 max-w-md rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-black">
+        <video
+          src={fileUrl}
+          controls
+          className="max-h-[320px] w-full rounded-lg"
+          preload="metadata"
+        />
       </div>
     );
   }
 
-  return null;
+  // Generic File Attachment (PDF, ZIP, DOCX, TXT, etc.)
+  const filename = getFilenameFromUrl(fileUrl, "Attachment");
+  const ext = filename.split(".").pop()?.toUpperCase() || "FILE";
+
+  return (
+    <div className="relative flex items-center gap-x-3 p-3 mt-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 max-w-sm group">
+      <div className="p-2 rounded-md bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 shrink-0">
+        <FileIcon className="h-6 w-6" />
+      </div>
+      <div className="flex flex-col min-w-0 flex-1">
+        <button
+          type="button"
+          onClick={() => openExternalUrl(fileUrl)}
+          className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline truncate text-left flex items-center gap-x-1"
+        >
+          <span className="truncate">{filename}</span>
+          <ExternalLink className="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-100 transition" />
+        </button>
+        <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-mono">
+          {ext} File
+        </span>
+      </div>
+    </div>
+  );
 };
+
