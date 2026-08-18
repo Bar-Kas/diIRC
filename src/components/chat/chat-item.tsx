@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Member, Profile } from "@/types";
 import { Reply } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -9,7 +10,7 @@ import { useMockStore } from "@/lib/mock-store";
 import { ChatItemAttachment } from "./chat-item-attachment";
 import { LinkPreview } from "./link-preview";
 
-import { isImageUrl } from "@/lib/image-utils";
+import { isMediaUrl, subscribeImageCache } from "@/lib/image-utils";
 import { openExternalUrl } from "@/lib/system-utils";
 
 interface ChatItemProps {
@@ -52,6 +53,13 @@ export const ChatItem = ({
   const compactMode = useMockStore((state) => state.compactMode);
   const enableLinkPreviews = useMockStore((state) => state.enableLinkPreviews);
 
+  const [, setCacheTick] = useState(0);
+  useEffect(() => {
+    return subscribeImageCache(() => {
+      setCacheTick((prev) => prev + 1);
+    });
+  }, []);
+
   const onMemberClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
@@ -88,8 +96,8 @@ export const ChatItem = ({
     const parts = text.split(urlRegex);
     return parts.map((part, index) => {
       if (part.match(urlRegex)) {
-        if (enableLinkPreviews && isImageUrl(part)) {
-          // Hide raw image URL text because it will be rendered as an image card below
+        if (enableLinkPreviews && isMediaUrl(part)) {
+          // Hide raw media (image or video) URL text because it will be rendered as a media card below
           return null;
         }
         return (

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { ExternalLink, Globe } from "lucide-react";
 import { useMockStore } from "@/lib/mock-store";
-import { isImageUrl } from "@/lib/image-utils";
+import { isImageUrl, isVideoUrl, checkIsMediaUrlAsync, subscribeImageCache } from "@/lib/image-utils";
 import { useModal } from "@/hooks/use-modal-store";
 import { ImageContextMenu } from "@/components/image-context-menu";
 import { openExternalUrl } from "@/lib/system-utils";
@@ -31,20 +31,22 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url, onContentSizeChan
   const [ogData, setOgData] = useState<OpenGraphData | null>(ogCache.get(url) || null);
   const [loading, setLoading] = useState<boolean>(!ogCache.has(url));
   const [error, setError] = useState<boolean>(false);
+  const [dynamicIsImage, setDynamicIsImage] = useState<boolean>(isImageUrl(url));
+  const [dynamicIsVideo, setDynamicIsVideo] = useState<boolean>(isVideoUrl(url));
+
+  // Listen to global media cache updates
+  useEffect(() => {
+    return subscribeImageCache(() => {
+      if (isImageUrl(url)) setDynamicIsImage(true);
+      if (isVideoUrl(url)) setDynamicIsVideo(true);
+    });
+  }, [url]);
 
   // 1. Helper: Detect Direct Image URLs
-  const isImage = (link: string) => isImageUrl(link);
+  const isImage = (link: string) => dynamicIsImage || isImageUrl(link);
 
   // 2. Helper: Detect Direct Video URLs
-  const isVideo = (link: string) => {
-    const cleanUrl = link.split("?")[0].toLowerCase();
-    return (
-      cleanUrl.endsWith(".mp4") ||
-      cleanUrl.endsWith(".webm") ||
-      cleanUrl.endsWith(".mov") ||
-      cleanUrl.endsWith(".ogg")
-    );
-  };
+  const isVideo = (link: string) => dynamicIsVideo || isVideoUrl(link);
 
   // 3. Helper: Detect YouTube URLs and extract video ID
   const getYouTubeId = (link: string): string | null => {
@@ -56,6 +58,23 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url, onContentSizeChan
   const youtubeId = getYouTubeId(url);
   const isDirectImage = isImage(url);
   const isDirectVideo = isVideo(url);
+
+  // Perform async probe for extensionless image & video URLs
+  useEffect(() => {
+    if (isDirectImage || isDirectVideo || youtubeId) {
+      return;
+    }
+    let isMounted = true;
+    checkIsMediaUrlAsync(url).then((res) => {
+      if (isMounted && res) {
+        if (res === "image") setDynamicIsImage(true);
+        if (res === "video") setDynamicIsVideo(true);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [url, isDirectImage, isDirectVideo, youtubeId]);
 
   useEffect(() => {
     // Skip external API fetch if link is direct image, video, or YouTube
