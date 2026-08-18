@@ -9,7 +9,8 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "tauri": "tauri",
-    "release": "bumpp package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml"
+    "release": "bumpp package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml",
+    "devtools:bots": "node devtools/bot-joiner/index.js"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.1.2",

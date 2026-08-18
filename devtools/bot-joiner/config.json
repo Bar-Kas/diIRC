@@ -1,0 +1,51 @@
+{
+  "server": {
+    "host": "localhost",
+    "port": 6667,
+    "tls": false,
+    "password": ""
+  },
+  "botOptions": {
+    "connectDelayMs": 100,
+    "autoReconnect": false,
+    "realname": "IRC Load Test User"
+  },
+  "users": [
+    "alex",
+    "blake",
+    "charlie",
+    "dana",
+    "elliot",
+    "fiona",
+    "george",
+    "hannah",
+    "ian",
+    "julia",
+    "kate",
+    "liam",
+    "mia",
+    "noah",
+    "olivia"
+  ],
+  "chatSimulation": {
+    "enabled": true,
+    "intervalMs": 3000,
+    "messages": [
+      "Hello everyone",
+      "How is the performance testing going?",
+      "Checking in from the load test tool.",
+      "Is anyone seeing any message latency?",
+      "IRC server load test active.",
+      "Everything looking stable.",
+      "Testing channel message rendering."
+    ]
+  },
+  "channels": [
+    {
+      "name": "#bottest1",
+      "usersCount": 10,
+      "allowMessages": true,
+      "key": ""
+    }
+  ]
+}

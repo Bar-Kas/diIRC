@@ -1,0 +1,48 @@
+{
+  "server": {
+    "host": "localhost",
+    "port": 6667,
+    "tls": false,
+    "password": ""
+  },
+  "botOptions": {
+    "connectDelayMs": 100,
+    "autoReconnect": false,
+    "realname": "IRC Load Test User"
+  },
+  "users": [
+    "alex",
+    "blake",
+    "charlie",
+    "dana",
+    "elliot",
+    "fiona",
+    "george",
+    "hannah",
+    "ian",
+    "julia"
+  ],
+  "chatSimulation": {
+    "enabled": true,
+    "intervalMs": 2500,
+    "messages": [
+      "Hello everyone",
+      "Testing channel performance.",
+      "Automated message check."
+    ]
+  },
+  "channels": [
+    {
+      "name": "#general",
+      "usersCount": 5,
+      "allowMessages": true,
+      "key": ""
+    },
+    {
+      "name": "#announcements",
+      "usersCount": 3,
+      "allowMessages": false,
+      "key": ""
+    }
+  ]
+}
