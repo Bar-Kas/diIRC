@@ -44,6 +44,7 @@ export const ChannelPage = () => {
             member={currentMember}
             name={channel.name}
             chatId={channel.id}
+            serverId={server.id}
             type="channel"
             paramKey="channelId"
             paramValue={channel.id}

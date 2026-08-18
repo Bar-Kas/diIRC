@@ -8,7 +8,8 @@ import {
   Message, 
   DirectMessage, 
   Profile, 
-  ChannelType
+  ChannelType,
+  LogPage
 } from "@/types";
 import { 
   INITIAL_SERVERS, 
@@ -19,6 +20,57 @@ import {
 import { v4 as uuidv4 } from "uuid";
 import { ImageUploadConfig, UrlAuthRule } from "./upload/types";
 
+export const MAX_MESSAGES_IN_MEMORY = 500;
+
+const chatKey = (type: "channel" | "conversation", id: string) => `${type}:${id}`;
+
+const parseLogTimestamp = (timestamp: string) => {
+  const parsed = new Date(timestamp.replace(" ", "T"));
+  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+};
+
+const createIrcMember = (serverId: string, name: string): Member => ({
+  id: `irc-${name}`,
+  profileId: `profile-${name}`,
+  profile: {
+    id: `profile-${name}`,
+    userId: `user-${name}`,
+    name,
+    imageUrl: "",
+    email: `${name}@irc.local`,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
+  serverId,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+});
+
+const mapLogEntries = (
+  entries: LogPage["entries"],
+  server: Server | undefined,
+  serverId: string,
+  type: "channel" | "conversation",
+  chatId: string,
+): (Message | DirectMessage)[] => entries.map((entry) => {
+  const member = server?.members.find(
+    (item) => item.profile.name.toLowerCase() === entry.sender.toLowerCase()
+  ) || createIrcMember(serverId, entry.sender);
+  const createdAt = parseLogTimestamp(entry.timestamp);
+
+  return {
+    id: `log-${uuidv4().slice(0, 12)}`,
+    content: entry.content,
+    fileUrl: null,
+    memberId: member.id,
+    member,
+    channelId: type === "channel" ? chatId : undefined,
+    conversationId: type === "conversation" ? chatId : undefined,
+    deleted: false,
+    createdAt,
+    updatedAt: createdAt,
+  } as Message | DirectMessage;
+});
 
 export interface AddServerOptions {
   name: string;
@@ -51,6 +103,10 @@ interface MockState {
   servers: Server[];
   messages: Record<string, Message[]>;
   directMessages: Record<string, DirectMessage[]>;
+  activeChatKey: string | null;
+  historyLoadToken: number;
+  historyNextOffset: number | null;
+  historyHasMore: boolean;
   compactMode: boolean;
   enableLinkPreviews: boolean;
   enableWebPagePreviews: boolean;
@@ -93,6 +149,8 @@ interface MockState {
   updateChannelMembers: (serverId: string, channelName: string, users: string[], eventType: "NAMES" | "JOIN" | "PART" | "QUIT") => void;
 
   // Message Actions
+  loadChatHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<void>;
+  loadOlderHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<boolean>;
   addMessage: (channelId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean) => Message;
   deleteMessage: (channelId: string, messageId: string) => void;
 
@@ -111,6 +169,10 @@ export const useMockStore = create<MockState>()(
       servers: INITIAL_SERVERS,
       messages: INITIAL_MESSAGES,
       directMessages: INITIAL_DIRECT_MESSAGES,
+      activeChatKey: null,
+      historyLoadToken: 0,
+      historyNextOffset: null,
+      historyHasMore: false,
       activeConversations: {},
       compactMode: false,
       enableLinkPreviews: true,
@@ -564,6 +626,101 @@ export const useMockStore = create<MockState>()(
         });
       },
 
+      loadChatHistory: async (type, chatId, serverId, target) => {
+        const requestedKey = chatKey(type, chatId);
+        const requestToken = get().historyLoadToken + 1;
+        set({
+          activeChatKey: requestedKey,
+          historyLoadToken: requestToken,
+          historyNextOffset: null,
+          historyHasMore: false,
+          messages: {},
+          directMessages: {},
+        });
+
+        try {
+          const page = await invoke<LogPage>("load_log_page", {
+            serverId,
+            channel: target,
+            before: null,
+          });
+          const state = get();
+          if (state.activeChatKey !== requestedKey || state.historyLoadToken !== requestToken) return;
+
+          const server = state.servers.find((item) => item.id === serverId);
+          const messages = mapLogEntries(page.entries, server, serverId, type, chatId);
+
+          if (type === "channel") {
+            set({
+              messages: { [chatId]: messages as Message[] },
+              historyNextOffset: page.nextOffset,
+              historyHasMore: page.nextOffset !== null,
+            });
+          } else {
+            set({
+              directMessages: { [chatId]: messages as DirectMessage[] },
+              historyNextOffset: page.nextOffset,
+              historyHasMore: page.nextOffset !== null,
+            });
+          }
+        } catch (error) {
+          console.error(`Failed to load IRC history for ${target}:`, error);
+        }
+      },
+
+      loadOlderHistory: async (type, chatId, serverId, target) => {
+        const requestedKey = chatKey(type, chatId);
+        const state = get();
+        if (
+          state.activeChatKey !== requestedKey
+          || !state.historyHasMore
+          || state.historyNextOffset === null
+        ) {
+          return false;
+        }
+
+        const requestToken = state.historyLoadToken;
+
+        try {
+          const page = await invoke<LogPage>("load_log_page", {
+            serverId,
+            channel: target,
+            before: state.historyNextOffset,
+          });
+          const current = get();
+          if (current.activeChatKey !== requestedKey || current.historyLoadToken !== requestToken) {
+            return false;
+          }
+
+          const server = current.servers.find((item) => item.id === serverId);
+          const olderMessages = mapLogEntries(page.entries, server, serverId, type, chatId);
+          const currentMessages = type === "channel"
+            ? current.messages[chatId] || []
+            : current.directMessages[chatId] || [];
+          const combinedMessages = [...olderMessages, ...currentMessages].slice(-MAX_MESSAGES_IN_MEMORY);
+          const hasMore = page.nextOffset !== null && combinedMessages.length < MAX_MESSAGES_IN_MEMORY;
+
+          if (type === "channel") {
+            set({
+              messages: { [chatId]: combinedMessages as Message[] },
+              historyNextOffset: page.nextOffset,
+              historyHasMore: hasMore,
+            });
+          } else {
+            set({
+              directMessages: { [chatId]: combinedMessages as DirectMessage[] },
+              historyNextOffset: page.nextOffset,
+              historyHasMore: hasMore,
+            });
+          }
+
+          return olderMessages.length > 0;
+        } catch (error) {
+          console.error(`Failed to load older IRC history for ${target}:`, error);
+          return false;
+        }
+      },
+
       addMessage: (channelId, member, content, fileUrl, isSystem) => {
         const existingMsgs = get().messages[channelId] || [];
         const lastMsg = existingMsgs[existingMsgs.length - 1];
@@ -590,12 +747,13 @@ export const useMockStore = create<MockState>()(
           updatedAt: new Date().toISOString(),
         };
 
-        set((state) => ({
-          messages: {
-            ...state.messages,
-            [channelId]: [...(state.messages[channelId] || []), newMessage],
-          },
-        }));
+        if (get().activeChatKey === chatKey("channel", channelId)) {
+          set((state) => ({
+            messages: {
+              [channelId]: [...(state.messages[channelId] || []), newMessage].slice(-MAX_MESSAGES_IN_MEMORY),
+            },
+          }));
+        }
 
         return newMessage;
       },
@@ -657,10 +815,13 @@ export const useMockStore = create<MockState>()(
             : currentConvs;
 
           return {
-            directMessages: {
-              ...state.directMessages,
-              [conversationId]: [...(state.directMessages[conversationId] || []), newDm],
-            },
+            ...(state.activeChatKey === chatKey("conversation", conversationId)
+              ? {
+                  directMessages: {
+                    [conversationId]: [...(state.directMessages[conversationId] || []), newDm].slice(-MAX_MESSAGES_IN_MEMORY),
+                  },
+                }
+              : {}),
             ...(serverId
               ? {
                   activeConversations: {
@@ -688,9 +849,15 @@ export const useMockStore = create<MockState>()(
     }),
     {
       name: "diirc-store",
-      version: 2,
+      version: 4,
       partialize: (state) => ({
         ...state,
+        messages: {},
+        directMessages: {},
+        activeChatKey: null,
+        historyLoadToken: 0,
+        historyNextOffset: null,
+        historyHasMore: false,
         servers: state.servers.map((s) => ({
           ...s,
           channels: s.channels.filter((c) => !c.isTemporary),
@@ -698,10 +865,17 @@ export const useMockStore = create<MockState>()(
       }),
       migrate: (persistedState: any) => {
         if (!persistedState || !Array.isArray(persistedState.servers)) {
-          return { servers: [], messages: {}, directMessages: {} };
+          return {
+            servers: [],
+            messages: {},
+            directMessages: {},
+            activeChatKey: null,
+            historyLoadToken: 0,
+            historyNextOffset: null,
+            historyHasMore: false,
+          };
         }
         const currentProfileId = persistedState.currentProfile?.id || MOCK_PROFILE.id;
-        const nextMessages = { ...(persistedState.messages || {}) };
 
         const sanitizedServers = persistedState.servers.map((s: any) => {
           const nicks = s.nicknames || (s.nickname ? [s.nickname] : ["ReactUser"]);
@@ -720,28 +894,6 @@ export const useMockStore = create<MockState>()(
             return m;
           });
 
-          if (Array.isArray(s.channels)) {
-            s.channels.forEach((ch: any) => {
-              if (nextMessages[ch.id]) {
-                nextMessages[ch.id] = nextMessages[ch.id].map((msg: any) => {
-                  if (msg.member?.profileId === currentProfileId || msg.member?.id?.startsWith("member-")) {
-                    return {
-                      ...msg,
-                      member: {
-                        ...msg.member,
-                        profile: {
-                          ...msg.member.profile,
-                          name: primaryNick,
-                        },
-                      },
-                    };
-                  }
-                  return msg;
-                });
-              }
-            });
-          }
-
           return {
             ...s,
             host: s.host || "127.0.0.1",
@@ -756,7 +908,12 @@ export const useMockStore = create<MockState>()(
         return {
           ...persistedState,
           servers: sanitizedServers,
-          messages: nextMessages,
+          messages: {},
+          directMessages: {},
+          activeChatKey: null,
+          historyLoadToken: 0,
+          historyNextOffset: null,
+          historyHasMore: false,
         };
       }
     }

@@ -1,9 +1,13 @@
-use std::collections::HashMap;
-use std::sync::Arc;
+use chrono::Local;
 use futures::prelude::*;
 use irc::client::prelude::*;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager, State};
+use tokio::fs::{self, File, OpenOptions};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio::sync::Mutex;
 
 #[derive(Serialize, Clone)]
@@ -29,6 +33,21 @@ struct IrcStatusEvent {
     connected: bool,
 }
 
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct LogEntry {
+    timestamp: String,
+    sender: String,
+    content: String,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct LogPage {
+    entries: Vec<LogEntry>,
+    next_offset: Option<u64>,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IrcConnectParams {
@@ -48,12 +67,240 @@ struct IrcConnectParams {
 
 struct IrcState {
     senders: Arc<Mutex<HashMap<String, Sender>>>,
+    nicknames: Arc<Mutex<HashMap<String, String>>>,
+}
+
+#[derive(Clone)]
+struct LogState {
+    writers: Arc<Mutex<HashMap<String, Arc<Mutex<File>>>>>,
+}
+
+fn safe_log_component(value: &str) -> String {
+    let sanitized: String = value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.' | '#') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect();
+
+    let sanitized = sanitized.trim_matches('.');
+    if sanitized.is_empty() || sanitized == ".." {
+        "unknown".to_string()
+    } else {
+        sanitized.to_string()
+    }
+}
+
+fn log_path(app: &AppHandle, server_id: &str, target: &str) -> Result<(String, PathBuf), String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Failed to resolve application data directory: {error}"))?
+        .join("logs");
+    let safe_server = safe_log_component(server_id);
+    let safe_target = safe_log_component(target);
+    let key = format!("{server_id}\0{target}");
+    Ok((
+        key,
+        root.join(safe_server).join(format!("{safe_target}.log")),
+    ))
+}
+
+async fn append_log_line(
+    app: &AppHandle,
+    state: &LogState,
+    server_id: &str,
+    target: &str,
+    sender: &str,
+    content: &str,
+) -> Result<(), String> {
+    let (key, path) = log_path(app, server_id, target)?;
+    let writer = {
+        let mut writers = state.writers.lock().await;
+        if let Some(writer) = writers.get(&key) {
+            writer.clone()
+        } else {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)
+                    .await
+                    .map_err(|error| format!("Failed to create log directory: {error}"))?;
+            }
+            let file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .await
+                .map_err(|error| format!("Failed to open log file: {error}"))?;
+            let writer = Arc::new(Mutex::new(file));
+            writers.insert(key, writer.clone());
+            writer
+        }
+    };
+
+    let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
+    let normalized_content = content.replace(['\r', '\n'], " ");
+    let line = format!("[{timestamp}] <{sender}> {normalized_content}\n");
+    let mut file = writer.lock().await;
+    file.write_all(line.as_bytes())
+        .await
+        .map_err(|error| format!("Failed to append log line: {error}"))?;
+    file.flush()
+        .await
+        .map_err(|error| format!("Failed to flush log line: {error}"))
+}
+
+async fn close_server_logs(state: &LogState, server_id: &str) {
+    let prefix = format!("{server_id}\0");
+    state
+        .writers
+        .lock()
+        .await
+        .retain(|key, _| !key.starts_with(&prefix));
+}
+
+fn parse_log_line(line: &str) -> Option<LogEntry> {
+    let timestamp_end = line.find("] <")?;
+    let timestamp = line.get(1..timestamp_end)?.to_string();
+    let sender_start = timestamp_end + 3;
+    let sender_end = line.get(sender_start..)?.find("> ")? + sender_start;
+    let sender = line.get(sender_start..sender_end)?.to_string();
+    let content = line.get(sender_end + 2..)?.to_string();
+
+    Some(LogEntry {
+        timestamp,
+        sender,
+        content,
+    })
+}
+
+async fn read_log_tail(
+    app: &AppHandle,
+    server_id: &str,
+    target: &str,
+) -> Result<Vec<LogEntry>, String> {
+    Ok(read_log_page(app, server_id, target, None).await?.entries)
+}
+
+async fn read_log_page(
+    app: &AppHandle,
+    server_id: &str,
+    target: &str,
+    before: Option<u64>,
+) -> Result<LogPage, String> {
+    let (_, path) = log_path(app, server_id, target)?;
+    let mut file = match File::open(path).await {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(LogPage {
+                entries: Vec::new(),
+                next_offset: None,
+            })
+        }
+        Err(error) => return Err(format!("Failed to open log file: {error}")),
+    };
+
+    let file_size = file
+        .metadata()
+        .await
+        .map_err(|error| format!("Failed to read log metadata: {error}"))?
+        .len();
+    let mut position = before.unwrap_or(file_size).min(file_size);
+    if position == 0 {
+        return Ok(LogPage {
+            entries: Vec::new(),
+            next_offset: None,
+        });
+    }
+
+    let end = position;
+    let mut page = Vec::new();
+    const CHUNK_SIZE: u64 = 8192;
+
+    while position > 0 {
+        let read_size = position.min(CHUNK_SIZE);
+        position -= read_size;
+        file.seek(SeekFrom::Start(position))
+            .await
+            .map_err(|error| format!("Failed to seek log file: {error}"))?;
+        let mut chunk = vec![0; read_size as usize];
+        file.read_exact(&mut chunk)
+            .await
+            .map_err(|error| format!("Failed to read log file: {error}"))?;
+        chunk.extend_from_slice(&page);
+        page = chunk;
+
+        if page.iter().filter(|byte| **byte == b'\n').count() > 100 || position == 0 {
+            break;
+        }
+    }
+
+    let content_start = if position > 0 {
+        page.iter()
+            .position(|byte| *byte == b'\n')
+            .map(|index| index + 1)
+            .unwrap_or(page.len())
+    } else {
+        0
+    };
+    let content = &page[content_start..];
+    let mut lines = Vec::new();
+    let mut line_offset = end - page.len() as u64 + content_start as u64;
+
+    for line in content.split(|byte| *byte == b'\n') {
+        let current_offset = line_offset;
+        line_offset += line.len() as u64 + 1;
+        if line.is_empty() {
+            continue;
+        }
+        if let Ok(line) = std::str::from_utf8(line) {
+            lines.push((current_offset, line.trim_end_matches('\r')));
+        }
+    }
+
+    let start = lines.len().saturating_sub(100);
+    let selected = &lines[start..];
+    let next_offset = selected
+        .first()
+        .map(|(offset, _)| *offset)
+        .filter(|offset| *offset > 0);
+
+    Ok(LogPage {
+        entries: selected
+            .iter()
+            .filter_map(|(_, line)| parse_log_line(line))
+            .collect(),
+        next_offset,
+    })
+}
+
+#[tauri::command]
+async fn load_log_tail(
+    app: AppHandle,
+    server_id: String,
+    channel: String,
+) -> Result<Vec<LogEntry>, String> {
+    read_log_tail(&app, &server_id, &channel).await
+}
+
+#[tauri::command]
+async fn load_log_page(
+    app: AppHandle,
+    server_id: String,
+    channel: String,
+    before: Option<u64>,
+) -> Result<LogPage, String> {
+    read_log_page(&app, &server_id, &channel, before).await
 }
 
 #[tauri::command]
 async fn connect_irc(
     app: AppHandle,
     state: State<'_, IrcState>,
+    log_state: State<'_, LogState>,
     params: IrcConnectParams,
 ) -> Result<(), String> {
     let server_id = params.server_id.clone();
@@ -61,10 +308,13 @@ async fn connect_irc(
     {
         let senders = state.senders.lock().await;
         if senders.contains_key(&server_id) {
-            let _ = app.emit("irc_status", IrcStatusEvent {
-                server_id: server_id.clone(),
-                connected: true,
-            });
+            let _ = app.emit(
+                "irc_status",
+                IrcStatusEvent {
+                    server_id: server_id.clone(),
+                    connected: true,
+                },
+            );
             return Ok(());
         }
     }
@@ -72,10 +322,20 @@ async fn connect_irc(
     let formatted_channels: Vec<String> = params
         .channels
         .into_iter()
-        .map(|ch| if ch.starts_with('#') { ch } else { format!("#{}", ch) })
+        .map(|ch| {
+            if ch.starts_with('#') {
+                ch
+            } else {
+                format!("#{}", ch)
+            }
+        })
         .collect();
 
-    let primary_nickname = params.nicknames.first().cloned().unwrap_or_else(|| "ReactUser".to_string());
+    let primary_nickname = params
+        .nicknames
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "ReactUser".to_string());
     let alt_nicknames = if params.nicknames.len() > 1 {
         params.nicknames[1..].to_vec()
     } else {
@@ -85,7 +345,10 @@ async fn connect_irc(
     let config = Config {
         nickname: Some(primary_nickname.clone()),
         username: Some(primary_nickname.clone()),
-        realname: params.realname.filter(|s| !s.is_empty()).or(Some(primary_nickname)),
+        realname: params
+            .realname
+            .filter(|s| !s.is_empty())
+            .or(Some(primary_nickname.clone())),
         password: params.password.filter(|s| !s.is_empty()),
         alt_nicks: alt_nicknames,
         server: Some(params.host),
@@ -96,47 +359,79 @@ async fn connect_irc(
         ping_timeout: Some(10),
         ..Config::default()
     };
-    
-    log::info!("Connecting to IRC with nick: {:?}, alt_nicks: {:?}, user: {:?}, realname: {:?}", config.nickname, config.alt_nicks, config.username, config.realname);
+
+    log::info!(
+        "Connecting to IRC with nick: {:?}, alt_nicks: {:?}, user: {:?}, realname: {:?}",
+        config.nickname,
+        config.alt_nicks,
+        config.username,
+        config.realname
+    );
 
     let mut client = Client::from_config(config).await.map_err(|e| {
-        let _ = app.emit("irc_status", IrcStatusEvent {
-            server_id: server_id.clone(),
-            connected: false,
-        });
+        let _ = app.emit(
+            "irc_status",
+            IrcStatusEvent {
+                server_id: server_id.clone(),
+                connected: false,
+            },
+        );
         e.to_string()
     })?;
 
     client.identify().map_err(|e| {
-        let _ = app.emit("irc_status", IrcStatusEvent {
-            server_id: server_id.clone(),
-            connected: false,
-        });
+        let _ = app.emit(
+            "irc_status",
+            IrcStatusEvent {
+                server_id: server_id.clone(),
+                connected: false,
+            },
+        );
         e.to_string()
     })?;
 
     let sender = client.sender();
     state.senders.lock().await.insert(server_id.clone(), sender);
+    state
+        .nicknames
+        .lock()
+        .await
+        .insert(server_id.clone(), primary_nickname.clone());
 
-    let _ = app.emit("irc_status", IrcStatusEvent {
-        server_id: server_id.clone(),
-        connected: true,
-    });
+    let _ = app.emit(
+        "irc_status",
+        IrcStatusEvent {
+            server_id: server_id.clone(),
+            connected: true,
+        },
+    );
 
     let stream_server_id = server_id.clone();
     let senders_clone = state.senders.clone();
+    let nicknames_clone = state.nicknames.clone();
     let app_clone = app.clone();
+    let log_state_clone = LogState {
+        writers: log_state.writers.clone(),
+    };
 
     tauri::async_runtime::spawn(async move {
         let mut stream = match client.stream() {
             Ok(s) => s,
             Err(e) => {
-                log::error!("Failed to open stream for server {}: {}", stream_server_id, e);
+                log::error!(
+                    "Failed to open stream for server {}: {}",
+                    stream_server_id,
+                    e
+                );
                 senders_clone.lock().await.remove(&stream_server_id);
-                let _ = app_clone.emit("irc_status", IrcStatusEvent {
-                    server_id: stream_server_id,
-                    connected: false,
-                });
+                nicknames_clone.lock().await.remove(&stream_server_id);
+                let _ = app_clone.emit(
+                    "irc_status",
+                    IrcStatusEvent {
+                        server_id: stream_server_id,
+                        connected: false,
+                    },
+                );
                 return;
             }
         };
@@ -152,6 +447,31 @@ async fn connect_irc(
                                     Prefix::Nickname(nick, _, _) => nick,
                                     Prefix::ServerName(name) => name,
                                 };
+                                let own_nickname =
+                                    nicknames_clone.lock().await.get(&stream_server_id).cloned();
+                                if own_nickname.as_deref().is_some_and(|nickname| {
+                                    nickname.eq_ignore_ascii_case(&sender_name)
+                                }) {
+                                    continue;
+                                }
+                                let log_target =
+                                    if channel.starts_with('#') || channel.starts_with('&') {
+                                        channel.clone()
+                                    } else {
+                                        sender_name.clone()
+                                    };
+                                if let Err(error) = append_log_line(
+                                    &app_clone,
+                                    &log_state_clone,
+                                    &stream_server_id,
+                                    &log_target,
+                                    &sender_name,
+                                    &content,
+                                )
+                                .await
+                                {
+                                    log::error!("Failed to log IRC message: {}", error);
+                                }
                                 let payload = IrcMessage {
                                     server_id: stream_server_id.clone(),
                                     sender: sender_name.clone(),
@@ -234,10 +554,14 @@ async fn connect_irc(
                             if args.len() >= 4 {
                                 let channel = &args[2];
                                 let users_str = &args[3];
-                                let users: Vec<String> = users_str.split_whitespace().map(|s| {
-                                    let clean = s.trim_start_matches(&['@', '+', '%', '~', '&'][..]);
-                                    clean.to_string()
-                                }).collect();
+                                let users: Vec<String> = users_str
+                                    .split_whitespace()
+                                    .map(|s| {
+                                        let clean =
+                                            s.trim_start_matches(&['@', '+', '%', '~', '&'][..]);
+                                        clean.to_string()
+                                    })
+                                    .collect();
                                 let payload = IrcUserEvent {
                                     server_id: stream_server_id.clone(),
                                     channel: channel.to_string(),
@@ -258,10 +582,15 @@ async fn connect_irc(
 
         log::warn!("IRC [{}] Stream closed!", stream_server_id);
         senders_clone.lock().await.remove(&stream_server_id);
-        let _ = app_clone.emit("irc_status", IrcStatusEvent {
-            server_id: stream_server_id,
-            connected: false,
-        });
+        nicknames_clone.lock().await.remove(&stream_server_id);
+        close_server_logs(&log_state_clone, &stream_server_id).await;
+        let _ = app_clone.emit(
+            "irc_status",
+            IrcStatusEvent {
+                server_id: stream_server_id,
+                connected: false,
+            },
+        );
 
         // Keep client alive in task scope
         let _ = client;
@@ -275,6 +604,7 @@ async fn connect_irc(
 async fn send_message(
     app: AppHandle,
     state: State<'_, IrcState>,
+    log_state: State<'_, LogState>,
     server_id: String,
     channel: String,
     message: String,
@@ -284,11 +614,34 @@ async fn send_message(
         if let Err(e) = sender.send_privmsg(&channel, &message) {
             drop(senders);
             state.senders.lock().await.remove(&server_id);
-            let _ = app.emit("irc_status", IrcStatusEvent {
-                server_id: server_id.clone(),
-                connected: false,
-            });
+            state.nicknames.lock().await.remove(&server_id);
+            let _ = app.emit(
+                "irc_status",
+                IrcStatusEvent {
+                    server_id: server_id.clone(),
+                    connected: false,
+                },
+            );
             return Err(e.to_string());
+        }
+        let sender_name = state
+            .nicknames
+            .lock()
+            .await
+            .get(&server_id)
+            .cloned()
+            .unwrap_or_else(|| "You".to_string());
+        if let Err(error) = append_log_line(
+            &app,
+            &log_state,
+            &server_id,
+            &channel,
+            &sender_name,
+            &message,
+        )
+        .await
+        {
+            log::error!("Failed to log outgoing IRC message: {}", error);
         }
         Ok(())
     } else {
@@ -303,7 +656,11 @@ async fn join_channel(
     server_id: String,
     channel: String,
 ) -> Result<(), String> {
-    log::info!("join_channel called for server: {}, channel: {}", server_id, channel);
+    log::info!(
+        "join_channel called for server: {}, channel: {}",
+        server_id,
+        channel
+    );
     let senders = state.senders.lock().await;
     if let Some(sender) = senders.get(&server_id) {
         let formatted_channel = if channel.starts_with('#') {
@@ -316,10 +673,13 @@ async fn join_channel(
             log::error!("Error sending JOIN: {}", e);
             drop(senders);
             state.senders.lock().await.remove(&server_id);
-            let _ = app.emit("irc_status", IrcStatusEvent {
-                server_id: server_id.clone(),
-                connected: false,
-            });
+            let _ = app.emit(
+                "irc_status",
+                IrcStatusEvent {
+                    server_id: server_id.clone(),
+                    connected: false,
+                },
+            );
             return Err(e.to_string());
         }
         Ok(())
@@ -333,16 +693,22 @@ async fn join_channel(
 async fn disconnect_irc(
     app: AppHandle,
     state: State<'_, IrcState>,
+    log_state: State<'_, LogState>,
     server_id: String,
 ) -> Result<(), String> {
     let mut senders = state.senders.lock().await;
     if let Some(sender) = senders.remove(&server_id) {
         let _ = sender.send_quit("Client disconnected");
     }
-    let _ = app.emit("irc_status", IrcStatusEvent {
-        server_id: server_id.clone(),
-        connected: false,
-    });
+    state.nicknames.lock().await.remove(&server_id);
+    close_server_logs(&log_state, &server_id).await;
+    let _ = app.emit(
+        "irc_status",
+        IrcStatusEvent {
+            server_id: server_id.clone(),
+            connected: false,
+        },
+    );
     Ok(())
 }
 
@@ -351,12 +717,23 @@ pub fn run() {
     tauri::Builder::default()
         .manage(IrcState {
             senders: Arc::new(Mutex::new(HashMap::new())),
+            nicknames: Arc::new(Mutex::new(HashMap::new())),
+        })
+        .manage(LogState {
+            writers: Arc::new(Mutex::new(HashMap::new())),
         })
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![connect_irc, send_message, disconnect_irc, join_channel])
+        .invoke_handler(tauri::generate_handler![
+            connect_irc,
+            send_message,
+            load_log_tail,
+            load_log_page,
+            disconnect_irc,
+            join_channel
+        ])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
