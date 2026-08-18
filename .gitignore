@@ -17,8 +17,8 @@
 /dist
 src-tauri/target/
 
-# docker data
-/data
+# devtools data
+/devtools/data
 
 # misc
 .DS_Store
