@@ -1,8 +1,20 @@
 import { useConnectionStatus } from "@/hooks/use-connection-status";
+import { useMockStore } from "@/lib/mock-store";
 import { cn } from "@/lib/utils";
 
 export const ConnectionStatus = () => {
   const { irc, resourceServer, internet } = useConnectionStatus();
+  const statusDisplayMode = useMockStore((state) => state.statusDisplayMode) || "always";
+
+  const hasError = !irc || !resourceServer || !internet;
+
+  if (statusDisplayMode === "disabled") {
+    return null;
+  }
+
+  if (statusDisplayMode === "on_error" && !hasError) {
+    return null;
+  }
 
   const statuses = [
     {

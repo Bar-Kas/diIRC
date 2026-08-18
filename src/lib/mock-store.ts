@@ -44,6 +44,8 @@ export interface UpdateServerOptions {
   imageUrl?: string;
 }
 
+export type StatusDisplayMode = "always" | "on_error" | "disabled";
+
 interface MockState {
   currentProfile: Profile;
   servers: Server[];
@@ -56,9 +58,11 @@ interface MockState {
   uploadConfig: ImageUploadConfig;
   urlAuthRules: UrlAuthRule[];
   ircConnectedServers: Record<string, boolean>;
+  statusDisplayMode: StatusDisplayMode;
 
   // Connection Actions
   setIrcConnected: (serverId: string, isConnected: boolean) => void;
+  setStatusDisplayMode: (mode: StatusDisplayMode) => void;
 
   // Settings Actions
   setCompactMode: (enabled: boolean) => void;
@@ -118,6 +122,7 @@ export const useMockStore = create<MockState>()(
       },
       urlAuthRules: [],
       ircConnectedServers: {},
+      statusDisplayMode: "always",
 
       setIrcConnected: (serverId: string, isConnected: boolean) =>
         set((state) => ({
@@ -126,6 +131,8 @@ export const useMockStore = create<MockState>()(
             [serverId]: isConnected,
           },
         })),
+
+      setStatusDisplayMode: (mode: StatusDisplayMode) => set({ statusDisplayMode: mode }),
 
       setCompactMode: (enabled: boolean) => set({ compactMode: enabled }),
       setEnableLinkPreviews: (enabled: boolean) => set({ enableLinkPreviews: enabled }),

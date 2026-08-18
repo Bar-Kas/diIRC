@@ -23,8 +23,10 @@ import {
   Key, 
   Plus, 
   Trash2, 
-  ShieldCheck 
+  ShieldCheck,
+  Activity 
 } from "lucide-react";
+import { StatusDisplayMode } from "@/lib/mock-store";
 
 export const SettingsModal = () => {
   const { isOpen, onClose, type } = useModal();
@@ -46,6 +48,9 @@ export const SettingsModal = () => {
   const urlAuthRules = useMockStore((state) => state.urlAuthRules);
   const addUrlAuthRule = useMockStore((state) => state.addUrlAuthRule);
   const removeUrlAuthRule = useMockStore((state) => state.removeUrlAuthRule);
+
+  const statusDisplayMode = useMockStore((state) => state.statusDisplayMode) || "always";
+  const setStatusDisplayMode = useMockStore((state) => state.setStatusDisplayMode);
 
   // New URL Rule Form State
   const [newRulePrefix, setNewRulePrefix] = useState("");
@@ -108,6 +113,28 @@ export const SettingsModal = () => {
               checked={compactMode}
               onCheckedChange={(checked) => setCompactMode(checked)}
             />
+          </div>
+
+          {/* Status Indicator Display Mode */}
+          <div className="flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-3 shadow-sm transition">
+            <div className="flex items-center gap-x-2">
+              <Activity className="w-4 h-4 text-emerald-500" />
+              <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Connection Status Indicator
+              </label>
+            </div>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+              Configure when the connection status badge (IRC, resource server, internet) is displayed.
+            </p>
+            <select
+              value={statusDisplayMode}
+              onChange={(e) => setStatusDisplayMode(e.target.value as StatusDisplayMode)}
+              className="w-full bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              <option value="always">Always show</option>
+              <option value="on_error">Only on error</option>
+              <option value="disabled">Disabled (Hidden)</option>
+            </select>
           </div>
 
           {/* Switch 1: Enable Link Previews (All embeds) */}
