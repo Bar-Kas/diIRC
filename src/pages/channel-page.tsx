@@ -2,11 +2,9 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 import { useMockStore } from "@/lib/mock-store";
 import { useUIStore } from "@/hooks/use-ui-store";
-import { ChannelType } from "@/types";
 import { ChatHeader } from "@/components/chat/chat-header";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatMessages } from "@/components/chat/chat-messages";
-import { MediaRoom } from "@/components/media-room";
 import { ChatMembersSidebar } from "@/components/chat/chat-members-sidebar";
 
 export const ChannelPage = () => {
@@ -42,40 +40,22 @@ export const ChannelPage = () => {
       />
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-col flex-1 h-full min-w-0">
-          {channel.type === ChannelType.TEXT && (
-            <>
-              <ChatMessages
-                member={currentMember}
-                name={channel.name}
-                chatId={channel.id}
-                type="channel"
-                paramKey="channelId"
-                paramValue={channel.id}
-              />
-              <ChatInput
-                name={channel.name}
-                type="channel"
-                query={{
-                  channelId: channel.id,
-                  serverId: channel.serverId,
-                }}
-              />
-            </>
-          )}
-          {channel.type === ChannelType.AUDIO && (
-            <MediaRoom
-              chatId={channel.id}
-              video={false}
-              audio={true}
-            />
-          )}
-          {channel.type === ChannelType.VIDEO && (
-            <MediaRoom
-              chatId={channel.id}
-              video={true}
-              audio={true}
-            />
-          )}
+          <ChatMessages
+            member={currentMember}
+            name={channel.name}
+            chatId={channel.id}
+            type="channel"
+            paramKey="channelId"
+            paramValue={channel.id}
+          />
+          <ChatInput
+            name={channel.name}
+            type="channel"
+            query={{
+              channelId: channel.id,
+              serverId: channel.serverId,
+            }}
+          />
         </div>
         {showMembersSidebar && <ChatMembersSidebar server={server} />}
       </div>

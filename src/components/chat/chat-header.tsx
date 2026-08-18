@@ -6,8 +6,6 @@ import { ActionTooltip } from "@/components/action-tooltip";
 import { useUIStore } from "@/hooks/use-ui-store";
 import { cn } from "@/lib/utils";
 
-import { ChatVideoButton } from "./chat-video-button";
-
 interface ChatHeaderProps {
   serverId: string;
   name: string;
@@ -79,25 +77,20 @@ export const ChatHeader = ({
       </p>
 
       <div className="ml-auto flex items-center gap-x-2">
-        {type === "conversation" && (
-          <ChatVideoButton />
-        )}
-        {type === "channel" && (
-          <ActionTooltip 
-            side="bottom" 
-            label={showMembersSidebar ? "Hide user list" : "Show user list"}
+        <ActionTooltip 
+          side="bottom" 
+          label={showMembersSidebar ? "Hide user list" : "Show user list"}
+        >
+          <button
+            onClick={toggleMembersSidebar}
+            className="flex items-center justify-center p-1.5 rounded-lg hover:bg-zinc-200/60 dark:hover:bg-zinc-700/50 transition"
           >
-            <button
-              onClick={toggleMembersSidebar}
-              className="flex items-center justify-center p-1.5 rounded-lg hover:bg-zinc-200/60 dark:hover:bg-zinc-700/50 transition"
-            >
-              <Users className={cn(
-                "w-5 h-5 text-zinc-500 dark:text-zinc-400 transition",
-                showMembersSidebar && "text-indigo-500 dark:text-indigo-400"
-              )} />
-            </button>
-          </ActionTooltip>
-        )}
+            <Users className={cn(
+              "w-5 h-5 text-zinc-500 dark:text-zinc-400 transition",
+              showMembersSidebar && "text-indigo-500 dark:text-indigo-400"
+            )} />
+          </button>
+        </ActionTooltip>
       </div>
     </div>
   );

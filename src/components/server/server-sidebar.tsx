@@ -1,5 +1,5 @@
 import { ChannelType } from "@/types";
-import { Hash, Mic, Video } from "lucide-react";
+import { Hash } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -16,8 +16,6 @@ interface ServerSidebarProps {
 
 const iconMap = {
   [ChannelType.TEXT]: <Hash className="mr-2 h-4 w-4" />,
-  [ChannelType.AUDIO]: <Mic className="mr-2 h-4 w-4" />,
-  [ChannelType.VIDEO]: <Video className="mr-2 h-4 w-4" />
 };
 
 export const ServerSidebar = ({
@@ -66,8 +64,6 @@ export const ServerSidebar = ({
 
   const channels = server.channels || [];
   const textChannels = channels.filter((channel) => channel.type === ChannelType.TEXT);
-  const audioChannels = channels.filter((channel) => channel.type === ChannelType.AUDIO);
-  const videoChannels = channels.filter((channel) => channel.type === ChannelType.VIDEO);
 
   const activeMemberIds = activeConversations[server.id] || [];
   const pmMembers = activeMemberIds
@@ -93,24 +89,6 @@ export const ServerSidebar = ({
                       name: channel.name,
                       icon: iconMap[channel.type],
                     }))
-                  },
-                  {
-                    label: "Voice Channels",
-                    type: "channel",
-                    data: audioChannels?.map((channel) => ({
-                      id: channel.id,
-                      name: channel.name,
-                      icon: iconMap[channel.type],
-                    }))
-                  },
-                  {
-                    label: "Video Channels",
-                    type: "channel",
-                    data: videoChannels?.map((channel) => ({
-                      id: channel.id,
-                      name: channel.name,
-                      icon: iconMap[channel.type],
-                    }))
                   }
                 ]}
               />
@@ -118,8 +96,6 @@ export const ServerSidebar = ({
             <Separator className="bg-zinc-200 dark:bg-zinc-700 rounded-md my-2" />
             {[
               { label: "Text Channels", type: ChannelType.TEXT, channels: textChannels, alwaysShow: true },
-              { label: "Voice Channels", type: ChannelType.AUDIO, channels: audioChannels, alwaysShow: false },
-              { label: "Video Channels", type: ChannelType.VIDEO, channels: videoChannels, alwaysShow: false },
             ].map((section) => (section.alwaysShow || !!section.channels?.length) && (
               <div key={section.type} className="mb-2">
                 <ServerSection

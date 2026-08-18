@@ -3,7 +3,7 @@ import {
   ChannelType, 
   Server
 } from "@/types";
-import { Hash, Mic, Trash, Video } from "lucide-react";
+import { Hash, Trash } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
@@ -17,8 +17,6 @@ interface ServerChannelProps {
 
 const iconMap = {
   [ChannelType.TEXT]: Hash,
-  [ChannelType.AUDIO]: Mic,
-  [ChannelType.VIDEO]: Video,
 };
 
 export const ServerChannel = ({
