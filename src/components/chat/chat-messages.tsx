@@ -1,11 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { format } from "date-fns";
 import { Member, Message } from "@/types";
-import { Loader2, ServerCrash } from "lucide-react";
+import { ArrowDown, Loader2, ServerCrash } from "lucide-react";
 
 import { useChatQuery } from "@/hooks/use-chat-query";
 import { useChatSocket } from "@/hooks/use-chat-socket";
+import { useChatScroll } from "@/hooks/use-chat-scroll";
 import { useMockStore } from "@/lib/mock-store";
 
 import { ChatWelcome } from "./chat-welcome";
@@ -37,12 +38,10 @@ export const ChatMessages = ({
   const addKey = `chat:${chatId}:messages`;
   const updateKey = `chat:${chatId}:messages:update`;
   const chatRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const rowElementsRef = useRef(new Map<string, HTMLDivElement>());
-  const shouldStickToBottomRef = useRef(true);
-  const hasInitializedRef = useRef(false);
   const isLoadingOlderRef = useRef(false);
   const prependScrollRef = useRef<{ height: number; top: number } | null>(null);
-  const layoutFrameRef = useRef<number | null>(null);
   const loadChatHistory = useMockStore((state) => state.loadChatHistory);
   const loadOlderHistory = useMockStore((state) => state.loadOlderHistory);
   const historyHasMore = useMockStore((state) => state.historyHasMore);
@@ -69,8 +68,6 @@ export const ChatMessages = ({
   });
 
   useEffect(() => {
-    hasInitializedRef.current = false;
-    shouldStickToBottomRef.current = true;
     isLoadingOlderRef.current = false;
     prependScrollRef.current = null;
     void loadChatHistory(
@@ -81,15 +78,11 @@ export const ChatMessages = ({
     );
   }, [chatId, historyTarget, loadChatHistory, serverId, type]);
 
-  const handleChatScroll = () => {
+  const loadOlderIfEligible = useCallback(() => {
     const element = chatRef.current;
-    if (!element) return;
-
-    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
-    shouldStickToBottomRef.current = distanceFromBottom <= 100;
-
     if (
-      element.scrollTop > 24
+      !element
+      || element.scrollTop > 24
       || !historyHasMore
       || isLoadingOlderRef.current
       || items.length === 0
@@ -122,63 +115,24 @@ export const ChatMessages = ({
         });
       });
     });
-  };
+  }, [historyHasMore, items.length, loadOlderHistory, type, chatId, serverId, historyTarget]);
 
-  useEffect(() => {
-    if (items.length === 0) return;
+  const scrollToLatestEnd = useCallback((behavior: ScrollBehavior) => {
+    virtualizer.scrollToEnd({ behavior });
+  }, [virtualizer]);
 
-    let followUpFrame: number | undefined;
-    const frame = requestAnimationFrame(() => {
-      if (!hasInitializedRef.current || shouldStickToBottomRef.current) {
-        virtualizer.scrollToEnd({ behavior: "auto" });
-        followUpFrame = requestAnimationFrame(() => {
-          if (shouldStickToBottomRef.current) {
-            virtualizer.scrollToEnd({ behavior: "auto" });
-          }
-        });
-      }
-      hasInitializedRef.current = true;
-    });
-
-    return () => {
-      cancelAnimationFrame(frame);
-      if (followUpFrame !== undefined) cancelAnimationFrame(followUpFrame);
-    };
-  }, [chatId, items.length, virtualizer]);
-
-  useEffect(() => {
-    const refreshLayout = () => {
-      if (
-        document.visibilityState !== "visible"
-        || !shouldStickToBottomRef.current
-        || items.length === 0
-      ) {
-        return;
-      }
-
-      if (layoutFrameRef.current !== null) {
-        cancelAnimationFrame(layoutFrameRef.current);
-      }
-      layoutFrameRef.current = requestAnimationFrame(() => {
-        layoutFrameRef.current = null;
-        virtualizer.scrollToEnd({ behavior: "auto" });
-      });
-    };
-
-    window.addEventListener("focus", refreshLayout);
-    window.addEventListener("resize", refreshLayout);
-    document.addEventListener("visibilitychange", refreshLayout);
-
-    return () => {
-      window.removeEventListener("focus", refreshLayout);
-      window.removeEventListener("resize", refreshLayout);
-      document.removeEventListener("visibilitychange", refreshLayout);
-      if (layoutFrameRef.current !== null) {
-        cancelAnimationFrame(layoutFrameRef.current);
-        layoutFrameRef.current = null;
-      }
-    };
-  }, [items.length, virtualizer]);
+  const {
+    autoScrollEnabled,
+    scrollToLatest,
+  } = useChatScroll({
+    scrollRef: chatRef,
+    contentRef,
+    contentVersion: items.length,
+    chatId,
+    shouldLoadMore: historyHasMore,
+    loadMore: loadOlderIfEligible,
+    scrollToEnd: scrollToLatestEnd,
+  });
 
   const remeasureRow = (messageId: string) => {
     requestAnimationFrame(() => {
@@ -186,9 +140,6 @@ export const ChatMessages = ({
       const index = items.findIndex((item) => item.id === messageId);
       if (element && index >= 0) {
         virtualizer.resizeItem(index, element.offsetHeight);
-        if (shouldStickToBottomRef.current) {
-          virtualizer.scrollToEnd({ behavior: "auto" });
-        }
       }
     });
   };
@@ -212,69 +163,83 @@ export const ChatMessages = ({
   }
 
   return (
-    <div
-      ref={chatRef}
-      onScroll={handleChatScroll}
-      className="flex-1 min-h-0 flex flex-col py-4 overflow-y-auto"
-    >
-      {items.length === 0 ? (
-        <div className="flex flex-1 flex-col justify-end">
-          <ChatWelcome type={type} name={name} />
-        </div>
-      ) : (
-        <div
-          className="relative w-full shrink-0"
-          style={{ height: `${virtualizer.getTotalSize()}px` }}
-        >
-          {virtualizer.getVirtualItems().map((virtualRow) => {
-            const message = items[virtualRow.index];
-            const prevMessage = items[virtualRow.index - 1];
-            const isSameAuthor = prevMessage?.member?.id === message.member?.id;
-            const isWithinTimeLimit = prevMessage
-              && new Date(message.createdAt).getTime() - new Date(prevMessage.createdAt).getTime() < 300000;
-            const isCompact = Boolean(
-              isSameAuthor
-              && isWithinTimeLimit
-              && !prevMessage.deleted
-              && !message.fileUrl
-              && !prevMessage.isSystem
-              && !message.isSystem,
-            );
+    <div className="relative flex flex-col flex-1 min-h-0">
+      <div
+        ref={chatRef}
+        style={{ overflowAnchor: "none" }}
+        className="flex-1 min-h-0 flex flex-col py-4 overflow-y-auto"
+      >
+        {items.length === 0 ? (
+          <div className="flex flex-1 flex-col justify-end">
+            <ChatWelcome type={type} name={name} />
+          </div>
+        ) : (
+          <div
+            ref={contentRef}
+            className="relative w-full shrink-0"
+            style={{ height: `${virtualizer.getTotalSize()}px` }}
+          >
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const message = items[virtualRow.index];
+              const prevMessage = items[virtualRow.index - 1];
+              const isSameAuthor = prevMessage?.member?.id === message.member?.id;
+              const isWithinTimeLimit = prevMessage
+                && new Date(message.createdAt).getTime() - new Date(prevMessage.createdAt).getTime() < 300000;
+              const isCompact = Boolean(
+                isSameAuthor
+                && isWithinTimeLimit
+                && !prevMessage.deleted
+                && !message.fileUrl
+                && !prevMessage.isSystem
+                && !message.isSystem,
+              );
 
-            return (
-              <div
-                key={message.id}
-                data-index={virtualRow.index}
-                ref={(element) => {
-                  if (element) {
-                    rowElementsRef.current.set(message.id, element);
-                    virtualizer.measureElement(element);
-                  } else {
-                    rowElementsRef.current.delete(message.id);
-                  }
-                }}
-                className="absolute left-0 top-0 w-full flow-root"
-                style={{ transform: `translateY(${virtualRow.start}px)` }}
-              >
-                <ChatItem
-                  id={message.id}
-                  currentMember={member}
-                  member={message.member}
-                  content={message.content}
-                  fileUrl={message.fileUrl || null}
-                  deleted={message.deleted}
-                  timestamp={format(new Date(message.createdAt), DATE_FORMAT)}
-                  compactTime={format(new Date(message.createdAt), TIME_FORMAT)}
-                  channelId={paramKey === "channelId" ? paramValue : undefined}
-                  conversationId={paramKey === "conversationId" ? paramValue : undefined}
-                  compact={isCompact}
-                  isSystem={message.isSystem}
-                  onContentSizeChange={() => remeasureRow(message.id)}
-                />
-              </div>
-            );
-          })}
-        </div>
+              return (
+                <div
+                  key={message.id}
+                  data-index={virtualRow.index}
+                  ref={(element) => {
+                    if (element) {
+                      rowElementsRef.current.set(message.id, element);
+                      virtualizer.measureElement(element);
+                    } else {
+                      rowElementsRef.current.delete(message.id);
+                    }
+                  }}
+                  className="absolute left-0 top-0 w-full flow-root"
+                  style={{ transform: `translateY(${virtualRow.start}px)` }}
+                >
+                  <ChatItem
+                    id={message.id}
+                    currentMember={member}
+                    member={message.member}
+                    content={message.content}
+                    fileUrl={message.fileUrl || null}
+                    deleted={message.deleted}
+                    timestamp={format(new Date(message.createdAt), DATE_FORMAT)}
+                    compactTime={format(new Date(message.createdAt), TIME_FORMAT)}
+                    channelId={paramKey === "channelId" ? paramValue : undefined}
+                    conversationId={paramKey === "conversationId" ? paramValue : undefined}
+                    compact={isCompact}
+                    isSystem={message.isSystem}
+                    onContentSizeChange={() => remeasureRow(message.id)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {!autoScrollEnabled && (
+        <button
+          type="button"
+          onClick={scrollToLatest}
+          className="absolute bottom-4 right-4 z-10 flex items-center gap-x-1.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-2 shadow-lg transition"
+        >
+          <ArrowDown className="h-4 w-4" />
+          Jump to latest
+        </button>
       )}
     </div>
   );
