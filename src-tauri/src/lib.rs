@@ -1,3 +1,4 @@
+use base64::Engine;
 use chrono::Local;
 use futures::prelude::*;
 use irc::client::prelude::*;
@@ -901,6 +902,57 @@ async fn disconnect_irc(
     Ok(())
 }
 
+/// Fetches a remote image URL via the Rust backend and returns it as a base64 data URL.
+/// This bypasses Cross-Origin-Resource-Policy (CORP) and Referer-based hotlink restrictions
+/// that block image loading in the Tauri WebView.
+#[tauri::command]
+async fn fetch_image_proxy(url: String) -> Result<String, String> {
+    log::info!("fetch_image_proxy fetching: {}", url);
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .map_err(|e| {
+            log::error!("Proxy build error: {}", e);
+            e.to_string()
+        })?;
+
+    let response = client
+        .get(&url)
+        .header("Referer", "https://boards.4chan.org/")
+        .send()
+        .await
+        .map_err(|e| {
+            log::error!("Proxy fetch error: {}", e);
+            e.to_string()
+        })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        log::error!("Proxy bad status: {}", status);
+        return Err(format!("Bad HTTP status: {}", status));
+    }
+
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/jpeg")
+        .to_string();
+
+    if !content_type.starts_with("image/") {
+        log::error!("Proxy not an image, got: {}", content_type);
+        return Err(format!("Not an image: {}", content_type));
+    }
+
+    let bytes = response.bytes().await.map_err(|e| {
+        log::error!("Proxy bytes error: {}", e);
+        e.to_string()
+    })?;
+    
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{};base64,{}", content_type, encoded))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -923,7 +975,8 @@ pub fn run() {
             disconnect_irc,
             join_channel,
             part_channel,
-            set_channel_topic
+            set_channel_topic,
+            fetch_image_proxy
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

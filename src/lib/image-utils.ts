@@ -148,10 +148,12 @@ export function checkIsMediaUrlAsync(url: string): Promise<"image" | "video" | n
 
   return new Promise<"image" | "video" | null>((resolve) => {
     // 1. Try lightweight HEAD request first
-    fetch(url, { method: "HEAD" })
+    fetch(url, { method: "HEAD", referrerPolicy: "no-referrer" })
       .then((res) => {
         const contentType = res.headers.get("content-type");
-        if (res.ok && contentType) {
+        const isSuccessOrCached = res.ok || res.status === 304;
+
+        if (isSuccessOrCached && contentType) {
           if (contentType.startsWith("image/")) {
             verifiedImageUrlsCache.add(url);
             notifyListeners();
@@ -176,16 +178,34 @@ export function checkIsMediaUrlAsync(url: string): Promise<"image" | "video" | n
 function probeWithMediaElements(url: string, resolve: (val: "image" | "video" | null) => void) {
   // Try Image element first
   const img = new Image();
-  img.onload = () => {
+  img.referrerPolicy = "no-referrer";
+  let resolved = false;
+
+  const handleSuccess = () => {
+    if (resolved) return;
+    resolved = true;
     verifiedImageUrlsCache.add(url);
     notifyListeners();
     resolve("image");
   };
-  img.onerror = () => {
-    // Fall back to Video element probe
+
+  const handleError = () => {
+    if (resolved) return;
+    resolved = true;
     probeWithVideoElement(url, resolve);
   };
+
+  img.onload = handleSuccess;
+  img.onerror = handleError;
   img.src = url;
+
+  if (img.complete) {
+    if (img.naturalWidth > 0) {
+      handleSuccess();
+    } else if (img.naturalWidth === 0 && img.src) {
+      handleError();
+    }
+  }
 }
 
 function probeWithVideoElement(url: string, resolve: (val: "image" | "video" | null) => void) {
