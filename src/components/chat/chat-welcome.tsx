@@ -16,7 +16,7 @@ export const ChatWelcome = ({
           <Hash className="h-12 w-12 text-white" />
         </div>
       )}
-      <p className="text-xl md:text-3xl font-bold">
+      <p className="text-xl md:text-3xl font-bold text-zinc-900 dark:text-zinc-100">
         {type === "channel" ? "Welcome to #" : ""}{name}
       </p>
       <p className="text-zinc-600 dark:text-zinc-400 text-sm">

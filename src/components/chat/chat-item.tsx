@@ -178,7 +178,7 @@ export const ChatItem = ({
               {!isAction && (
                 <div className="flex items-center">
                   <UserHoverCard member={member} server={activeServer} side="right">
-                    <p onClick={onMemberClick} className="font-semibold text-sm hover:underline cursor-pointer">
+                    <p onClick={onMemberClick} className="font-semibold text-sm hover:underline cursor-pointer text-zinc-800 dark:text-zinc-100">
                       {displayName}
                     </p>
                   </UserHoverCard>
