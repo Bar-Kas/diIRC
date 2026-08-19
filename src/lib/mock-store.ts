@@ -83,6 +83,8 @@ interface MockState {
   // Channel Actions
   addChannel: (serverId: string, name: string, type: ChannelType, isTemporary?: boolean) => Channel;
   updateChannel: (serverId: string, channelId: string, name: string, type: ChannelType) => void;
+  updateChannelTopic: (serverId: string, channelId: string, topic: string) => void;
+  updateChannelTopicByName: (serverId: string, channelName: string, topic: string) => void;
   deleteChannel: (serverId: string, channelId: string) => void;
 
   // Member Actions
@@ -90,7 +92,9 @@ interface MockState {
   addServerMember: (serverId: string, name: string) => Member | undefined;
   removeServerMember: (serverId: string, name: string) => void;
   channelMembers: Record<string, string[]>;
+  channelOps: Record<string, string[]>;
   updateChannelMembers: (serverId: string, channelName: string, users: string[], eventType: "NAMES" | "JOIN" | "PART" | "QUIT") => void;
+  updateChannelOps: (serverId: string, channelName: string, ops: string[]) => void;
 
   // Message Actions
   addMessage: (channelId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean) => Message;
@@ -405,6 +409,37 @@ export const useMockStore = create<MockState>()(
         }));
       },
 
+      updateChannelTopic: (serverId, channelId, topic) => {
+        set((state) => ({
+          servers: state.servers.map((s) =>
+            s.id === serverId
+              ? {
+                  ...s,
+                  channels: s.channels.map((c) =>
+                    c.id === channelId ? { ...c, topic } : c
+                  ),
+                }
+              : s
+          ),
+        }));
+      },
+
+      updateChannelTopicByName: (serverId, channelName, topic) => {
+        const cleanName = channelName.replace(/^#/, "").toLowerCase();
+        set((state) => ({
+          servers: state.servers.map((s) =>
+            s.id === serverId
+              ? {
+                  ...s,
+                  channels: s.channels.map((c) =>
+                    c.name.toLowerCase() === cleanName ? { ...c, topic } : c
+                  ),
+                }
+              : s
+          ),
+        }));
+      },
+
       deleteChannel: (serverId, channelId) => {
         set((state) => {
           const nextMessages = { ...state.messages };
@@ -512,6 +547,28 @@ export const useMockStore = create<MockState>()(
       },
 
       channelMembers: {},
+      channelOps: {},
+
+      updateChannelOps: (serverId, channelName, ops) => {
+        const cleanChan = channelName ? channelName.trim().replace(/^#/, "").toLowerCase() : "";
+        set((state) => {
+          const targetServer = state.servers.find((s) => s.id === serverId);
+          if (!targetServer || !cleanChan) return state;
+
+          const targetChannel = targetServer.channels.find(
+            (c) => c.name.toLowerCase().replace(/^#/, "") === cleanChan
+          );
+
+          if (!targetChannel) return state;
+
+          return {
+            channelOps: {
+              ...state.channelOps,
+              [targetChannel.id]: ops,
+            },
+          };
+        });
+      },
 
       updateChannelMembers: (serverId, channelName, users, eventType) => {
         // Ensure all users exist as server members

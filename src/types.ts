@@ -28,6 +28,7 @@ export interface Channel {
   type: ChannelType;
   profileId: string;
   serverId: string;
+  topic?: string;
   isTemporary?: boolean;
   createdAt?: string;
   updatedAt?: string;

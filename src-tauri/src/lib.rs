@@ -29,6 +29,28 @@ struct IrcStatusEvent {
     connected: bool,
 }
 
+#[derive(Serialize, Clone)]
+struct IrcTopicEvent {
+    server_id: String,
+    channel: String,
+    topic: String,
+    set_by: Option<String>,
+}
+
+#[derive(Serialize, Clone)]
+struct IrcOpsEvent {
+    server_id: String,
+    channel: String,
+    ops: Vec<String>,
+}
+
+#[derive(Serialize, Clone)]
+struct IrcTopicErrorEvent {
+    server_id: String,
+    channel: String,
+    error: String,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IrcConnectParams {
@@ -234,10 +256,18 @@ async fn connect_irc(
                             if args.len() >= 4 {
                                 let channel = &args[2];
                                 let users_str = &args[3];
-                                let users: Vec<String> = users_str.split_whitespace().map(|s| {
-                                    let clean = s.trim_start_matches(&['@', '+', '%', '~', '&'][..]);
-                                    clean.to_string()
-                                }).collect();
+                                let mut users: Vec<String> = Vec::new();
+                                let mut ops: Vec<String> = Vec::new();
+
+                                for token in users_str.split_whitespace() {
+                                    let is_op = token.starts_with('@') || token.starts_with('%') || token.starts_with('~') || token.starts_with('&');
+                                    let clean = token.trim_start_matches(&['@', '+', '%', '~', '&'][..]).to_string();
+                                    users.push(clean.clone());
+                                    if is_op {
+                                        ops.push(clean);
+                                    }
+                                }
+
                                 let payload = IrcUserEvent {
                                     server_id: stream_server_id.clone(),
                                     channel: channel.to_string(),
@@ -245,6 +275,100 @@ async fn connect_irc(
                                     event_type: "NAMES".to_string(),
                                 };
                                 let _ = app_clone.emit("irc_user_event", payload);
+
+                                let ops_payload = IrcOpsEvent {
+                                    server_id: stream_server_id.clone(),
+                                    channel: channel.to_string(),
+                                    ops,
+                                };
+                                let _ = app_clone.emit("irc_ops_event", ops_payload);
+                            }
+                        }
+                        Command::Response(Response::ERR_CHANOPRIVSNEEDED, ref args) => {
+                            let channel = args.get(1).cloned().unwrap_or_default();
+                            let reason = args.get(2).cloned().unwrap_or_else(|| "You're not channel operator".to_string());
+                            
+                            let msg_payload = IrcMessage {
+                                server_id: stream_server_id.clone(),
+                                sender: "System".to_string(),
+                                content: format!("Cannot change topic on {}: {}", channel, reason),
+                                channel: channel.clone(),
+                                is_system: true,
+                            };
+                            let _ = app_clone.emit("irc_message", msg_payload);
+
+                            let err_payload = IrcTopicErrorEvent {
+                                server_id: stream_server_id.clone(),
+                                channel,
+                                error: reason,
+                            };
+                            let _ = app_clone.emit("irc_topic_error", err_payload);
+                        }
+                        Command::Response(Response::ERR_NOPRIVILEGES, ref args) => {
+                            let reason = args.get(1).cloned().unwrap_or_else(|| "Permission Denied".to_string());
+                            let msg_payload = IrcMessage {
+                                server_id: stream_server_id.clone(),
+                                sender: "System".to_string(),
+                                content: format!("Permission Denied: {}", reason),
+                                channel: "".to_string(),
+                                is_system: true,
+                            };
+                            let _ = app_clone.emit("irc_message", msg_payload);
+                        }
+                        Command::Response(Response::ERR_NOCHANMODES, ref args) => {
+                            let channel = args.get(1).cloned().unwrap_or_default();
+                            let reason = args.get(2).cloned().unwrap_or_else(|| "Channel doesn't support modes".to_string());
+                            let msg_payload = IrcMessage {
+                                server_id: stream_server_id.clone(),
+                                sender: "System".to_string(),
+                                content: format!("Cannot set topic on {}: {}", channel, reason),
+                                channel,
+                                is_system: true,
+                            };
+                            let _ = app_clone.emit("irc_message", msg_payload);
+                        }
+                        Command::Response(Response::RPL_TOPIC, ref args) => {
+                            if args.len() >= 3 {
+                                let channel = &args[1];
+                                let topic = &args[2];
+                                let payload = IrcTopicEvent {
+                                    server_id: stream_server_id.clone(),
+                                    channel: channel.to_string(),
+                                    topic: topic.to_string(),
+                                    set_by: None,
+                                };
+                                let _ = app_clone.emit("irc_topic_event", payload);
+                            }
+                        }
+                        Command::TOPIC(ref channel, ref topic_opt) => {
+                            let topic_text = topic_opt.as_deref().unwrap_or("");
+                            let sender_name = message.prefix.as_ref().map(|source| match source {
+                                Prefix::Nickname(nick, _, _) => nick.clone(),
+                                Prefix::ServerName(name) => name.clone(),
+                            });
+
+                            let payload = IrcTopicEvent {
+                                server_id: stream_server_id.clone(),
+                                channel: channel.clone(),
+                                topic: topic_text.to_string(),
+                                set_by: sender_name.clone(),
+                            };
+                            let _ = app_clone.emit("irc_topic_event", payload);
+
+                            if let Some(ref sender) = sender_name {
+                                let sys_content = if topic_text.is_empty() {
+                                    format!("{} cleared the topic", sender)
+                                } else {
+                                    format!("{} changed the topic to: {}", sender, topic_text)
+                                };
+                                let msg_payload = IrcMessage {
+                                    server_id: stream_server_id.clone(),
+                                    sender: sender.clone(),
+                                    content: sys_content,
+                                    channel: channel.clone(),
+                                    is_system: true,
+                                };
+                                let _ = app_clone.emit("irc_message", msg_payload);
                             }
                         }
                         _ => {}
@@ -330,6 +454,36 @@ async fn join_channel(
 }
 
 #[tauri::command]
+async fn set_channel_topic(
+    app: AppHandle,
+    state: State<'_, IrcState>,
+    server_id: String,
+    channel: String,
+    topic: String,
+) -> Result<(), String> {
+    let senders = state.senders.lock().await;
+    if let Some(sender) = senders.get(&server_id) {
+        let formatted_channel = if channel.starts_with('#') {
+            channel
+        } else {
+            format!("#{}", channel)
+        };
+        if let Err(e) = sender.send_topic(&formatted_channel, &topic) {
+            drop(senders);
+            state.senders.lock().await.remove(&server_id);
+            let _ = app.emit("irc_status", IrcStatusEvent {
+                server_id: server_id.clone(),
+                connected: false,
+            });
+            return Err(e.to_string());
+        }
+        Ok(())
+    } else {
+        Err(format!("Not connected to server {}", server_id))
+    }
+}
+
+#[tauri::command]
 async fn disconnect_irc(
     app: AppHandle,
     state: State<'_, IrcState>,
@@ -356,7 +510,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![connect_irc, send_message, disconnect_irc, join_channel])
+        .invoke_handler(tauri::generate_handler![connect_irc, send_message, disconnect_irc, join_channel, set_channel_topic])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

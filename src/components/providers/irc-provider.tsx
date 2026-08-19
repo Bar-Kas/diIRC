@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useMockStore } from "@/lib/mock-store";
+import { useModalStore } from "@/hooks/use-modal-store";
 import { Server } from "@/types";
 
 interface IrcMessagePayload {
@@ -252,6 +253,79 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
     setupStatusListener();
 
+    let unlistenTopicFn: (() => void) | null = null;
+    const setupTopicListener = async () => {
+      try {
+        const unlistenTopic = await listen<{ server_id: string; channel: string; topic: string }>(
+          "irc_topic_event",
+          (event) => {
+            const { server_id, channel, topic } = event.payload;
+            useMockStore.getState().updateChannelTopicByName(server_id, channel, topic);
+          }
+        );
+
+        if (isCancelled) {
+          unlistenTopic();
+        } else {
+          unlistenTopicFn = unlistenTopic;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC topic listener:", error);
+      }
+    };
+
+    setupTopicListener();
+
+    let unlistenOpsFn: (() => void) | null = null;
+    const setupOpsListener = async () => {
+      try {
+        const unlistenOps = await listen<{ server_id: string; channel: string; ops: string[] }>(
+          "irc_ops_event",
+          (event) => {
+            const { server_id, channel, ops } = event.payload;
+            useMockStore.getState().updateChannelOps(server_id, channel, ops);
+          }
+        );
+
+        if (isCancelled) {
+          unlistenOps();
+        } else {
+          unlistenOpsFn = unlistenOps;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC ops listener:", error);
+      }
+    };
+
+    setupOpsListener();
+
+    let unlistenTopicErrorFn: (() => void) | null = null;
+    const setupTopicErrorListener = async () => {
+      try {
+        const unlistenTopicError = await listen<{ server_id: string; channel: string; error: string }>(
+          "irc_topic_error",
+          (event) => {
+            const { channel, error } = event.payload;
+            const chanName = channel ? `#${channel.replace(/^#/, "")}` : "this channel";
+            useModalStore.getState().onOpen("ircError", {
+              title: "Permission Denied",
+              description: `Cannot change topic on ${chanName}: ${error || "You do not have channel operator (@) permissions."}`,
+            });
+          }
+        );
+
+        if (isCancelled) {
+          unlistenTopicError();
+        } else {
+          unlistenTopicErrorFn = unlistenTopicError;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC topic error listener:", error);
+      }
+    };
+
+    setupTopicErrorListener();
+
     return () => {
       isCancelled = true;
       if (unlistenFn) {
@@ -262,6 +336,15 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
       }
       if (unlistenStatusFn) {
         unlistenStatusFn();
+      }
+      if (unlistenTopicFn) {
+        unlistenTopicFn();
+      }
+      if (unlistenOpsFn) {
+        unlistenOpsFn();
+      }
+      if (unlistenTopicErrorFn) {
+        unlistenTopicErrorFn();
       }
     };
   }, [addMessage, addServerMember, removeServerMember, setIrcConnected]);

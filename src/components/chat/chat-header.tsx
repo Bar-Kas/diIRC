@@ -1,10 +1,12 @@
-import { Hash, PanelLeft, Server, Users } from "lucide-react";
+import { Hash, PanelLeft, Server, Users, Edit3 } from "lucide-react";
 
 import { MobileToggle } from "@/components/mobile-toggle";
 import { UserAvatar } from "@/components/user-avatar";
 import { ActionTooltip } from "@/components/action-tooltip";
 import { useUIStore } from "@/hooks/use-ui-store";
+import { useModal } from "@/hooks/use-modal-store";
 import { cn } from "@/lib/utils";
+import { Channel, Server as ServerType } from "@/types";
 
 import { ConnectionStatus } from "@/components/connection-status";
 
@@ -13,13 +15,17 @@ interface ChatHeaderProps {
   name: string;
   type: "channel" | "conversation";
   imageUrl?: string;
+  channel?: Channel;
+  server?: ServerType;
 }
 
 export const ChatHeader = ({
   serverId,
   name,
   type,
-  imageUrl
+  imageUrl,
+  channel,
+  server,
 }: ChatHeaderProps) => {
   const { 
     showNavigationSidebar, 
@@ -30,8 +36,16 @@ export const ChatHeader = ({
     toggleMembersSidebar 
   } = useUIStore();
 
+  const { onOpen } = useModal();
+
+  const handleEditTopic = () => {
+    if (server && channel) {
+      onOpen("editTopic", { server, channel });
+    }
+  };
+
   return (
-    <div className="text-md font-semibold px-3 flex items-center h-12 border-neutral-200 dark:border-neutral-800 border-b-2 gap-x-2">
+    <div className="text-md font-semibold px-3 flex items-center h-12 border-neutral-200 dark:border-neutral-800 border-b-2 gap-x-2 min-w-0">
       <MobileToggle serverId={serverId} />
       
       <ActionTooltip 
@@ -40,7 +54,7 @@ export const ChatHeader = ({
       >
         <button
           onClick={toggleNavigationSidebar}
-          className="hidden md:flex items-center justify-center p-1.5 rounded-lg hover:bg-zinc-200/60 dark:hover:bg-zinc-700/50 transition"
+          className="hidden md:flex items-center justify-center p-1.5 rounded-lg hover:bg-zinc-200/60 dark:hover:bg-zinc-700/50 transition shrink-0"
         >
           <Server className={cn(
             "w-5 h-5 text-zinc-500 dark:text-zinc-400 transition",
@@ -55,7 +69,7 @@ export const ChatHeader = ({
       >
         <button
           onClick={toggleServerSidebar}
-          className="hidden md:flex items-center justify-center p-1.5 rounded-lg hover:bg-zinc-200/60 dark:hover:bg-zinc-700/50 transition mr-1"
+          className="hidden md:flex items-center justify-center p-1.5 rounded-lg hover:bg-zinc-200/60 dark:hover:bg-zinc-700/50 transition mr-1 shrink-0"
         >
           <PanelLeft className={cn(
             "w-5 h-5 text-zinc-500 dark:text-zinc-400 transition",
@@ -65,20 +79,54 @@ export const ChatHeader = ({
       </ActionTooltip>
 
       {type === "channel" && (
-        <Hash className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
+        <Hash className="w-5 h-5 text-zinc-500 dark:text-zinc-400 shrink-0" />
       )}
       {type === "conversation" && (
         <UserAvatar 
           src={imageUrl}
           name={name}
-          className="h-8 w-8 md:h-8 md:w-8"
+          className="h-8 w-8 md:h-8 md:w-8 shrink-0"
         />
       )}
-      <p className="font-semibold text-md text-black dark:text-white">
+      <p className="font-semibold text-md text-black dark:text-white shrink-0">
         {name}
       </p>
 
-      <div className="ml-auto flex items-center gap-x-3">
+      {type === "channel" && channel && (
+        <div className="hidden sm:flex items-center min-w-0 flex-1 overflow-hidden ml-2">
+          <div className="h-4 w-[1px] bg-zinc-300 dark:bg-zinc-700 mx-2 shrink-0" />
+          <div className="flex items-center gap-x-1.5 truncate max-w-full group">
+            {channel.topic ? (
+              <ActionTooltip side="bottom" label={channel.topic}>
+                <span 
+                  onClick={handleEditTopic}
+                  className="text-xs text-zinc-500 dark:text-zinc-400 font-normal truncate cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-200 transition"
+                >
+                  {channel.topic}
+                </span>
+              </ActionTooltip>
+            ) : (
+              <span 
+                onClick={handleEditTopic}
+                className="text-xs text-zinc-400 dark:text-zinc-500 font-normal italic cursor-pointer hover:text-zinc-600 dark:hover:text-zinc-300 transition"
+              >
+                No topic set
+              </span>
+            )}
+            
+            <ActionTooltip side="bottom" label="Edit channel topic">
+              <button
+                onClick={handleEditTopic}
+                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-zinc-200/60 dark:hover:bg-zinc-700/50 transition text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 shrink-0"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+              </button>
+            </ActionTooltip>
+          </div>
+        </div>
+      )}
+
+      <div className="ml-auto flex items-center gap-x-3 shrink-0">
         <ConnectionStatus />
 
         <ActionTooltip 

@@ -37,6 +37,8 @@ export const ChannelPage = () => {
         name={channel.name}
         serverId={server.id}
         type="channel"
+        channel={channel}
+        server={server}
       />
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-col flex-1 h-full min-w-0">
