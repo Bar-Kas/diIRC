@@ -3,7 +3,7 @@ import {
   ChannelType, 
   Server
 } from "@/types";
-import { Hash, Trash } from "lucide-react";
+import { Hash, X } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
@@ -57,9 +57,9 @@ export const ServerChannel = ({
       </p>
       <div className="ml-auto flex items-center gap-x-2">
         <ActionTooltip label="Leave">
-          <Trash
+          <X
             onClick={(e) => onAction(e, "deleteChannel")}
-            className="hidden group-hover:block w-4 h-4 text-zinc-500 hover:text-zinc-600 dark:text-zinc-400 dark:hover:text-zinc-300 transition"
+            className="hidden group-hover:block w-4 h-4 text-zinc-500 hover:text-red-500 dark:text-zinc-400 dark:hover:text-red-400 transition"
           />
         </ActionTooltip>
       </div>
