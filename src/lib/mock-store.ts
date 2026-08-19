@@ -108,6 +108,7 @@ interface MockState {
   historyNextOffset: number | null;
   historyHasMore: boolean;
   compactMode: boolean;
+  enableCommandSuggestions: boolean;
   enableLinkPreviews: boolean;
   enableWebPagePreviews: boolean;
   linkPreviewApiUrl: string;
@@ -122,6 +123,7 @@ interface MockState {
 
   // Settings Actions
   setCompactMode: (enabled: boolean) => void;
+  setEnableCommandSuggestions: (enabled: boolean) => void;
   setEnableLinkPreviews: (enabled: boolean) => void;
   setEnableWebPagePreviews: (enabled: boolean) => void;
   setLinkPreviewApiUrl: (url: string) => void;
@@ -179,6 +181,7 @@ export const useMockStore = create<MockState>()(
       historyHasMore: false,
       activeConversations: {},
       compactMode: false,
+      enableCommandSuggestions: true,
       enableLinkPreviews: true,
       enableWebPagePreviews: true,
       linkPreviewApiUrl: "https://api.microlink.io",
@@ -201,6 +204,7 @@ export const useMockStore = create<MockState>()(
       setStatusDisplayMode: (mode: StatusDisplayMode) => set({ statusDisplayMode: mode }),
 
       setCompactMode: (enabled: boolean) => set({ compactMode: enabled }),
+      setEnableCommandSuggestions: (enabled: boolean) => set({ enableCommandSuggestions: enabled }),
       setEnableLinkPreviews: (enabled: boolean) => set({ enableLinkPreviews: enabled }),
       setEnableWebPagePreviews: (enabled: boolean) => set({ enableWebPagePreviews: enabled }),
       setLinkPreviewApiUrl: (url: string) => set({ linkPreviewApiUrl: url }),

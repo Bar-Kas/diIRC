@@ -116,14 +116,20 @@ export const ChatItem = ({
     });
   };
 
+  const isAction = typeof content === "string" && /^\x01ACTION ([\s\S]*)\x01?$/i.test(content.trim());
+  const actionText = isAction
+    ? content.trim().replace(/^\x01ACTION /i, "").replace(/\x01$/, "").trim()
+    : content;
+
   // Check if there is any visible text remaining after hiding image URLs
-  const renderedElements = renderContentWithLinks(content);
+  const textToEvaluate = isAction ? actionText : content;
+  const renderedElements = renderContentWithLinks(textToEvaluate);
   const hasVisibleText = Array.isArray(renderedElements)
     ? renderedElements.some((item) => item !== null && typeof item === "string" ? item.trim().length > 0 : item !== null)
     : Boolean(renderedElements);
 
   const extractedUrls = enableLinkPreviews && !deleted && !fileUrl
-    ? Array.from(new Set(content.match(urlRegex) || []))
+    ? Array.from(new Set(textToEvaluate.match(urlRegex) || []))
     : [];
 
   const servers = useMockStore((state) => state.servers);
@@ -169,13 +175,15 @@ export const ChatItem = ({
         <div className="flex flex-col w-full">
           {!compact && (
             <div className="flex items-center gap-x-2">
-              <div className="flex items-center">
-                <UserHoverCard member={member} server={activeServer} side="right">
-                  <p onClick={onMemberClick} className="font-semibold text-sm hover:underline cursor-pointer">
-                    {displayName}
-                  </p>
-                </UserHoverCard>
-              </div>
+              {!isAction && (
+                <div className="flex items-center">
+                  <UserHoverCard member={member} server={activeServer} side="right">
+                    <p onClick={onMemberClick} className="font-semibold text-sm hover:underline cursor-pointer">
+                      {displayName}
+                    </p>
+                  </UserHoverCard>
+                </div>
+              )}
               <span className="text-xs text-zinc-500 dark:text-zinc-400">
                 {timestamp}
               </span>
@@ -193,12 +201,24 @@ export const ChatItem = ({
           {!fileUrl && (
             <div className="space-y-1">
               {(hasVisibleText || deleted) && (
-                <p className={cn(
-                  "text-sm text-zinc-600 dark:text-zinc-300",
-                  deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
-                )}>
-                  {renderContentWithLinks(content)}
-                </p>
+                isAction ? (
+                  <p className="text-sm text-zinc-600 dark:text-zinc-300 italic">
+                    <span className="font-bold text-indigo-500 dark:text-indigo-400 not-italic mr-1.5">*</span>
+                    <UserHoverCard member={member} server={activeServer} side="right">
+                      <span onClick={onMemberClick} className="font-semibold not-italic hover:underline cursor-pointer text-zinc-800 dark:text-zinc-100 mr-1.5">
+                        {displayName}
+                      </span>
+                    </UserHoverCard>
+                    <span>{renderContentWithLinks(actionText)}</span>
+                  </p>
+                ) : (
+                  <p className={cn(
+                    "text-sm text-zinc-600 dark:text-zinc-300",
+                    deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
+                  )}>
+                    {renderContentWithLinks(content)}
+                  </p>
+                )
               )}
               {extractedUrls.map((url) => (
                 <LinkPreview
