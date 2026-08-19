@@ -57,6 +57,13 @@ struct IrcTopicErrorEvent {
 }
 
 #[derive(Serialize, Clone)]
+struct IrcBadChannelKeyEvent {
+    server_id: String,
+    channel: String,
+    error: String,
+}
+
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct LogEntry {
     timestamp: String,
@@ -624,6 +631,60 @@ async fn connect_irc(
                             };
                             let _ = app_clone.emit("irc_topic_error", err_payload);
                         }
+                        Command::Response(Response::ERR_BADCHANNELKEY, ref args) => {
+                            let channel = args
+                                .iter()
+                                .find(|a| a.starts_with('#') || a.starts_with('&'))
+                                .cloned()
+                                .unwrap_or_else(|| args.get(1).cloned().unwrap_or_default());
+                            let reason = args
+                                .last()
+                                .cloned()
+                                .unwrap_or_else(|| "Cannot join channel (+k)".to_string());
+
+                            let msg_payload = IrcMessage {
+                                server_id: stream_server_id.clone(),
+                                sender: "System".to_string(),
+                                content: format!("Cannot join channel {}: {}", channel, reason),
+                                channel: channel.clone(),
+                                is_system: true,
+                            };
+                            let _ = app_clone.emit("irc_message", msg_payload);
+
+                            let err_payload = IrcBadChannelKeyEvent {
+                                server_id: stream_server_id.clone(),
+                                channel,
+                                error: reason,
+                            };
+                            let _ = app_clone.emit("irc_bad_channel_key", err_payload);
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "475" => {
+                            let channel = args
+                                .iter()
+                                .find(|a| a.starts_with('#') || a.starts_with('&'))
+                                .cloned()
+                                .unwrap_or_else(|| args.get(1).cloned().unwrap_or_default());
+                            let reason = args
+                                .last()
+                                .cloned()
+                                .unwrap_or_else(|| "Cannot join channel (+k)".to_string());
+
+                            let msg_payload = IrcMessage {
+                                server_id: stream_server_id.clone(),
+                                sender: "System".to_string(),
+                                content: format!("Cannot join channel {}: {}", channel, reason),
+                                channel: channel.clone(),
+                                is_system: true,
+                            };
+                            let _ = app_clone.emit("irc_message", msg_payload);
+
+                            let err_payload = IrcBadChannelKeyEvent {
+                                server_id: stream_server_id.clone(),
+                                channel,
+                                error: reason,
+                            };
+                            let _ = app_clone.emit("irc_bad_channel_key", err_payload);
+                        }
                         Command::Response(Response::ERR_NOPRIVILEGES, ref args) => {
                             let reason = args.get(1).cloned().unwrap_or_else(|| "Permission Denied".to_string());
                             let msg_payload = IrcMessage {
@@ -775,11 +836,13 @@ async fn join_channel(
     state: State<'_, IrcState>,
     server_id: String,
     channel: String,
+    password: Option<String>,
 ) -> Result<(), String> {
     log::info!(
-        "join_channel called for server: {}, channel: {}",
+        "join_channel called for server: {}, channel: {}, key: {:?}",
         server_id,
-        channel
+        channel,
+        password
     );
     let senders = state.senders.lock().await;
     if let Some(sender) = senders.get(&server_id) {
@@ -788,8 +851,14 @@ async fn join_channel(
         } else {
             format!("#{}", channel)
         };
-        log::info!("Sending JOIN {}", formatted_channel);
-        if let Err(e) = sender.send_join(&formatted_channel) {
+        let key = password.filter(|p| !p.trim().is_empty());
+        log::info!("Sending JOIN {} with key {:?}", formatted_channel, key);
+        let res = if let Some(k) = key {
+            sender.send(Command::JOIN(formatted_channel, Some(k), None))
+        } else {
+            sender.send_join(&formatted_channel)
+        };
+        if let Err(e) = res {
             log::error!("Error sending JOIN: {}", e);
             drop(senders);
             state.senders.lock().await.remove(&server_id);
@@ -805,6 +874,50 @@ async fn join_channel(
         Ok(())
     } else {
         log::error!("Not connected to server {}", server_id);
+        Err(format!("Not connected to server {}", server_id))
+    }
+}
+
+#[tauri::command]
+async fn set_channel_key(
+    app: AppHandle,
+    state: State<'_, IrcState>,
+    server_id: String,
+    channel: String,
+    key: Option<String>,
+) -> Result<(), String> {
+    log::info!(
+        "set_channel_key called for server: {}, channel: {}, key: {:?}",
+        server_id,
+        channel,
+        key
+    );
+    let senders = state.senders.lock().await;
+    if let Some(sender) = senders.get(&server_id) {
+        let formatted_channel = if channel.starts_with('#') {
+            channel
+        } else {
+            format!("#{}", channel)
+        };
+        let key_clean = key.filter(|k| !k.trim().is_empty());
+        let mode_cmd = match key_clean {
+            Some(k) => Command::Raw("MODE".to_string(), vec![formatted_channel, "+k".to_string(), k]),
+            None => Command::Raw("MODE".to_string(), vec![formatted_channel, "-k".to_string(), "*".to_string()]),
+        };
+        if let Err(e) = sender.send(mode_cmd) {
+            drop(senders);
+            state.senders.lock().await.remove(&server_id);
+            let _ = app.emit(
+                "irc_status",
+                IrcStatusEvent {
+                    server_id: server_id.clone(),
+                    connected: false,
+                },
+            );
+            return Err(e.to_string());
+        }
+        Ok(())
+    } else {
         Err(format!("Not connected to server {}", server_id))
     }
 }
@@ -976,6 +1089,7 @@ pub fn run() {
             join_channel,
             part_channel,
             set_channel_topic,
+            set_channel_key,
             fetch_image_proxy
         ])
         .setup(|app| {

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useMockStore } from "@/lib/mock-store";
 import { useModalStore } from "@/hooks/use-modal-store";
-import { Server } from "@/types";
+import { Server, ChannelType } from "@/types";
 
 interface IrcMessagePayload {
   serverId?: string;
@@ -30,6 +31,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   const removeServerMember = useMockStore((state) => state.removeServerMember);
   const updateChannelMembers = useMockStore((state) => state.updateChannelMembers);
   const setIrcConnected = useMockStore((state) => state.setIrcConnected);
+  const navigate = useNavigate();
   const connectedConfigsRef = useRef<Map<string, string>>(new Map());
   const connectingRef = useRef<Set<string>>(new Set());
 
@@ -219,6 +221,32 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
         const unlistenUsers = await listen<IrcUserEventPayload>("irc_user_event", (event) => {
           const { server_id, channel, users, event_type } = event.payload;
           updateChannelMembers(server_id, channel, users, event_type as any);
+
+          if (event_type === "JOIN") {
+            const store = useMockStore.getState();
+            const pending = store.pendingJoin;
+            const cleanChan = channel.replace(/^#/, "");
+
+            if (
+              pending &&
+              pending.serverId === server_id &&
+              pending.channelName.toLowerCase() === cleanChan.toLowerCase()
+            ) {
+              const activeServer = store.servers.find(s => s.id === server_id);
+              const existing = activeServer?.channels.find(c => c.name.toLowerCase() === cleanChan.toLowerCase());
+              
+              if (!existing) {
+                const newChan = store.addChannel(server_id, cleanChan, ChannelType.TEXT);
+                store.setPendingJoin(null, null);
+                if (newChan?.id) {
+                  navigate(`/servers/${server_id}/channels/${newChan.id}`);
+                }
+              } else {
+                store.setPendingJoin(null, null);
+                navigate(`/servers/${server_id}/channels/${existing.id}`);
+              }
+            }
+          }
         });
 
         if (isCancelled) {
@@ -332,6 +360,51 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
     setupTopicErrorListener();
 
+    let unlistenBadKeyFn: (() => void) | null = null;
+    const setupBadKeyListener = async () => {
+      try {
+        const unlistenBadKey = await listen<{ server_id: string; channel: string; error: string }>(
+          "irc_bad_channel_key",
+          (event) => {
+            const { server_id, channel, error } = event.payload;
+            const cleanChan = channel.replace(/^#/, "");
+
+            const store = useMockStore.getState();
+            const targetServer = store.servers.find((s) => s.id === server_id);
+            const existingChan = targetServer?.channels.find(
+              (c) => c.name.toLowerCase() === cleanChan.toLowerCase()
+            );
+            if (existingChan) {
+              store.deleteChannel(server_id, existingChan.id);
+            }
+
+            const pending = store.pendingJoin;
+            let isWrongPassword = false;
+            if (pending && pending.serverId === server_id && pending.channelName.toLowerCase() === cleanChan.toLowerCase()) {
+              isWrongPassword = !!pending.hasPassword;
+              store.setPendingJoin(null, null);
+            }
+
+            useModalStore.getState().onOpen("joinChannelPassword", {
+              serverId: server_id,
+              channelName: cleanChan,
+              errorMessage: isWrongPassword ? "Incorrect password." : (error || "Cannot join channel (+k): Password required."),
+            });
+          }
+        );
+
+        if (isCancelled) {
+          unlistenBadKey();
+        } else {
+          unlistenBadKeyFn = unlistenBadKey;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC bad channel key listener:", error);
+      }
+    };
+
+    setupBadKeyListener();
+
     return () => {
       isCancelled = true;
       if (unlistenFn) {
@@ -351,6 +424,9 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
       }
       if (unlistenTopicErrorFn) {
         unlistenTopicErrorFn();
+      }
+      if (unlistenBadKeyFn) {
+        unlistenBadKeyFn();
       }
     };
   }, [addMessage, addServerMember, removeServerMember, setIrcConnected]);

@@ -35,8 +35,8 @@ export function App() {
       storageKey="discord-theme"
     >
       <SocketProvider>
-        <IrcProvider>
-          <BrowserRouter>
+        <BrowserRouter>
+          <IrcProvider>
             <ModalProvider />
             <Routes>
               <Route path="/" element={<SetupPage />} />
@@ -48,8 +48,8 @@ export function App() {
             </Route>
             <Route path="*" element={<SetupPage />} />
             </Routes>
-          </BrowserRouter>
-        </IrcProvider>
+          </IrcProvider>
+        </BrowserRouter>
       </SocketProvider>
     </ThemeProvider>
   );

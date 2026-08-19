@@ -94,3 +94,28 @@ commandRegistry.register({
     }
   },
 });
+
+commandRegistry.register({
+  name: "join",
+  description: "Joins a channel: /join #channel [password]",
+  execute: async (args: string, ctx: CommandContext) => {
+    const parts = args.trim().split(/\s+/);
+    if (!parts[0]) return;
+
+    const channelName = parts[0].replace(/^#/, "");
+    const password = parts[1] || null;
+
+    try {
+      const { useMockStore } = await import("@/lib/mock-store");
+      useMockStore.getState().setPendingJoin(ctx.serverId, channelName, !!password);
+      
+      await invoke("join_channel", {
+        serverId: ctx.serverId,
+        channel: channelName,
+        password: password,
+      });
+    } catch (err) {
+      console.error("Failed to send /join via Tauri IRC:", err);
+    }
+  },
+});

@@ -139,10 +139,13 @@ interface MockState {
   updateInviteCode: (serverId: string) => string;
 
   // Channel Actions
+  pendingJoin: { serverId: string; channelName: string; hasPassword?: boolean } | null;
+  setPendingJoin: (serverId: string | null, channelName: string | null, hasPassword?: boolean) => void;
   addChannel: (serverId: string, name: string, type: ChannelType, isTemporary?: boolean) => Channel;
   updateChannel: (serverId: string, channelId: string, name: string, type: ChannelType) => void;
   updateChannelTopic: (serverId: string, channelId: string, topic: string) => void;
   updateChannelTopicByName: (serverId: string, channelName: string, topic: string) => void;
+  updateChannelKey: (serverId: string, channelId: string, key?: string) => void;
   deleteChannel: (serverId: string, channelId: string) => void;
 
   // Member Actions
@@ -179,6 +182,14 @@ export const useMockStore = create<MockState>()(
       historyLoadToken: 0,
       historyNextOffset: null,
       historyHasMore: false,
+      pendingJoin: null,
+      setPendingJoin: (serverId, channelName, hasPassword = false) => {
+        if (serverId && channelName) {
+          set({ pendingJoin: { serverId, channelName: channelName.replace(/^#/, ""), hasPassword } });
+        } else {
+          set({ pendingJoin: null });
+        }
+      },
       activeConversations: {},
       compactMode: false,
       enableCommandSuggestions: true,
@@ -529,6 +540,23 @@ export const useMockStore = create<MockState>()(
                   ...s,
                   channels: s.channels.map((c) =>
                     c.name.toLowerCase() === cleanName ? { ...c, topic } : c
+                  ),
+                }
+              : s
+          ),
+        }));
+      },
+
+      updateChannelKey: (serverId, channelId, key) => {
+        set((state) => ({
+          servers: state.servers.map((s) =>
+            s.id === serverId
+              ? {
+                  ...s,
+                  channels: s.channels.map((c) =>
+                    c.id === channelId || c.name.toLowerCase() === channelId.toLowerCase().replace(/^#/, "")
+                      ? { ...c, key: key || undefined }
+                      : c
                   ),
                 }
               : s
