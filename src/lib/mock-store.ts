@@ -537,6 +537,19 @@ export const useMockStore = create<MockState>()(
       },
 
       deleteChannel: (serverId, channelId) => {
+        const state = get();
+        const server = state.servers.find((s) => s.id === serverId);
+        const channel = server?.channels.find((c) => c.id === channelId);
+
+        if (server && channel) {
+          invoke("part_channel", {
+            serverId: server.id,
+            channel: channel.name,
+          }).catch((err) => {
+            console.error("Failed to send PART to IRC server:", err);
+          });
+        }
+
         set((state) => {
           const nextMessages = { ...state.messages };
           delete nextMessages[channelId];

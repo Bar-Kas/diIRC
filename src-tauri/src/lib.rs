@@ -809,6 +809,46 @@ async fn join_channel(
 }
 
 #[tauri::command]
+async fn part_channel(
+    app: AppHandle,
+    state: State<'_, IrcState>,
+    server_id: String,
+    channel: String,
+) -> Result<(), String> {
+    log::info!(
+        "part_channel called for server: {}, channel: {}",
+        server_id,
+        channel
+    );
+    let senders = state.senders.lock().await;
+    if let Some(sender) = senders.get(&server_id) {
+        let formatted_channel = if channel.starts_with('#') {
+            channel
+        } else {
+            format!("#{}", channel)
+        };
+        log::info!("Sending PART {}", formatted_channel);
+        if let Err(e) = sender.send(Command::PART(formatted_channel, None)) {
+            log::error!("Error sending PART: {}", e);
+            drop(senders);
+            state.senders.lock().await.remove(&server_id);
+            let _ = app.emit(
+                "irc_status",
+                IrcStatusEvent {
+                    server_id: server_id.clone(),
+                    connected: false,
+                },
+            );
+            return Err(e.to_string());
+        }
+        Ok(())
+    } else {
+        log::error!("Not connected to server {}", server_id);
+        Err(format!("Not connected to server {}", server_id))
+    }
+}
+
+#[tauri::command]
 async fn set_channel_topic(
     app: AppHandle,
     state: State<'_, IrcState>,
@@ -882,6 +922,7 @@ pub fn run() {
             load_log_page,
             disconnect_irc,
             join_channel,
+            part_channel,
             set_channel_topic
         ])
         .setup(|app| {

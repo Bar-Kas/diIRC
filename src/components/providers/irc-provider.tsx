@@ -95,7 +95,6 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
         realname: server.realname || "",
         password: server.password || "",
         useTls: server.useTls || false,
-        channels: channels.length > 0 ? channels : ["test", "general"],
       });
 
       const prevHash = connectedConfigsRef.current.get(server.id);
