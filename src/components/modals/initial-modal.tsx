@@ -103,7 +103,7 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
       >
         <DialogHeader className="pt-6 px-6 space-y-1">
           <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
-            Connect to your first IRC Server
+            Connect to your first IRC server
           </DialogTitle>
           <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400 text-xs sm:text-sm">
             Configure host, port, nickname, and channels to connect to your IRC server.
@@ -135,7 +135,7 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
-                    Server Name
+                    Server name
                   </FormLabel>
                   <FormControl>
                     <Input
@@ -158,7 +158,7 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
-                        Host / Address
+                        Host / address
                       </FormLabel>
                       <FormControl>
                         <Input
@@ -204,7 +204,7 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
-                    Real Name (Optional)
+                    Real name (optional)
                   </FormLabel>
                   <FormControl>
                     <Input
@@ -247,7 +247,7 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
-                      Password (Optional)
+                      Password (optional)
                     </FormLabel>
                     <FormControl>
                       <Input
@@ -270,7 +270,7 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
-                    Channels (Comma separated)
+                    Channels (comma separated)
                   </FormLabel>
                   <FormControl>
                     <Input
@@ -317,7 +317,7 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
 
             <DialogFooter className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 -mx-6 -mb-2 px-6 py-4 mt-4 flex items-center justify-end">
               <Button variant="primary" disabled={isLoading} className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 shadow-sm">
-                Connect & Add
+                Connect & add
               </Button>
             </DialogFooter>
           </form>

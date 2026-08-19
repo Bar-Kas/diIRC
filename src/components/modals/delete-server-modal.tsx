@@ -43,7 +43,7 @@ export const DeleteServerModal = () => {
       <DialogContent className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden max-w-md border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl">
         <DialogHeader className="pt-6 px-6 space-y-2">
           <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
-            Delete Server
+            Delete server
           </DialogTitle>
           <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400">
             Are you sure you want to do this? <br />
@@ -64,7 +64,7 @@ export const DeleteServerModal = () => {
             onClick={onClick}
             className="bg-rose-600 hover:bg-rose-700 text-white font-medium px-6 shadow-sm"
           >
-            Delete Server
+            Delete server
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -83,7 +83,7 @@ export const ServerSearch = ({
         <CommandInput placeholder="Search all channels and members" />
         <CommandList>
           <CommandEmpty>
-            No Results found
+            No results found
           </CommandEmpty>
           {data.map(({ label, type, data: items }) => {
             if (!items?.length) return null;

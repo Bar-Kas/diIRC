@@ -45,14 +45,14 @@ export const ServerHeader = ({
           onSelect={() => setTimeout(() => onOpen("editServer", { server }), 0)}
           className="px-3 py-2 text-sm cursor-pointer"
         >
-          Server Settings
+          Server settings
           <Settings className="h-4 w-4 ml-auto" />
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => setTimeout(() => onOpen("createChannel", { server }), 0)}
           className="px-3 py-2 text-sm cursor-pointer"
         >
-          Join Channel
+          Join channel
           <PlusCircle className="h-4 w-4 ml-auto" />
         </DropdownMenuItem>
         <DropdownMenuSeparator />
@@ -60,7 +60,7 @@ export const ServerHeader = ({
           onSelect={() => setTimeout(() => onOpen("deleteServer", { server }), 0)}
           className="text-rose-500 px-3 py-2 text-sm cursor-pointer"
         >
-          Remove Server
+          Remove server
           <Trash className="h-4 w-4 ml-auto" />
         </DropdownMenuItem>
       </DropdownMenuContent>

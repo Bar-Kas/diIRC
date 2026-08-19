@@ -109,7 +109,7 @@ export const ChatMembersSidebar = ({
             </p>
           </div>
           {isOp && (
-            <ActionTooltip label="Channel Operator">
+            <ActionTooltip label="Channel operator">
               <Crown className="w-4 h-4 ml-auto text-amber-500 fill-amber-500/20 shrink-0" />
             </ActionTooltip>
           )}

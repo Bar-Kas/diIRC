@@ -57,12 +57,12 @@ export const MembersModal = () => {
       <DialogContent className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl overflow-hidden">
         <DialogHeader className="pt-6 px-6">
           <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
-            Manage Members
+            Manage members
           </DialogTitle>
           <DialogDescription 
             className="text-center text-zinc-500 dark:text-zinc-400"
           >
-            {server?.members?.length} Members
+            {server?.members?.length} members
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="mt-6 max-h-[420px] px-6">

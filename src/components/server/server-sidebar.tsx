@@ -150,7 +150,7 @@ export const ServerSidebar = ({
                 serverId={server.id}
                 data={[
                   {
-                    label: "Text Channels",
+                    label: "Text channels",
                     type: "channel",
                     data: textChannels?.map((channel) => ({
                       id: channel.id,
@@ -181,7 +181,7 @@ export const ServerSidebar = ({
             </div>
             <Separator className="bg-zinc-200 dark:bg-zinc-700 rounded-md my-2" />
             {[
-              { label: "Text Channels", type: ChannelType.TEXT, channels: textChannels, alwaysShow: true },
+              { label: "Text channels", type: ChannelType.TEXT, channels: textChannels, alwaysShow: true },
             ].map((section) => (section.alwaysShow || !!section.channels?.length) && (
               <div key={section.type} className="mb-2">
                 <ServerSection
@@ -227,7 +227,7 @@ export const ServerSidebar = ({
           <div className="px-3 pt-2">
             <div className="flex items-center justify-between py-1">
               <p className="text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">
-                Private Messages ({pmMembers.length})
+                Private messages ({pmMembers.length})
               </p>
             </div>
           </div>

@@ -116,7 +116,7 @@ export const ServerChannel = ({
             className="cursor-pointer flex items-center gap-x-2"
           >
             <KeyRound className="w-4 h-4" />
-            Set / Remove Password
+            Set / remove password
           </ContextMenuItem>
         ) : (
           <TooltipProvider>
@@ -125,7 +125,7 @@ export const ServerChannel = ({
                 <div className="w-full">
                   <ContextMenuItem disabled className="opacity-50 cursor-not-allowed flex items-center gap-x-2">
                     <KeyRound className="w-4 h-4" />
-                    Set / Remove Password
+                    Set / remove password
                   </ContextMenuItem>
                 </div>
               </TooltipTrigger>

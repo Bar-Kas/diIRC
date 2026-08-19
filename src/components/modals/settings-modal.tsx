@@ -106,7 +106,7 @@ export const SettingsModal = () => {
               <div className="flex items-center gap-x-2">
                 <EyeOff className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
                 <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 cursor-pointer">
-                  Compact Mode
+                  Compact mode
                 </label>
               </div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
@@ -125,7 +125,7 @@ export const SettingsModal = () => {
               <div className="flex items-center gap-x-2">
                 <Command className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
                 <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 cursor-pointer">
-                  Slash Command Autocomplete
+                  Slash command autocomplete
                 </label>
               </div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
@@ -143,7 +143,7 @@ export const SettingsModal = () => {
             <div className="flex items-center gap-x-2">
               <Activity className="w-4 h-4 text-emerald-500" />
               <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Connection Status Indicator
+                Connection status indicator
               </label>
             </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
@@ -156,7 +156,7 @@ export const SettingsModal = () => {
             >
               <option value="always">Always show</option>
               <option value="on_error">Only on error</option>
-              <option value="disabled">Disabled (Hidden)</option>
+              <option value="disabled">Disabled (hidden)</option>
             </select>
           </div>
 
@@ -166,7 +166,7 @@ export const SettingsModal = () => {
               <div className="flex items-center gap-x-2">
                 <Link2 className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
                 <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 cursor-pointer">
-                  Link Previews (Embeds)
+                  Link previews (embeds)
                 </label>
               </div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
@@ -186,7 +186,7 @@ export const SettingsModal = () => {
                 <div className="flex items-center gap-x-2">
                   <Globe className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
                   <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 cursor-pointer">
-                    Fetch Web Page Metadata (API)
+                    Fetch web page metadata (API)
                   </label>
                 </div>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
@@ -206,7 +206,7 @@ export const SettingsModal = () => {
               <div className="flex items-center gap-x-2">
                 <Server className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
                 <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                  Preview API Endpoint
+                  Preview API endpoint
                 </label>
               </div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
@@ -227,17 +227,17 @@ export const SettingsModal = () => {
               <div className="flex items-center gap-x-2">
                 <UploadCloud className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
                 <label className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                  Image Upload Provider
+                  Image upload provider
                 </label>
               </div>
               {uploadConfig.provider === "litterbox" && (
                 <span className="text-xs px-2 py-0.5 font-bold rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
-                  Temporary Hosting
+                  Temporary hosting
                 </span>
               )}
               {uploadConfig.provider === "pomf" && (
                 <span className="text-xs px-2 py-0.5 font-bold rounded bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30">
-                  POMF Hosting
+                  POMF hosting
                 </span>
               )}
             </div>
@@ -254,10 +254,10 @@ export const SettingsModal = () => {
             >
               <option value="disabled">🚫 Disabled (Upload disabled)</option>
               <option value="litterbox" className="text-amber-600 font-bold">
-                ⚠️ Litterbox (Public, expiration 1h - 72h)
+                ⚠️ Litterbox (public, expiration 1h - 72h)
               </option>
               <option value="pomf" className="text-indigo-600 font-bold">
-                🐱 POMF / Pomf.cat (Public)
+                🐱 POMF / Pomf.cat (public)
               </option>
             </select>
 
@@ -266,7 +266,7 @@ export const SettingsModal = () => {
               <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 space-y-2 text-xs text-amber-600 dark:text-amber-400">
                 <div className="flex items-center gap-x-1.5 font-bold">
                   <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-                  Information (Litterbox Temporary):
+                  Information (Litterbox temporary):
                 </div>
                 <p className="text-[11px] leading-relaxed opacity-90">
                   Images expire automatically after the selected duration. They remain public until deleted.
@@ -283,10 +283,10 @@ export const SettingsModal = () => {
                     }
                     className="bg-white dark:bg-[#1e1f22] border border-amber-500/40 rounded px-2 py-1 text-xs font-semibold text-zinc-900 dark:text-zinc-100"
                   >
-                    <option value="1h">1 Hour</option>
-                    <option value="12h">12 Hours</option>
-                    <option value="24h">24 Hours (Default)</option>
-                    <option value="72h">72 Hours (3 Days)</option>
+                    <option value="1h">1 hour</option>
+                    <option value="12h">12 hours</option>
+                    <option value="24h">24 hours (default)</option>
+                    <option value="72h">72 hours (3 days)</option>
                   </select>
                 </div>
               </div>
@@ -297,7 +297,7 @@ export const SettingsModal = () => {
               <div className="space-y-3 pt-1">
                 <div className="space-y-1">
                   <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    POMF Server Address (Upload URL)
+                    POMF server address (upload URL)
                   </label>
                   <Input
                     value={uploadConfig.pomfUrl || ""}
@@ -318,7 +318,7 @@ export const SettingsModal = () => {
             <div className="flex items-center gap-x-2">
               <Key className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
               <label className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                Image Read Authorization (URL Headers)
+                Image read authorization (URL headers)
               </label>
             </div>
 
@@ -385,7 +385,7 @@ export const SettingsModal = () => {
                 size="sm"
                 className="w-full text-xs font-semibold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60"
               >
-                <Plus className="w-3.5 h-3.5 mr-1" /> Add Authorization Rule
+                <Plus className="w-3.5 h-3.5 mr-1" /> Add authorization rule
               </Button>
             </form>
           </div>

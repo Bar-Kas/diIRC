@@ -97,7 +97,7 @@ export const SetChannelPasswordModal = () => {
         <DialogHeader className="pt-8 px-6">
           <DialogTitle className="text-2xl text-center font-bold flex items-center justify-center gap-2">
             <KeyRound className="w-6 h-6 text-indigo-500" />
-            Channel Password
+            Channel password
           </DialogTitle>
         </DialogHeader>
 
@@ -135,7 +135,7 @@ export const SetChannelPasswordModal = () => {
 
           <div className="space-y-2">
             <label className="uppercase text-xs font-bold text-zinc-500 dark:text-zinc-400">
-              {hasExistingKey ? "New Channel Password" : "Channel Password"}
+              {hasExistingKey ? "New channel password" : "Channel password"}
             </label>
             <Input
               disabled={isLoading}
@@ -168,7 +168,7 @@ export const SetChannelPasswordModal = () => {
                   Saving...
                 </>
               ) : (
-                "Set Password"
+                "Set password"
               )}
             </Button>
           </DialogFooter>
