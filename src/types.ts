@@ -60,6 +60,17 @@ export interface DirectMessage {
   updatedAt: string;
 }
 
+export interface LogEntry {
+  timestamp: string;
+  sender: string;
+  content: string;
+}
+
+export interface LogPage {
+  entries: LogEntry[];
+  nextOffset: number | null;
+}
+
 export interface Conversation {
   id: string;
   memberOneId: string;

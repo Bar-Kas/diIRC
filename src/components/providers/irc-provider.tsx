@@ -6,10 +6,12 @@ import { useModalStore } from "@/hooks/use-modal-store";
 import { Server } from "@/types";
 
 interface IrcMessagePayload {
-  serverId: string;
+  serverId?: string;
+  server_id?: string;
   sender: string;
   content: string;
   channel: string;
+  isSystem?: boolean;
   is_system?: boolean;
 }
 
@@ -140,7 +142,11 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     const setupListener = async () => {
       try {
         const unlisten = await listen<IrcMessagePayload>("irc_message", (event) => {
-          const { serverId, sender, content, channel, is_system } = event.payload;
+          const { sender, content, channel } = event.payload;
+          const serverId = event.payload.serverId || event.payload.server_id;
+          const isSystem = event.payload.isSystem ?? event.payload.is_system;
+
+          if (!serverId) return;
 
           const activeServers = useMockStore.getState().servers;
           const targetServer = activeServers.find((s) => s.id === serverId) || activeServers[0];
@@ -189,9 +195,9 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
           };
 
           if (targetChannel) {
-            addMessage(targetChannel.id, mockMember as any, content, null, is_system);
+            addMessage(targetChannel.id, mockMember as any, content, null, isSystem);
           } else if (targetServer.channels.length > 0) {
-            addMessage(targetServer.channels[0].id, mockMember as any, content, null, is_system);
+            addMessage(targetServer.channels[0].id, mockMember as any, content, null, isSystem);
           }
         });
 

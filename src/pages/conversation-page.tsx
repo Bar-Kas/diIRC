@@ -44,6 +44,7 @@ export const ConversationPage = () => {
             member={currentMember}
             name={targetMember.profile.name}
             chatId={conversationId}
+            serverId={server.id}
             type="conversation"
             paramKey="conversationId"
             paramValue={conversationId}
