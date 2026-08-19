@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Paperclip, Loader2, X, FileIcon } from "lucide-react";
+import { Paperclip, Loader2, X, FileIcon, Command } from "lucide-react";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -22,20 +22,12 @@ import { uploadImage } from "@/lib/upload/services";
 import { ImageContextMenu } from "@/components/image-context-menu";
 import { isMediaUrl } from "@/lib/image-utils";
 import { commandRegistry } from "@/lib/commands/command-system";
-import { Command } from "lucide-react";
+import { useDraftStore, AttachedImage } from "@/hooks/use-draft-store";
 
 interface ChatInputProps {
   query: Record<string, string>;
   name: string;
   type: "conversation" | "channel";
-}
-
-interface AttachedImage {
-  id: string;
-  previewUrl: string;
-  url?: string;
-  name: string;
-  isUploading: boolean;
 }
 
 const formSchema = z.object({
@@ -56,7 +48,15 @@ export const ChatInput = ({
   const enableCommandSuggestions = useMockStore((state) => state.enableCommandSuggestions ?? true);
   const { onOpen } = useModal();
 
-  const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  const activeId = query?.channelId || query?.conversationId;
+
+  const setDraft = useDraftStore((state) => state.setDraft);
+  const getDraft = useDraftStore((state) => state.getDraft);
+  const clearDraft = useDraftStore((state) => state.clearDraft);
+
+  const initialDraft = activeId ? getDraft(activeId) : { content: "", attachedImages: [] };
+
+  const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(initialDraft.attachedImages || []);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -68,17 +68,55 @@ export const ChatInput = ({
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      content: "",
+      content: initialDraft.content || "",
     }
   });
 
-  const activeId = query?.channelId || query?.conversationId;
+  const prevActiveIdRef = useRef<string | undefined>(undefined);
+  const isSwitchingRef = useRef<boolean>(false);
+  const attachedImagesRef = useRef(attachedImages);
+  attachedImagesRef.current = attachedImages;
+
   useEffect(() => {
+    if (!activeId) return;
+
+    isSwitchingRef.current = true;
+
+    const prevId = prevActiveIdRef.current;
+    if (prevId && prevId !== activeId) {
+      const currentContent = form.getValues("content") || "";
+      setDraft(prevId, {
+        content: currentContent,
+        attachedImages: attachedImagesRef.current,
+      });
+    }
+
+    const draft = getDraft(activeId);
+    form.reset({ content: draft.content || "" });
+    setAttachedImages(draft.attachedImages || []);
+
+    prevActiveIdRef.current = activeId;
+
     form.setFocus("content");
     setIsFocused(true);
-  }, [activeId, form]);
+
+    const timer = setTimeout(() => {
+      isSwitchingRef.current = false;
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [activeId, form, getDraft, setDraft]);
 
   const content = form.watch("content");
+
+  useEffect(() => {
+    if (!activeId || isSwitchingRef.current) return;
+    if (prevActiveIdRef.current !== activeId) return;
+
+    setDraft(activeId, {
+      content: content || "",
+      attachedImages: attachedImages,
+    });
+  }, [content, attachedImages, activeId, setDraft]);
 
   useEffect(() => {
     if (enableCommandSuggestions && isFocused && content?.startsWith("/")) {
@@ -207,9 +245,6 @@ export const ChatInput = ({
       setTimeout(() => setUploadError(null), 5000);
     }
   }, [uploadConfig, processFileUpload]);
-
-  const attachedImagesRef = useRef(attachedImages);
-  attachedImagesRef.current = attachedImages;
 
   useEffect(() => {
     return () => {
@@ -430,7 +465,10 @@ export const ChatInput = ({
               }
             }
           }
-          form.reset();
+          if (activeId) {
+            clearDraft(activeId);
+          }
+          form.reset({ content: "" });
           clearAllAttachments();
           form.setFocus("content");
           return;
@@ -465,7 +503,10 @@ export const ChatInput = ({
         }
       }
 
-      form.reset();
+      if (activeId) {
+        clearDraft(activeId);
+      }
+      form.reset({ content: "" });
       clearAllAttachments();
       form.setFocus("content");
     } catch (error) {
