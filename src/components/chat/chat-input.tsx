@@ -69,6 +69,23 @@ export const ChatInput = ({
     form.setFocus("content");
   }, [activeId, form]);
 
+  /**
+   * Re-applies focus to the message input after a send.
+   *
+   * WebView2 on Windows may briefly steal focus when it shows its autofill
+   * ("Suggestions") UI after a form submit, even though autocomplete="off" is
+   * set. Waiting a couple of animation frames (plus a late fallback) lets React
+   * flush the reset/attachment update first and re-focuses the field after any
+   * such WebView2 popup has appeared.
+   */
+  const restoreInputFocus = useCallback(() => {
+    const focus = () => form.setFocus("content");
+    requestAnimationFrame(() => {
+      requestAnimationFrame(focus);
+    });
+    window.setTimeout(focus, 150);
+  }, [form]);
+
   const removeAttachment = useCallback((id: string) => {
     setAttachedImages((prev) => {
       const target = prev.find((item) => item.id === id);
@@ -304,7 +321,13 @@ export const ChatInput = ({
     const readyImages = attachedImages.filter((img) => !img.isUploading && img.url);
 
     if (attachedImages.some((img) => img.isUploading)) return;
-    if (!textContent && readyImages.length === 0) return;
+    if (!textContent && readyImages.length === 0) {
+      // Nothing to send — keep focus on the input (avoids the isSubmitting
+      // disable/blur cycle that otherwise steals focus when Enter is pressed
+      // on an empty field).
+      restoreInputFocus();
+      return;
+    }
 
     const linesToSend: string[] = [];
     if (textContent) {
@@ -366,7 +389,7 @@ export const ChatInput = ({
 
       form.reset();
       clearAllAttachments();
-      form.setFocus("content");
+      restoreInputFocus();
     } catch (error) {
       console.error(error);
     }
@@ -374,7 +397,7 @@ export const ChatInput = ({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)}>
+      <form onSubmit={form.handleSubmit(onSubmit)} autoComplete="off">
         <input
           ref={fileInputRef}
           type="file"
@@ -444,6 +467,7 @@ export const ChatInput = ({
                     <Input
                       disabled={isLoading && attachedImages.length === 0}
                       autoFocus
+                      autoComplete="off"
                       className="pl-4 pr-24 py-6 bg-zinc-200/90 dark:bg-zinc-700/75 border-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200"
                       placeholder={
                         isUploading
@@ -451,6 +475,20 @@ export const ChatInput = ({
                           : `Message ${type === "conversation" ? name : "#" + name}`
                       }
                       {...field}
+                      onKeyDown={(e) => {
+                        // Pressing Enter on an empty field normally triggers the
+                        // implicit form submit, which makes react-hook-form set
+                        // isSubmitting, which disables this input and blurs it.
+                        // Block that path so focus stays in the field until the
+                        // user actually clicks somewhere else.
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          const hasText = Boolean((form.getValues().content || "").trim());
+                          const hasReadyImage = attachedImages.some((img) => !img.isUploading && img.url);
+                          if (!hasText && !hasReadyImage) {
+                            e.preventDefault();
+                          }
+                        }
+                      }}
                     />
 
                     <div className="absolute right-4 z-10 flex items-center gap-x-2">
