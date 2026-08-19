@@ -321,7 +321,7 @@ export const useMockStore = create<MockState>()(
               const updatedChannels = optionsOrName.autoJoinChannels && optionsOrName.autoJoinChannels.length > 0
                 ? optionsOrName.autoJoinChannels.map((ch) => {
                     const cleanName = ch.trim().replace(/^#/, "").toLowerCase().replace(/\s+/g, "-");
-                    const existing = s.channels.find((c) => c.name === cleanName);
+                    const existing = s.channels.find((c) => c.name.trim().replace(/^#/, "").toLowerCase() === cleanName);
                     return existing || {
                       id: `channel-${uuidv4().slice(0, 8)}`,
                       name: cleanName,
@@ -434,9 +434,39 @@ export const useMockStore = create<MockState>()(
       },
 
       addChannel: (serverId, name, type, isTemporary) => {
+        const cleanName = name.trim().replace(/^#/, "").toLowerCase().replace(/\s+/g, "-");
+        const server = get().servers.find((s) => s.id === serverId);
+
+        if (server) {
+          const existingChannel = server.channels.find(
+            (c) => c.name.trim().replace(/^#/, "").toLowerCase() === cleanName && c.type === type
+          );
+
+          if (existingChannel) {
+            if (isTemporary === false && existingChannel.isTemporary) {
+              set((state) => ({
+                servers: state.servers.map((s) =>
+                  s.id === serverId
+                    ? {
+                        ...s,
+                        channels: s.channels.map((c) =>
+                          c.id === existingChannel.id
+                            ? { ...c, isTemporary: false }
+                            : c
+                        ),
+                      }
+                    : s
+                ),
+              }));
+              return { ...existingChannel, isTemporary: false };
+            }
+            return existingChannel;
+          }
+        }
+
         const newChannel: Channel = {
           id: `channel-${uuidv4().slice(0, 8)}`,
-          name: name.toLowerCase().replace(/\s+/g, "-"),
+          name: cleanName,
           type,
           profileId: get().currentProfile.id,
           serverId,
