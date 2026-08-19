@@ -66,7 +66,7 @@ export const CreateChannelModal = () => {
     try {
       if (activeServerId) {
         const cleanChannelName = values.name.trim().replace(/^#/, "");
-        
+
         try {
           useMockStore.getState().setPendingJoin(activeServerId, cleanChannelName, undefined);
           await invoke("join_channel", {
@@ -97,7 +97,7 @@ export const CreateChannelModal = () => {
       <DialogContent className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden max-w-md border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl">
         <DialogHeader className="pt-6 px-6">
           <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
-            Join Channel
+            Join channel
           </DialogTitle>
         </DialogHeader>
         <Form {...form}>
@@ -131,7 +131,7 @@ export const CreateChannelModal = () => {
                   <FormItem className="flex flex-row items-center justify-between rounded-xl border border-zinc-300/80 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-3.5 shadow-sm">
                     <div className="flex items-center gap-x-2">
                       <FormLabel className="text-sm font-semibold text-zinc-900 dark:text-zinc-200 cursor-pointer">
-                        Join temporary
+                        Join temporarily
                       </FormLabel>
                       <TooltipProvider>
                         <Tooltip delayDuration={50}>
@@ -139,7 +139,7 @@ export const CreateChannelModal = () => {
                             <HelpCircle className="w-4 h-4 text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300 transition cursor-pointer" />
                           </TooltipTrigger>
                           <TooltipContent side="top" className="max-w-xs text-xs">
-                            When checked, you will not automatically rejoin this channel after restarting the application.
+                            When checked, you will NOT automatically rejoin this channel after restarting the application.
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>

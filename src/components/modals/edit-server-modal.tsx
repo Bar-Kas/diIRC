@@ -169,7 +169,7 @@ export const EditServerModal = () => {
         >
           <DialogHeader className="pt-6 px-6 space-y-1">
             <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
-              Edit Server Settings
+              Edit server settings
             </DialogTitle>
             <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400 text-xs sm:text-sm">
               Update connection parameters and configuration for your IRC server.
@@ -183,7 +183,7 @@ export const EditServerModal = () => {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
-                      Server Name
+                      Server name
                     </FormLabel>
                     <FormControl>
                       <Input
@@ -206,7 +206,7 @@ export const EditServerModal = () => {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
-                          Host / Address
+                          Host / address
                         </FormLabel>
                         <FormControl>
                           <Input
@@ -266,7 +266,7 @@ export const EditServerModal = () => {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
-                      Password (Optional)
+                      Password (optional)
                     </FormLabel>
                     <FormControl>
                       <Input
@@ -288,7 +288,7 @@ export const EditServerModal = () => {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
-                      Real Name (Optional)
+                      Real name (optional)
                     </FormLabel>
                     <FormControl>
                       <Input
@@ -323,7 +323,7 @@ export const EditServerModal = () => {
                             <Input
                               disabled={isLoading}
                               className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10"
-                              placeholder={index === 0 ? "ReactUser" : "Fallback Nick"}
+                              placeholder={index === 0 ? "ReactUser" : "Fallback nick"}
                               {...field}
                             />
                             {index > 0 && (
@@ -419,7 +419,7 @@ export const EditServerModal = () => {
                   Cancel
                 </Button>
                 <Button variant="primary" disabled={isLoading} className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 shadow-sm">
-                  Save Changes
+                  Save changes
                 </Button>
               </DialogFooter>
             </form>

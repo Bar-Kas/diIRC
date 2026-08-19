@@ -13,7 +13,7 @@ export const IrcErrorModal = () => {
   const { isOpen, onClose, type, data } = useModal();
 
   const isModalOpen = isOpen && type === "ircError";
-  const title = data.title || "IRC Error";
+  const title = data.title || "IRC error";
   const description =
     data.description ||
     data.errorMessage ||

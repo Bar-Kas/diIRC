@@ -83,7 +83,7 @@ export const EditTopicModal = () => {
         : error?.message || "Failed to update topic due to insufficient permissions.";
       setErrorMessage(errText);
       useModal.getState().onOpen("ircError", {
-        title: "Topic Update Failed",
+        title: "Topic update failed",
         description: errText,
       });
     } finally {
@@ -96,7 +96,7 @@ export const EditTopicModal = () => {
       <DialogContent className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden max-w-md border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl">
         <DialogHeader className="pt-6 px-6 space-y-2">
           <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
-            Edit Channel Topic
+            Edit channel topic
           </DialogTitle>
         </DialogHeader>
 
@@ -120,7 +120,7 @@ export const EditTopicModal = () => {
 
             <div>
               <label className="uppercase text-xs font-bold text-zinc-500 dark:text-zinc-400">
-                Channel Topic for #{channel?.name}
+                Channel topic for #{channel?.name}
               </label>
               <Input
                 disabled={isLoading}
@@ -148,7 +148,7 @@ export const EditTopicModal = () => {
               disabled={isLoading}
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 shadow-sm"
             >
-              Save Topic
+              Save topic
             </Button>
           </DialogFooter>
         </form>

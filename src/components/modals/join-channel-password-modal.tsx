@@ -153,7 +153,7 @@ export const JoinChannelPasswordModal = () => {
         <DialogHeader className="pt-8 px-6">
           <DialogTitle className="text-2xl text-center font-bold flex items-center justify-center gap-2">
             <Lock className="w-6 h-6 text-indigo-500" />
-            Password Protected Channel
+            Password protected channel
           </DialogTitle>
         </DialogHeader>
 
@@ -171,7 +171,7 @@ export const JoinChannelPasswordModal = () => {
 
           <div className="space-y-2">
             <label className="uppercase text-xs font-bold text-zinc-500 dark:text-zinc-400">
-              Channel Password
+              Channel password
             </label>
             <Input
               ref={inputRef}
@@ -205,7 +205,7 @@ export const JoinChannelPasswordModal = () => {
                   Joining...
                 </>
               ) : (
-                "Join Channel"
+                "Join channel"
               )}
             </Button>
           </DialogFooter>

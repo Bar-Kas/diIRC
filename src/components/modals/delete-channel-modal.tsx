@@ -46,7 +46,7 @@ export const DeleteChannelModal = () => {
       <DialogContent className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden max-w-md border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl">
         <DialogHeader className="pt-6 px-6 space-y-2">
           <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
-            Leave Channel
+            Leave channel
           </DialogTitle>
           <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400">
             Are you sure you want to leave <span className="text-indigo-600 dark:text-indigo-400 font-semibold">#{channel?.name}</span>? <br />
@@ -67,7 +67,7 @@ export const DeleteChannelModal = () => {
             onClick={onClick}
             className="bg-rose-600 hover:bg-rose-700 text-white font-medium px-6 shadow-sm"
           >
-            Leave Channel
+            Leave channel
           </Button>
         </DialogFooter>
       </DialogContent>

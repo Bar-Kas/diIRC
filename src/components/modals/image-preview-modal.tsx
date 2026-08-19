@@ -21,7 +21,7 @@ export const ImagePreviewModal = () => {
   return (
     <Dialog open={isModalOpen} onOpenChange={onClose}>
       <DialogContent hideClose className="bg-zinc-950/95 border-zinc-800 text-white p-2 overflow-hidden max-w-5xl max-h-[92vh] flex flex-col items-center justify-center backdrop-blur-md shadow-2xl rounded-2xl">
-        <DialogTitle className="sr-only">Image Preview</DialogTitle>
+        <DialogTitle className="sr-only">Image preview</DialogTitle>
         <DialogDescription className="sr-only">Full size view of the selected image</DialogDescription>
 
         {/* Floating Custom Header Controls */}

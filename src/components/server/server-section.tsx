@@ -25,7 +25,7 @@ export const ServerSection = ({
         {label}
       </p>
       {sectionType === "channels" && (
-        <ActionTooltip label="Join Channel" side="top">
+        <ActionTooltip label="Join channel" side="top">
           <button
             onClick={() => onOpen("createChannel", { channelType, server })}
             className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-400 dark:hover:text-zinc-300 transition"
