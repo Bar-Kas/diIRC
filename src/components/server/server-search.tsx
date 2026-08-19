@@ -1,6 +1,7 @@
 import { Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useMockStore } from "@/lib/mock-store";
 
 import { 
   CommandDialog, 
@@ -12,6 +13,7 @@ import {
 } from "@/components/ui/command";
 
 interface ServerSearchProps {
+  serverId?: string;
   data: {
     label: string;
     type: "channel" | "member";
@@ -24,6 +26,7 @@ interface ServerSearchProps {
 }
 
 export const ServerSearch = ({
+  serverId,
   data
 }: ServerSearchProps) => {
   const [open, setOpen] = useState(false);
@@ -45,12 +48,16 @@ export const ServerSearch = ({
   const onClick = ({ id, type }: { id: string; type: "channel" | "member" }) => {
     setOpen(false);
 
+    const targetServerId = serverId || params?.serverId;
+    if (!targetServerId) return;
+
     if (type === "member") {
-      return navigate(`/servers/${params?.serverId}/conversations/${id}`);
+      useMockStore.getState().openConversation(targetServerId, id);
+      return navigate(`/servers/${targetServerId}/conversations/${id}`);
     }
 
     if (type === "channel") {
-      return navigate(`/servers/${params?.serverId}/channels/${id}`);
+      return navigate(`/servers/${targetServerId}/channels/${id}`);
     }
   };
 
