@@ -15,7 +15,8 @@ export type ModalType =
   | "ircError"
   | "editTopic"
   | "joinChannelPassword"
-  | "setChannelPassword";
+  | "setChannelPassword"
+  | "channelSettings";
 
 interface ModalData {
   server?: Server;

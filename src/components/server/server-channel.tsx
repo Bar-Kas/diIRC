@@ -3,7 +3,7 @@ import {
   ChannelType, 
   Server
 } from "@/types";
-import { Hash, X, KeyRound, Lock } from "lucide-react";
+import { Hash, X, KeyRound, Lock, Sliders } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
@@ -88,6 +88,14 @@ export const ServerChannel = ({
             </ActionTooltip>
           )}
           <div className="ml-auto flex items-center gap-x-2">
+            {isChannelOp && (
+              <ActionTooltip label="Channel settings">
+                <Sliders
+                  onClick={(e) => onAction(e, "channelSettings")}
+                  className="hidden group-hover:block w-4 h-4 text-zinc-500 hover:text-indigo-500 dark:text-zinc-400 dark:hover:text-indigo-400 transition cursor-pointer"
+                />
+              </ActionTooltip>
+            )}
             <ActionTooltip label="Leave">
               <X
                 onClick={(e) => onAction(e, "deleteChannel")}
@@ -99,18 +107,31 @@ export const ServerChannel = ({
       </ContextMenuTrigger>
       <ContextMenuContent className="w-56 bg-white dark:bg-[#111214] text-zinc-900 dark:text-zinc-100 border-zinc-200 dark:border-zinc-800">
         {isChannelOp ? (
-          <ContextMenuItem
-            onSelect={() => setTimeout(() => onOpen("setChannelPassword", { server, channel }), 0)}
-            className="cursor-pointer flex items-center gap-x-2"
-          >
-            <KeyRound className="w-4 h-4" />
-            Set / remove password
-          </ContextMenuItem>
+          <>
+            <ContextMenuItem
+              onSelect={() => setTimeout(() => onOpen("channelSettings", { server, channel }), 0)}
+              className="cursor-pointer flex items-center gap-x-2"
+            >
+              <Sliders className="w-4 h-4" />
+              Channel settings
+            </ContextMenuItem>
+            <ContextMenuItem
+              onSelect={() => setTimeout(() => onOpen("setChannelPassword", { server, channel }), 0)}
+              className="cursor-pointer flex items-center gap-x-2"
+            >
+              <KeyRound className="w-4 h-4" />
+              Set / remove password
+            </ContextMenuItem>
+          </>
         ) : (
           <TooltipProvider>
             <Tooltip delayDuration={0}>
               <TooltipTrigger asChild>
-                <div className="w-full">
+                <div className="w-full space-y-1">
+                  <ContextMenuItem disabled className="opacity-50 cursor-not-allowed flex items-center gap-x-2">
+                    <Sliders className="w-4 h-4" />
+                    Channel settings
+                  </ContextMenuItem>
                   <ContextMenuItem disabled className="opacity-50 cursor-not-allowed flex items-center gap-x-2">
                     <KeyRound className="w-4 h-4" />
                     Set / remove password

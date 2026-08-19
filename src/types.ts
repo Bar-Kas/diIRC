@@ -31,6 +31,7 @@ export interface Channel {
   serverId: string;
   topic?: string;
   key?: string;
+  modes?: string[];
   isTemporary?: boolean;
   createdAt?: string;
   updatedAt?: string;

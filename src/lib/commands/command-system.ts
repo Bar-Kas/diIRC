@@ -119,3 +119,54 @@ commandRegistry.register({
     }
   },
 });
+
+commandRegistry.register({
+  name: "mode",
+  description: "Sets or queries channel modes: /mode [#channel] [flags] [params]",
+  execute: async (args: string, ctx: CommandContext) => {
+    const trimmed = args.trim();
+    let target = "";
+    let modeStr: string | null = null;
+    let params: string[] | null = null;
+
+    if (!trimmed) {
+      if (ctx.type === "channel" && ctx.channelName) {
+        target = ctx.channelName.startsWith("#") ? ctx.channelName : `#${ctx.channelName}`;
+      } else {
+        return;
+      }
+    } else {
+      const parts = trimmed.split(/\s+/);
+      if (parts[0].startsWith("#") || parts[0].startsWith("&")) {
+        target = parts[0];
+        if (parts.length > 1) {
+          modeStr = parts[1];
+          if (parts.length > 2) {
+            params = parts.slice(2);
+          }
+        }
+      } else {
+        if (ctx.type === "channel" && ctx.channelName) {
+          target = ctx.channelName.startsWith("#") ? ctx.channelName : `#${ctx.channelName}`;
+          modeStr = parts[0];
+          if (parts.length > 1) {
+            params = parts.slice(1);
+          }
+        } else {
+          return;
+        }
+      }
+    }
+
+    try {
+      await invoke("send_mode", {
+        serverId: ctx.serverId,
+        target,
+        mode: modeStr,
+        params,
+      });
+    } catch (err) {
+      console.error("Failed to send /mode via Tauri IRC:", err);
+    }
+  },
+});

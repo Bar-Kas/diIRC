@@ -154,8 +154,10 @@ interface MockState {
   removeServerMember: (serverId: string, name: string) => void;
   channelMembers: Record<string, string[]>;
   channelOps: Record<string, string[]>;
+  channelModes: Record<string, string[]>;
   updateChannelMembers: (serverId: string, channelName: string, users: string[], eventType: "NAMES" | "JOIN" | "PART" | "QUIT") => void;
   updateChannelOps: (serverId: string, channelName: string, ops: string[]) => void;
+  updateChannelModes: (serverId: string, channelName: string, modeString: string) => void;
 
   // Message Actions
   loadChatHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<void>;
@@ -690,6 +692,7 @@ export const useMockStore = create<MockState>()(
 
       channelMembers: {},
       channelOps: {},
+      channelModes: {},
 
       updateChannelOps: (serverId, channelName, ops) => {
         const cleanChan = channelName ? channelName.trim().replace(/^#/, "").toLowerCase() : "";
@@ -707,6 +710,45 @@ export const useMockStore = create<MockState>()(
             channelOps: {
               ...state.channelOps,
               [targetChannel.id]: ops,
+            },
+          };
+        });
+      },
+
+      updateChannelModes: (serverId, channelName, modeString) => {
+        const cleanChan = channelName ? channelName.trim().replace(/^#/, "").toLowerCase() : "";
+        set((state) => {
+          const targetServer = state.servers.find((s) => s.id === serverId);
+          if (!targetServer || !cleanChan) return state;
+
+          const targetChannel = targetServer.channels.find(
+            (c) => c.name.toLowerCase().replace(/^#/, "") === cleanChan
+          );
+
+          if (!targetChannel) return state;
+
+          const chId = targetChannel.id;
+          const currentFlags = new Set(state.channelModes[chId] || []);
+
+          let action: "+" | "-" = "+";
+          for (const char of modeString) {
+            if (char === "+") {
+              action = "+";
+            } else if (char === "-") {
+              action = "-";
+            } else {
+              if (action === "+") {
+                currentFlags.add(char);
+              } else if (action === "-") {
+                currentFlags.delete(char);
+              }
+            }
+          }
+
+          return {
+            channelModes: {
+              ...state.channelModes,
+              [chId]: Array.from(currentFlags),
             },
           };
         });

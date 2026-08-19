@@ -409,6 +409,29 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
     setupBadKeyListener();
 
+    let unlistenModeFn: (() => void) | null = null;
+    const setupModeListener = async () => {
+      try {
+        const unlistenMode = await listen<{ server_id: string; channel: string; modes: string; set_by?: string }>(
+          "irc_mode_event",
+          (event) => {
+            const { server_id, channel, modes } = event.payload;
+            useMockStore.getState().updateChannelModes(server_id, channel, modes);
+          }
+        );
+
+        if (isCancelled) {
+          unlistenMode();
+        } else {
+          unlistenModeFn = unlistenMode;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC mode listener:", error);
+      }
+    };
+
+    setupModeListener();
+
     return () => {
       isCancelled = true;
       if (unlistenFn) {
@@ -431,6 +454,9 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
       }
       if (unlistenBadKeyFn) {
         unlistenBadKeyFn();
+      }
+      if (unlistenModeFn) {
+        unlistenModeFn();
       }
     };
   }, [addMessage, addServerMember, removeServerMember, setIrcConnected]);

@@ -14,6 +14,7 @@ import { IrcErrorModal } from "@/components/modals/irc-error-modal";
 import { EditTopicModal } from "@/components/modals/edit-topic-modal";
 import { JoinChannelPasswordModal } from "@/components/modals/join-channel-password-modal";
 import { SetChannelPasswordModal } from "@/components/modals/set-channel-password-modal";
+import { ChannelSettingsModal } from "@/components/modals/channel-settings-modal";
 
 export const ModalProvider = () => {
   const [isMounted, setIsMounted] = useState(false);
@@ -42,6 +43,7 @@ export const ModalProvider = () => {
       <EditTopicModal />
       <JoinChannelPasswordModal />
       <SetChannelPasswordModal />
+      <ChannelSettingsModal />
     </>
   );
 };

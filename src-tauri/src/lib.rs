@@ -50,6 +50,14 @@ struct IrcOpsEvent {
 }
 
 #[derive(Serialize, Clone)]
+struct IrcModeEvent {
+    server_id: String,
+    channel: String,
+    modes: String,
+    set_by: Option<String>,
+}
+
+#[derive(Serialize, Clone)]
 struct IrcTopicErrorEvent {
     server_id: String,
     channel: String,
@@ -780,6 +788,81 @@ async fn connect_irc(
                                 let _ = app_clone.emit("irc_message", msg_payload);
                             }
                         }
+                        Command::Response(Response::RPL_CHANNELMODEIS, ref args) => {
+                            if args.len() >= 3 {
+                                let channel = &args[1];
+                                let modes_str = args[2..].join(" ");
+                                let msg_payload = IrcMessage {
+                                    server_id: stream_server_id.clone(),
+                                    sender: "System".to_string(),
+                                    content: format!("Channel {} modes: {}", channel, modes_str),
+                                    channel: channel.to_string(),
+                                    is_system: true,
+                                };
+                                let _ = app_clone.emit("irc_message", msg_payload);
+
+                                let mode_payload = IrcModeEvent {
+                                    server_id: stream_server_id.clone(),
+                                    channel: channel.to_string(),
+                                    modes: modes_str,
+                                    set_by: None,
+                                };
+                                let _ = app_clone.emit("irc_mode_event", mode_payload);
+                            }
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "MODE" => {
+                            let sender_name = message.prefix.as_ref().map(|source| match source {
+                                Prefix::Nickname(nick, _, _) => nick.clone(),
+                                Prefix::ServerName(name) => name.clone(),
+                            }).unwrap_or_else(|| "Server".to_string());
+
+                            if let Some(target) = args.get(0) {
+                                let modes_str = args.iter().skip(1).cloned().collect::<Vec<_>>().join(" ");
+                                let sys_text = if modes_str.is_empty() {
+                                    format!("Query mode for {}", target)
+                                } else {
+                                    format!("{} set mode: {} {}", sender_name, target, modes_str)
+                                };
+                                let msg_payload = IrcMessage {
+                                    server_id: stream_server_id.clone(),
+                                    sender: sender_name.clone(),
+                                    content: sys_text,
+                                    channel: target.clone(),
+                                    is_system: true,
+                                };
+                                let _ = app_clone.emit("irc_message", msg_payload);
+
+                                let mode_payload = IrcModeEvent {
+                                    server_id: stream_server_id.clone(),
+                                    channel: target.clone(),
+                                    modes: modes_str,
+                                    set_by: Some(sender_name),
+                                };
+                                let _ = app_clone.emit("irc_mode_event", mode_payload);
+                            }
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "324" => {
+                            if args.len() >= 3 {
+                                let channel = &args[1];
+                                let modes_str = args[2..].join(" ");
+                                let msg_payload = IrcMessage {
+                                    server_id: stream_server_id.clone(),
+                                    sender: "System".to_string(),
+                                    content: format!("Channel {} modes: {}", channel, modes_str),
+                                    channel: channel.to_string(),
+                                    is_system: true,
+                                };
+                                let _ = app_clone.emit("irc_message", msg_payload);
+
+                                let mode_payload = IrcModeEvent {
+                                    server_id: stream_server_id.clone(),
+                                    channel: channel.to_string(),
+                                    modes: modes_str,
+                                    set_by: None,
+                                };
+                                let _ = app_clone.emit("irc_mode_event", mode_payload);
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -932,6 +1015,61 @@ async fn set_channel_key(
             Some(k) => Command::Raw("MODE".to_string(), vec![formatted_channel, "+k".to_string(), k]),
             None => Command::Raw("MODE".to_string(), vec![formatted_channel, "-k".to_string(), "*".to_string()]),
         };
+        if let Err(e) = sender.send(mode_cmd) {
+            drop(senders);
+            state.senders.lock().await.remove(&server_id);
+            let _ = app.emit(
+                "irc_status",
+                IrcStatusEvent {
+                    server_id: server_id.clone(),
+                    connected: false,
+                },
+            );
+            return Err(e.to_string());
+        }
+        Ok(())
+    } else {
+        Err(format!("Not connected to server {}", server_id))
+    }
+}
+
+#[tauri::command]
+async fn send_mode(
+    app: AppHandle,
+    state: State<'_, IrcState>,
+    server_id: String,
+    target: String,
+    mode: Option<String>,
+    params: Option<Vec<String>>,
+) -> Result<(), String> {
+    log::info!(
+        "send_mode called for server: {}, target: {}, mode: {:?}, params: {:?}",
+        server_id,
+        target,
+        mode,
+        params
+    );
+    let senders = state.senders.lock().await;
+    if let Some(sender) = senders.get(&server_id) {
+        let formatted_target = if target.starts_with('#') || target.starts_with('&') {
+            target
+        } else {
+            format!("#{}", target)
+        };
+        let mut raw_args = vec![formatted_target];
+        if let Some(m) = mode {
+            if !m.trim().is_empty() {
+                raw_args.push(m);
+            }
+        }
+        if let Some(p_list) = params {
+            for p in p_list {
+                if !p.trim().is_empty() {
+                    raw_args.push(p);
+                }
+            }
+        }
+        let mode_cmd = Command::Raw("MODE".to_string(), raw_args);
         if let Err(e) = sender.send(mode_cmd) {
             drop(senders);
             state.senders.lock().await.remove(&server_id);
@@ -1118,6 +1256,7 @@ pub fn run() {
             part_channel,
             set_channel_topic,
             set_channel_key,
+            send_mode,
             fetch_image_proxy
         ])
         .setup(|app| {
