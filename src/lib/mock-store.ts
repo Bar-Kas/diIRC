@@ -145,7 +145,7 @@ interface MockState {
 
   // Member Actions
   removeMember: (serverId: string, memberId: string) => void;
-  addServerMember: (serverId: string, name: string) => Member | undefined;
+  addServerMember: (serverId: string, name: string, realname?: string) => Member | undefined;
   removeServerMember: (serverId: string, name: string) => void;
   channelMembers: Record<string, string[]>;
   channelOps: Record<string, string[]>;
@@ -558,7 +558,7 @@ export const useMockStore = create<MockState>()(
         }));
       },
 
-      addServerMember: (serverId, name) => {
+      addServerMember: (serverId, name, realname) => {
         let resultMember: Member | undefined;
         set((state) => {
           const s = state.servers.find(s => s.id === serverId);
@@ -566,6 +566,9 @@ export const useMockStore = create<MockState>()(
 
           const exists = s.members.find(m => m.profile.name.toLowerCase() === name.toLowerCase());
           if (exists) {
+            if (realname && !exists.profile.realname) {
+              exists.profile.realname = realname;
+            }
             resultMember = exists;
             return state;
           }
@@ -581,6 +584,7 @@ export const useMockStore = create<MockState>()(
                   profile: {
                     ...m.profile,
                     name,
+                    realname: realname || s.realname || m.profile.realname,
                   },
                 };
                 if (!updatedSelf) updatedSelf = updated;
@@ -605,6 +609,7 @@ export const useMockStore = create<MockState>()(
               id: `profile-${name}`,
               userId: `user-${name}`,
               name: name,
+              realname: realname || "",
               imageUrl: "",
               email: `${name}@irc.local`,
               createdAt: new Date().toISOString(),

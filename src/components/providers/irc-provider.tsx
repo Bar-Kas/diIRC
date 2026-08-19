@@ -92,6 +92,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
         host: server.host || "127.0.0.1",
         port: server.port || 6667,
         nicks,
+        realname: server.realname || "",
         password: server.password || "",
         useTls: server.useTls || false,
         channels: channels.length > 0 ? channels : ["test", "general"],

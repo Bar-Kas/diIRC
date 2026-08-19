@@ -2,11 +2,12 @@ import { Hash, PanelLeft, Server, Users, Edit3 } from "lucide-react";
 
 import { MobileToggle } from "@/components/mobile-toggle";
 import { UserAvatar } from "@/components/user-avatar";
+import { UserHoverCard } from "@/components/user-hover-card";
 import { ActionTooltip } from "@/components/action-tooltip";
 import { useUIStore } from "@/hooks/use-ui-store";
 import { useModal } from "@/hooks/use-modal-store";
 import { cn } from "@/lib/utils";
-import { Channel, Server as ServerType } from "@/types";
+import { Channel, Member, Profile, Server as ServerType } from "@/types";
 
 import { ConnectionStatus } from "@/components/connection-status";
 
@@ -17,6 +18,7 @@ interface ChatHeaderProps {
   imageUrl?: string;
   channel?: Channel;
   server?: ServerType;
+  targetMember?: Member & { profile: Profile };
 }
 
 export const ChatHeader = ({
@@ -26,6 +28,7 @@ export const ChatHeader = ({
   imageUrl,
   channel,
   server,
+  targetMember,
 }: ChatHeaderProps) => {
   const { 
     showNavigationSidebar, 
@@ -42,6 +45,31 @@ export const ChatHeader = ({
     if (server && channel) {
       onOpen("editTopic", { server, channel });
     }
+  };
+
+  const renderConversationHeader = () => {
+    const avatarAndName = (
+      <div className="flex items-center gap-x-2 cursor-pointer">
+        <UserAvatar 
+          src={imageUrl}
+          name={name}
+          className="h-8 w-8 md:h-8 md:w-8 shrink-0"
+        />
+        <p className="font-semibold text-md text-black dark:text-white shrink-0 hover:underline">
+          {name}
+        </p>
+      </div>
+    );
+
+    if (targetMember && server) {
+      return (
+        <UserHoverCard member={targetMember} server={server} side="bottom">
+          {avatarAndName}
+        </UserHoverCard>
+      );
+    }
+
+    return avatarAndName;
   };
 
   return (
@@ -79,18 +107,15 @@ export const ChatHeader = ({
       </ActionTooltip>
 
       {type === "channel" && (
-        <Hash className="w-5 h-5 text-zinc-500 dark:text-zinc-400 shrink-0" />
+        <>
+          <Hash className="w-5 h-5 text-zinc-500 dark:text-zinc-400 shrink-0" />
+          <p className="font-semibold text-md text-black dark:text-white shrink-0">
+            {name}
+          </p>
+        </>
       )}
-      {type === "conversation" && (
-        <UserAvatar 
-          src={imageUrl}
-          name={name}
-          className="h-8 w-8 md:h-8 md:w-8 shrink-0"
-        />
-      )}
-      <p className="font-semibold text-md text-black dark:text-white shrink-0">
-        {name}
-      </p>
+
+      {type === "conversation" && renderConversationHeader()}
 
       {type === "channel" && channel && (
         <div className="hidden sm:flex items-center min-w-0 flex-1 overflow-hidden ml-2">

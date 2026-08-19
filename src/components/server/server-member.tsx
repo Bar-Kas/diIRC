@@ -1,15 +1,14 @@
 import { Member, Profile, Server } from "@/types";
-import { ShieldAlert, ShieldCheck } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/user-avatar";
+import { UserHoverCard, getMemberDisplayName } from "@/components/user-hover-card";
 
 interface ServerMemberProps {
   member: Member & { profile: Profile };
   server: Server;
 }
-
 
 export const ServerMember = ({
   member,
@@ -23,6 +22,7 @@ export const ServerMember = ({
   };
 
   const isSelected = params?.memberId === member.id;
+  const displayName = getMemberDisplayName(member, server);
 
   return (
     <button
@@ -34,16 +34,16 @@ export const ServerMember = ({
     >
       <UserAvatar 
         src={member.profile.imageUrl}
-        name={member.profile.name}
+        name={displayName}
         className="h-8 w-8 md:h-8 md:w-8"
       />
       <p
         className={cn(
-          "font-semibold text-sm text-zinc-500 group-hover:text-zinc-600 dark:text-zinc-400 dark:group-hover:text-zinc-300 transition",
+          "font-semibold text-sm text-zinc-500 group-hover:text-zinc-600 dark:text-zinc-400 dark:group-hover:text-zinc-300 transition text-left",
           isSelected && "text-primary dark:text-zinc-200 dark:group-hover:text-white"
         )}
       >
-        {member.profile.name}
+        {displayName}
       </p>
     </button>
   );

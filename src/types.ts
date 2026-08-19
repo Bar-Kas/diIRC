@@ -7,6 +7,7 @@ export interface Profile {
   id: string;
   userId: string;
   name: string;
+  realname?: string;
   imageUrl: string;
   email: string;
   createdAt?: string;

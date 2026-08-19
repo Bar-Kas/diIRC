@@ -16,16 +16,12 @@ import {
 import { useModal } from "@/hooks/use-modal-store";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { UserAvatar } from "@/components/user-avatar";
+import { UserHoverCard, getMemberDisplayName } from "@/components/user-hover-card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuPortal,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
   DropdownMenuTrigger,
-  DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useMockStore } from "@/lib/mock-store";
 
@@ -70,18 +66,23 @@ export const MembersModal = () => {
           </DialogDescription>
         </DialogHeader>
         <ScrollArea className="mt-6 max-h-[420px] px-6">
-          {server?.members?.map((member: Member) => (
-            <div key={member.id} className="flex items-center gap-x-2 mb-6">
-
-              <UserAvatar src={member.profile.imageUrl} name={member.profile.name} />
-              <div className="flex flex-col gap-y-1">
-                <div className="text-xs font-semibold flex items-center gap-x-1">
-                  {member.profile.name}
-                </div>
-                <p className="text-xs text-zinc-500">
-                  {member.profile.email}
-                </p>
-              </div>
+          {server?.members?.map((member: Member) => {
+            const displayName = getMemberDisplayName(member, server);
+            return (
+              <div key={member.id} className="flex items-center gap-x-2 mb-6">
+                <UserHoverCard member={member} server={server} side="right">
+                  <div className="flex items-center gap-x-2 cursor-pointer">
+                    <UserAvatar src={member.profile.imageUrl} name={displayName} />
+                    <div className="flex flex-col gap-y-0.5">
+                      <div className="text-xs font-semibold flex items-center gap-x-1 hover:underline">
+                        {displayName}
+                      </div>
+                      <p className="text-xs text-zinc-500">
+                        @{member.profile.name}
+                      </p>
+                    </div>
+                  </div>
+                </UserHoverCard>
               {server.profileId !== member.profileId && loadingId !== member.id && (
                 <div className="ml-auto">
                   <DropdownMenu>
@@ -106,7 +107,8 @@ export const MembersModal = () => {
                 />
               )}
             </div>
-          ))}
+          );
+        })}
         </ScrollArea>
       </DialogContent>
     </Dialog>

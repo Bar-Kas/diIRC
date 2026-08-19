@@ -1,5 +1,6 @@
 import { Channel, Member, Server } from "@/types";
 import { UserAvatar } from "@/components/user-avatar";
+import { UserHoverCard, getMemberDisplayName } from "@/components/user-hover-card";
 import { useNavigate } from "react-router-dom";
 import { useMockStore } from "@/lib/mock-store";
 import { cn } from "@/lib/utils";
@@ -65,9 +66,11 @@ export const ChatMembersSidebar = ({
     otherMembers = server.members.filter(isNotSelf);
   }
 
-  otherMembers = otherMembers.sort((a, b) =>
-    a.profile.name.localeCompare(b.profile.name, undefined, { sensitivity: "base" })
-  );
+  otherMembers = otherMembers.sort((a, b) => {
+    const nameA = getMemberDisplayName(a, server);
+    const nameB = getMemberDisplayName(b, server);
+    return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+  });
 
   const totalCount = 1 + otherMembers.length;
 
@@ -77,23 +80,28 @@ export const ChatMembersSidebar = ({
     navigate(`/servers/${server.id}/conversations/${memberId}`);
   };
 
-  const renderMember = (member: Member, isSelf: boolean = false) => (
-    <div
-      onClick={() => onMemberClick(member.id)}
-      className="group px-2 py-1 flex items-center gap-x-2 w-full hover:bg-zinc-700/10 dark:hover:bg-zinc-700/50 transition cursor-pointer rounded-md"
-    >
-      <UserAvatar 
-        src={member.profile.imageUrl}
-        name={member.profile.name}
-        className="h-8 w-8 md:h-8 md:w-8"
-      />
-      <div className="flex flex-col overflow-hidden">
-        <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">
-          {member.profile.name}
-        </p>
-      </div>
-    </div>
-  );
+  const renderMember = (member: Member, isSelf: boolean = false) => {
+    const displayName = getMemberDisplayName(member, server);
+    return (
+      <UserHoverCard member={member} server={server} side="left">
+        <div
+          onClick={() => onMemberClick(member.id)}
+          className="group px-2 py-1 flex items-center gap-x-2 w-full hover:bg-zinc-700/10 dark:hover:bg-zinc-700/50 transition cursor-pointer rounded-md"
+        >
+          <UserAvatar 
+            src={member.profile.imageUrl}
+            name={displayName}
+            className="h-8 w-8 md:h-8 md:w-8"
+          />
+          <div className="flex flex-col overflow-hidden">
+            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">
+              {displayName}
+            </p>
+          </div>
+        </div>
+      </UserHoverCard>
+    );
+  };
 
   return (
     <div className="h-full w-60 bg-[#F2F3F5] dark:bg-[#2B2D31] flex flex-col pt-4 px-2 overflow-y-auto hidden md:flex shrink-0 border-l border-zinc-200 dark:border-zinc-800">

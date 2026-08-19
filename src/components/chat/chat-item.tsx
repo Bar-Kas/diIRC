@@ -4,6 +4,7 @@ import { Reply } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { UserAvatar } from "@/components/user-avatar";
+import { UserHoverCard, getMemberDisplayName } from "@/components/user-hover-card";
 import { ActionTooltip } from "@/components/action-tooltip";
 import { cn } from "@/lib/utils";
 import { useMockStore } from "@/lib/mock-store";
@@ -125,6 +126,10 @@ export const ChatItem = ({
     ? Array.from(new Set(content.match(urlRegex) || []))
     : [];
 
+  const servers = useMockStore((state) => state.servers);
+  const activeServer = servers.find((s) => s.id === params?.serverId) || servers[0];
+  const displayName = getMemberDisplayName(member, activeServer);
+
   if (isSystem) {
     return (
       <div className="relative group flex items-center hover:bg-black/5 px-4 py-1 transition w-full">
@@ -149,9 +154,11 @@ export const ChatItem = ({
     )}>
       <div className="group flex gap-x-2 items-start w-full">
         {!compactMode && !compact ? (
-          <div onClick={onMemberClick} className="cursor-pointer hover:drop-shadow-md transition shrink-0">
-            <UserAvatar src={member.profile.imageUrl} name={member.profile.name} className="h-10 w-10 md:h-10 md:w-10" />
-          </div>
+          <UserHoverCard member={member} server={activeServer} side="right">
+            <div onClick={onMemberClick} className="cursor-pointer hover:drop-shadow-md transition shrink-0">
+              <UserAvatar src={member.profile.imageUrl} name={displayName} className="h-10 w-10 md:h-10 md:w-10" />
+            </div>
+          </UserHoverCard>
         ) : !compactMode && compact ? (
           <div className="w-10 h-5 flex items-center justify-center shrink-0">
             <span className="text-[10px] text-zinc-400 dark:text-zinc-500 hidden group-hover:block select-none font-mono">
@@ -163,9 +170,11 @@ export const ChatItem = ({
           {!compact && (
             <div className="flex items-center gap-x-2">
               <div className="flex items-center">
-                <p onClick={onMemberClick} className="font-semibold text-sm hover:underline cursor-pointer">
-                  {member.profile.name}
-                </p>
+                <UserHoverCard member={member} server={activeServer} side="right">
+                  <p onClick={onMemberClick} className="font-semibold text-sm hover:underline cursor-pointer">
+                    {displayName}
+                  </p>
+                </UserHoverCard>
               </div>
               <span className="text-xs text-zinc-500 dark:text-zinc-400">
                 {timestamp}
