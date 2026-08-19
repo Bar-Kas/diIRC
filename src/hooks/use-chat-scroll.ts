@@ -1,18 +1,7 @@
 import { RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { ScrollGeometry } from "@/types";
 
-/**
- * Distance (px) from the bottom edge that counts as "at the bottom". Anything
- * within this band keeps auto-follow enabled.
- */
-const BOTTOM_ENTER_THRESHOLD = 32;
-
-/**
- * Distance (px) from the bottom edge beyond which the user is considered to
- * have deliberately scrolled up to read history, which disables auto-follow.
- * The gap between the two thresholds acts as hysteresis so small scroll jitter
- * or height changes do not constantly flip the follow state.
- */
-const BOTTOM_LEAVE_THRESHOLD = 96;
+const BOTTOM_THRESHOLD = 30;
 
 /**
  * Scroll position that counts as "near the top" and can trigger older-history
@@ -72,6 +61,8 @@ type UseChatScrollOptions = {
    * the scroll element is used, with a small snap fallback.
    */
   scrollToEnd?: (behavior: ScrollBehavior) => void;
+  /** Reports geometry and user intent to the per-buffer read-state manager. */
+  onViewportChange?: (geometry: ScrollGeometry, isAtBottom: boolean) => void;
 };
 
 type UseChatScrollResult = {
@@ -107,6 +98,7 @@ export const useChatScroll = ({
   shouldLoadMore = false,
   loadMore,
   scrollToEnd,
+  onViewportChange,
 }: UseChatScrollOptions): UseChatScrollResult => {
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(initialScroll);
   const [isAtBottom, setIsAtBottom] = useState(initialScroll);
@@ -116,8 +108,7 @@ export const useChatScroll = ({
   const autoScrollRef = useRef(initialScroll);
   const pendingFrameRef = useRef<number | null>(null);
 
-  // One-shot suppression timestamp for events caused by our own writes.
-  const suppressUntilRef = useRef(0);
+  const isProgrammaticRef = useRef(false);
 
   // "Jump to latest" animation state.
   const jumpActiveRef = useRef(false);
@@ -126,29 +117,43 @@ export const useChatScroll = ({
   const landingStartedAtRef = useRef(0);
 
   const setStick = useCallback((stick: boolean) => {
+
     autoScrollRef.current = stick;
     setAutoScrollEnabled(stick);
     setIsAtBottom(stick);
   }, []);
 
+  const reportViewport = useCallback((element: HTMLDivElement, atBottom: boolean) => {
+    const geometry: ScrollGeometry = {
+      scrollTop: element.scrollTop,
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+      distanceFromBottom: Math.max(0, element.scrollHeight - Math.ceil(element.scrollTop) - element.clientHeight),
+      distanceFromTop: Math.max(0, element.scrollTop),
+    };
+    onViewportChange?.(geometry, atBottom);
+  }, [onViewportChange]);
+
   const scrollToBottomInstant = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
-    suppressUntilRef.current = performance.now() + PROGRAMMATIC_SUPPRESS_MS;
+    isProgrammaticRef.current = true;
     element.scrollTop = element.scrollHeight;
+    requestAnimationFrame(() => {
+      isProgrammaticRef.current = false;
+    });
   }, [scrollRef]);
 
   const scheduleInstantScrollToBottom = useCallback(() => {
     if (pendingFrameRef.current !== null) return;
     pendingFrameRef.current = requestAnimationFrame(() => {
       pendingFrameRef.current = null;
-      // Re-check intent when the frame actually runs so a user scroll that
-      // happened in the meantime is never overridden.
       if (autoScrollRef.current) {
         scrollToBottomInstant();
+      } else {
       }
     });
-  }, [scrollToBottomInstant]);
+  }, [scrollToBottomInstant, isAtBottom, scrollRef]);
 
   // User intent tracking + older-history loading, driven by the scroll event.
   useEffect(() => {
@@ -158,34 +163,30 @@ export const useChatScroll = ({
     const handleScroll = () => {
       const distance = Math.max(
         0,
-        element.scrollHeight - element.scrollTop - element.clientHeight,
+        element.scrollHeight - Math.ceil(element.scrollTop) - element.clientHeight,
       );
 
-      // Ignore the scroll event produced by our own programmatic write. This
-      // prevents async content growth (an image/video loading above the view)
-      // from looking like a user scroll and disabling auto-follow.
-      if (suppressUntilRef.current !== 0) {
-        if (performance.now() <= suppressUntilRef.current) {
-          suppressUntilRef.current = 0;
-          return;
-        }
-        suppressUntilRef.current = 0;
+
+      if (isProgrammaticRef.current) {
+        return;
       }
 
       if (jumpActiveRef.current) {
         // Smooth "jump to latest" animation in progress: own these events so
         // early frames (large distance) never disable auto-follow mid-animation.
-        if (distance <= BOTTOM_ENTER_THRESHOLD) {
+        if (distance <= BOTTOM_THRESHOLD) {
           setStick(true);
         }
         return;
       }
-
-      if (distance <= BOTTOM_ENTER_THRESHOLD) {
+      if (distance <= BOTTOM_THRESHOLD) {
         setStick(true);
-      } else if (distance > BOTTOM_LEAVE_THRESHOLD) {
+      } else {
         setStick(false);
       }
+
+      const nextAtBottom = distance <= BOTTOM_THRESHOLD;
+      reportViewport(element, nextAtBottom);
 
       if (shouldLoadMore && element.scrollTop <= NEAR_TOP_THRESHOLD) {
         loadMore?.();
@@ -194,7 +195,7 @@ export const useChatScroll = ({
 
     element.addEventListener("scroll", handleScroll, { passive: true });
     return () => element.removeEventListener("scroll", handleScroll);
-  }, [scrollRef, setStick, shouldLoadMore, loadMore]);
+  }, [scrollRef, setStick, shouldLoadMore, loadMore, reportViewport]);
 
   // Detect user interaction so a "jump to latest" animation can abort the
   // moment the user starts scrolling on their own.
@@ -226,22 +227,79 @@ export const useChatScroll = ({
       }
     };
 
-    element.addEventListener("wheel", markUserInteraction, { passive: true });
-    element.addEventListener("touchstart", markUserInteraction, { passive: true });
-    window.addEventListener("keydown", onKeyDown);
+    const onWheelDetach = (e: WheelEvent) => {
+      if (e.deltaY < 0) {
+        setStick(false);
+      }
+      markUserInteraction();
+    };
+    const onTouchDetach = () => {
+      // touchstart zawsze traktuj jako intencję oderwania – nie można odróżnić kierunku bez move
+      // Ustaw detach dopiero przy faktycznym ruchu w górę w touchmove
+    };
+    let touchStartY = 0;
+    const onTouchStartDetach = (e: TouchEvent) => {
+      touchStartY = e.touches[0]?.clientY ?? 0;
+      markUserInteraction();
+    };
+    const onTouchMoveDetach = (e: TouchEvent) => {
+      const curY = e.touches[0]?.clientY ?? 0;
+      if (curY > touchStartY + 5) {
+        // palec w dół = scroll w górę (content w dół)
+        setStick(false);
+      }
+      markUserInteraction();
+    };
+    const onKeyDetach = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+      if (e.key === "ArrowUp" || e.key === "PageUp" || e.key === "Home") {
+        setStick(false);
+      }
+      // Dla zgodności z poprzednią logiką
+      if (
+        e.key.startsWith("Arrow")
+        || e.key === "PageUp"
+        || e.key === "PageDown"
+        || e.key === "Home"
+        || e.key === "End"
+        || e.key === " "
+      ) {
+        markUserInteraction();
+      }
+    };
+
+    element.addEventListener("wheel", onWheelDetach, { passive: true });
+    element.addEventListener("touchstart", onTouchStartDetach, { passive: true });
+    element.addEventListener("touchmove", onTouchMoveDetach, { passive: true });
+    window.addEventListener("keydown", onKeyDetach);
 
     return () => {
-      element.removeEventListener("wheel", markUserInteraction);
-      element.removeEventListener("touchstart", markUserInteraction);
-      window.removeEventListener("keydown", onKeyDown);
+      element.removeEventListener("wheel", onWheelDetach);
+      element.removeEventListener("touchstart", onTouchStartDetach);
+      element.removeEventListener("touchmove", onTouchMoveDetach);
+      window.removeEventListener("keydown", onKeyDetach);
     };
-  }, [scrollRef]);
+  }, [scrollRef, setStick]);
 
-  // Reset auto-follow and park at the bottom whenever the chat changes.
+  // Reset follow intent whenever the chat changes. A buffer with unread content
+  // is positioned by ChatMessages at its divider instead of being forced down.
   useEffect(() => {
-    setStick(true);
-    scheduleInstantScrollToBottom();
-  }, [chatId, setStick, scheduleInstantScrollToBottom]);
+    setStick(initialScroll);
+    if (initialScroll) {
+      scheduleInstantScrollToBottom();
+    }
+  }, [chatId, initialScroll, setStick, scheduleInstantScrollToBottom]);
+
+  // Publish the post-reset position after the scroll container and virtualized
+  // rows are mounted. This intentionally runs after the reset effect so an
+  // unread buffer cannot be cleared by a stale bottom value from the previous
+  // chat.
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    reportViewport(element, autoScrollRef.current);
+  }, [scrollRef, chatId, reportViewport]);
 
   // Follow new content (instant) only when auto-follow is active.
   useEffect(() => {
@@ -251,22 +309,35 @@ export const useChatScroll = ({
     }
   }, [contentVersion, chatId, scheduleInstantScrollToBottom]);
 
-  // Handle delayed layout shifts (images, video, iframes, code blocks...).
-  // `contentVersion` is a dependency so the observer attaches as soon as the
-  // content element actually mounts/changes.
+  // ResizeObserver – wasAtBottomBeforeResize per spec
   useEffect(() => {
     const contentElement = contentRef?.current;
     if (!contentElement) return;
-
+    let wasAtBottomBeforeResize = autoScrollRef.current;
     const observer = new ResizeObserver(() => {
-      if (autoScrollRef.current) {
-        scheduleInstantScrollToBottom();
+      if (wasAtBottomBeforeResize && autoScrollRef.current) {
+        isProgrammaticRef.current = true;
+        scrollToBottomInstant();
+        requestAnimationFrame(() => { isProgrammaticRef.current = false; });
+      } else {
       }
     });
+    const updateIntent = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const d = Math.max(0, el.scrollHeight - Math.ceil(el.scrollTop) - el.clientHeight);
+      wasAtBottomBeforeResize = d <= BOTTOM_THRESHOLD && autoScrollRef.current;
+    };
+    const el = scrollRef.current;
+    el?.addEventListener("scroll", updateIntent, { passive: true });
+    // Sync initial
+    updateIntent();
     observer.observe(contentElement);
-
-    return () => observer.disconnect();
-  }, [contentRef, chatId, contentVersion, scheduleInstantScrollToBottom]);
+    return () => {
+      el?.removeEventListener("scroll", updateIntent);
+      observer.disconnect();
+    };
+  }, [contentRef, chatId, contentVersion, autoScrollRef]);
 
   // Keep the view pinned after window-level changes while auto-follow is on.
   useEffect(() => {
@@ -310,12 +381,15 @@ export const useChatScroll = ({
     jumpActiveRef.current = true;
     landingStartedAtRef.current = performance.now();
 
-    suppressUntilRef.current = performance.now() + PROGRAMMATIC_SUPPRESS_MS;
+    isProgrammaticRef.current = true;
     if (scrollToEnd) {
       scrollToEnd("smooth");
     } else {
       element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
     }
+    requestAnimationFrame(() => {
+      isProgrammaticRef.current = false;
+    });
 
     const step = () => {
       landingFrameRef.current = null;
@@ -330,7 +404,7 @@ export const useChatScroll = ({
         const distance = el
           ? Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight)
           : 0;
-        if (el && distance > BOTTOM_LEAVE_THRESHOLD) {
+        if (el && distance > BOTTOM_THRESHOLD) {
           setStick(false);
         }
         return;
@@ -340,20 +414,21 @@ export const useChatScroll = ({
         0,
         el.scrollHeight - el.scrollTop - el.clientHeight,
       );
-      if (distance <= BOTTOM_ENTER_THRESHOLD) {
+      if (distance <= BOTTOM_THRESHOLD) {
         stopLandingMonitor();
         return;
       }
 
       if (!scrollToEnd) {
-        // Fallback path (no virtualizer override): keep re-targeting the
-        // smooth scroll while rows re-measure, snapping for the final stretch.
-        suppressUntilRef.current = performance.now() + PROGRAMMATIC_SUPPRESS_MS;
+        isProgrammaticRef.current = true;
         if (distance <= JUMP_SNAP_DISTANCE) {
           el.scrollTop = el.scrollHeight;
         } else {
           el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
         }
+        requestAnimationFrame(() => {
+          isProgrammaticRef.current = false;
+        });
       }
 
       landingFrameRef.current = requestAnimationFrame(step);

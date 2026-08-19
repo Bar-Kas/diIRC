@@ -17,6 +17,7 @@ struct IrcMessage {
     content: String,
     channel: String,
     is_system: bool,
+    timestamp: String,
 }
 
 #[derive(Serialize, Clone)]
@@ -139,6 +140,7 @@ async fn append_log_line(
     target: &str,
     sender: &str,
     content: &str,
+    timestamp_override: Option<&str>,
 ) -> Result<(), String> {
     let (key, path) = log_path(app, server_id, target)?;
     let writer = {
@@ -163,7 +165,9 @@ async fn append_log_line(
         }
     };
 
-    let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
+    let timestamp = timestamp_override
+        .map(ToString::to_string)
+        .unwrap_or_else(|| Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string());
     let normalized_content = content.replace(['\r', '\n'], " ");
     let line = format!("[{timestamp}] <{sender}> {normalized_content}\n");
     let mut file = writer.lock().await;
@@ -482,6 +486,9 @@ async fn connect_irc(
                                     } else {
                                         sender_name.clone()
                                     };
+                                let timestamp = Local::now()
+                                    .format("%Y-%m-%d %H:%M:%S%.3f")
+                                    .to_string();
                                 if let Err(error) = append_log_line(
                                     &app_clone,
                                     &log_state_clone,
@@ -489,6 +496,7 @@ async fn connect_irc(
                                     &log_target,
                                     &sender_name,
                                     &content,
+                                    Some(&timestamp),
                                 )
                                 .await
                                 {
@@ -500,6 +508,7 @@ async fn connect_irc(
                                     content,
                                     channel: channel.clone(),
                                     is_system: false,
+                                    timestamp,
                                 };
                                 let _ = app_clone.emit("irc_message", payload);
 
@@ -530,6 +539,7 @@ async fn connect_irc(
                                     content: format!("{} has joined", full_source),
                                     channel: channel.clone(),
                                     is_system: true,
+                                    timestamp: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
                                 };
                                 let _ = app_clone.emit("irc_message", payload);
 
@@ -613,6 +623,7 @@ async fn connect_irc(
                                 content: format!("Cannot change topic on {}: {}", channel, reason),
                                 channel: channel.clone(),
                                 is_system: true,
+                                timestamp: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -631,6 +642,7 @@ async fn connect_irc(
                                 content: format!("Permission Denied: {}", reason),
                                 channel: "".to_string(),
                                 is_system: true,
+                                timestamp: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
                         }
@@ -643,6 +655,7 @@ async fn connect_irc(
                                 content: format!("Cannot set topic on {}: {}", channel, reason),
                                 channel,
                                 is_system: true,
+                                timestamp: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
                         }
@@ -686,6 +699,7 @@ async fn connect_irc(
                                     content: sys_content,
                                     channel: channel.clone(),
                                     is_system: true,
+                                    timestamp: Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string(),
                                 };
                                 let _ = app_clone.emit("irc_message", msg_payload);
                             }
@@ -757,6 +771,7 @@ async fn send_message(
             &channel,
             &sender_name,
             &message,
+            None,
         )
         .await
         {
