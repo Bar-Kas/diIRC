@@ -78,6 +78,13 @@ struct LogPage {
     next_offset: Option<u64>,
 }
 
+#[derive(Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct ChannelConfig {
+    name: String,
+    password: Option<String>,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IrcConnectParams {
@@ -90,7 +97,7 @@ struct IrcConnectParams {
     #[serde(default)]
     password: Option<String>,
     #[serde(default)]
-    channels: Vec<String>,
+    channels: Vec<ChannelConfig>,
     #[serde(default)]
     use_tls: bool,
 }
@@ -349,18 +356,6 @@ async fn connect_irc(
         }
     }
 
-    let formatted_channels: Vec<String> = params
-        .channels
-        .into_iter()
-        .map(|ch| {
-            if ch.starts_with('#') {
-                ch
-            } else {
-                format!("#{}", ch)
-            }
-        })
-        .collect();
-
     let primary_nickname = params
         .nicknames
         .first()
@@ -383,12 +378,14 @@ async fn connect_irc(
         alt_nicks: alt_nicknames,
         server: Some(params.host),
         port: Some(params.port),
-        channels: formatted_channels,
+        channels: vec![],
         use_tls: Some(params.use_tls),
         ping_time: Some(15),
         ping_timeout: Some(10),
         ..Config::default()
     };
+
+    let channels_to_join = params.channels.clone();
 
     log::info!(
         "Connecting to IRC with nick: {:?}, alt_nicks: {:?}, user: {:?}, realname: {:?}",
@@ -443,6 +440,8 @@ async fn connect_irc(
     let log_state_clone = LogState {
         writers: log_state.writers.clone(),
     };
+    
+    let initial_channels = channels_to_join.clone();
 
     tauri::async_runtime::spawn(async move {
         let mut stream = match client.stream() {
@@ -611,6 +610,22 @@ async fn connect_irc(
                                 let _ = app_clone.emit("irc_ops_event", ops_payload);
                             }
                         }
+                        Command::Response(Response::RPL_WELCOME, ref _args) => {
+                            if let Some(s) = senders_clone.lock().await.get(&stream_server_id) {
+                                for chan in &initial_channels {
+                                    let mut formatted = chan.name.clone();
+                                    if !formatted.starts_with('#') {
+                                        formatted = format!("#{}", formatted);
+                                    }
+                                    let key = chan.password.clone().filter(|p| !p.trim().is_empty());
+                                    if let Some(k) = key {
+                                        let _ = s.send(Command::JOIN(formatted, Some(k), None));
+                                    } else {
+                                        let _ = s.send_join(&formatted);
+                                    }
+                                }
+                            }
+                        }
                         Command::Response(Response::ERR_CHANOPRIVSNEEDED, ref args) => {
                             let channel = args.get(1).cloned().unwrap_or_default();
                             let reason = args.get(2).cloned().unwrap_or_else(|| "You're not channel operator".to_string());
@@ -630,6 +645,19 @@ async fn connect_irc(
                                 error: reason,
                             };
                             let _ = app_clone.emit("irc_topic_error", err_payload);
+                        }
+                        Command::Response(Response::ERR_CANNOTSENDTOCHAN, ref args) => {
+                            let channel = args.get(1).cloned().unwrap_or_default();
+                            let reason = args.get(2).cloned().unwrap_or_else(|| "Cannot send to channel".to_string());
+                            
+                            let msg_payload = IrcMessage {
+                                server_id: stream_server_id.clone(),
+                                sender: "System".to_string(),
+                                content: format!("Error: {} ({})", reason, channel),
+                                channel: channel.clone(),
+                                is_system: true,
+                            };
+                            let _ = app_clone.emit("irc_message", msg_payload);
                         }
                         Command::Response(Response::ERR_BADCHANNELKEY, ref args) => {
                             let channel = args

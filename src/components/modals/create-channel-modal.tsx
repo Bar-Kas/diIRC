@@ -68,7 +68,7 @@ export const CreateChannelModal = () => {
         const cleanChannelName = values.name.trim().replace(/^#/, "");
         
         try {
-          useMockStore.getState().setPendingJoin(activeServerId, cleanChannelName, false);
+          useMockStore.getState().setPendingJoin(activeServerId, cleanChannelName, undefined);
           await invoke("join_channel", {
             serverId: activeServerId,
             channel: cleanChannelName,

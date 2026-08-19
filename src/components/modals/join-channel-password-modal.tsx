@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Lock, AlertCircle, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -26,6 +26,7 @@ export const JoinChannelPasswordModal = () => {
   const isModalOpen = isOpen && type === "joinChannelPassword";
   const { serverId, channelName, errorMessage } = data;
 
+  const inputRef = useRef<HTMLInputElement>(null);
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -38,8 +39,21 @@ export const JoinChannelPasswordModal = () => {
       // not on the initial prompt where the server just says "Cannot join (+k)"
       const isInitialPrompt = errorMessage?.includes("Cannot join channel");
       setLocalError(isInitialPrompt ? null : errorMessage || null);
+      setTimeout(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }, 50);
     }
   }, [isModalOpen, errorMessage]);
+
+  useEffect(() => {
+    if (localError) {
+      setTimeout(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }, 50);
+    }
+  }, [localError]);
 
   const activeServerId = serverId || servers[0]?.id;
   const cleanChan = (channelName || "").replace(/^#/, "");
@@ -64,7 +78,11 @@ export const JoinChannelPasswordModal = () => {
           const eventCleanChan = channel.replace(/^#/, "");
           if (eventCleanChan.toLowerCase() === cleanChan.toLowerCase()) {
             console.log("We joined! Adding channel and navigating...");
-            const newChan = useMockStore.getState().addChannel(activeServerId, cleanChan, ChannelType.TEXT);
+            const store = useMockStore.getState();
+            const newChan = store.addChannel(activeServerId, cleanChan, ChannelType.TEXT);
+            if (password.trim()) {
+              store.updateChannelKey(activeServerId, newChan.id, password.trim());
+            }
             setIsLoading(false);
             onClose("joinChannelPassword");
             if (newChan?.id) {
@@ -110,6 +128,8 @@ export const JoinChannelPasswordModal = () => {
       setIsLoading(true);
       setLocalError(null);
 
+      useMockStore.getState().setPendingJoin(activeServerId, cleanChan, password.trim());
+
       await invoke("join_channel", {
         serverId: activeServerId,
         channel: cleanChan,
@@ -128,7 +148,7 @@ export const JoinChannelPasswordModal = () => {
 
 
   return (
-    <Dialog open={isModalOpen} onOpenChange={handleClose}>
+    <Dialog open={isModalOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
       <DialogContent className="bg-white dark:bg-[#313338] text-black dark:text-white p-0 overflow-hidden sm:max-w-md">
         <DialogHeader className="pt-8 px-6">
           <DialogTitle className="text-2xl text-center font-bold flex items-center justify-center gap-2">
@@ -154,6 +174,7 @@ export const JoinChannelPasswordModal = () => {
               Channel Password
             </label>
             <Input
+              ref={inputRef}
               disabled={isLoading}
               type="password"
               value={password}

@@ -57,12 +57,12 @@ export const SetChannelPasswordModal = () => {
       });
 
       updateChannelKey(server.id, channel.id, trimmedKey);
-      setIsLoading(false);
-      onClose("setChannelPassword");
+      handleClose();
     } catch (err: any) {
       console.error("Failed to set channel password:", err);
-      setIsLoading(false);
       setErrorMessage(err?.toString() || "Failed to set password. Make sure you are channel operator.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -80,19 +80,19 @@ export const SetChannelPasswordModal = () => {
       });
 
       updateChannelKey(server.id, channel.id, undefined);
-      setIsLoading(false);
-      onClose("setChannelPassword");
+      handleClose();
     } catch (err: any) {
       console.error("Failed to remove channel password:", err);
-      setIsLoading(false);
       setErrorMessage(err?.toString() || "Failed to remove password. Make sure you are channel operator.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const hasExistingKey = !!channel?.key;
 
   return (
-    <Dialog open={isModalOpen} onOpenChange={handleClose}>
+    <Dialog open={isModalOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
       <DialogContent className="bg-white dark:bg-[#313338] text-black dark:text-white p-0 overflow-hidden sm:max-w-md">
         <DialogHeader className="pt-8 px-6">
           <DialogTitle className="text-2xl text-center font-bold flex items-center justify-center gap-2">
@@ -177,3 +177,4 @@ export const SetChannelPasswordModal = () => {
     </Dialog>
   );
 };
+

@@ -107,7 +107,7 @@ commandRegistry.register({
 
     try {
       const { useMockStore } = await import("@/lib/mock-store");
-      useMockStore.getState().setPendingJoin(ctx.serverId, channelName, !!password);
+      useMockStore.getState().setPendingJoin(ctx.serverId, channelName, password || undefined);
       
       await invoke("join_channel", {
         serverId: ctx.serverId,

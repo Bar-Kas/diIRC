@@ -42,7 +42,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     const nicks = server.nicknames && server.nicknames.length > 0 
       ? server.nicknames 
       : [server.nicknames?.[0] || currentProfile.name.replace(/\s+/g, "") || "ReactUser"];
-    const channels = server.channels.map((c) => c.name);
+    const channels = server.channels.map((c) => c.key ? `${c.name} ${c.key}` : c.name);
 
     try {
       await invoke("connect_irc", {
@@ -53,7 +53,10 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
           nicknames: nicks,
           realname: server.realname || "",
           password: server.password || "",
-          channels: channels.length > 0 ? channels : ["test", "general"],
+          channels: server.channels.map(c => ({
+            name: c.name,
+            password: c.key || null
+          })),
           useTls: server.useTls || false,
         }
       });
@@ -88,7 +91,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
       const nicks = server.nicknames && server.nicknames.length > 0 
         ? server.nicknames 
         : [server.nicknames?.[0] || currentProfile.name.replace(/\s+/g, "") || "ReactUser"];
-      const channels = server.channels.map((c) => c.name);
+      // Channels are now joined manually after connection in the irc_status listener
 
       const configHash = JSON.stringify({
         host: server.host || "127.0.0.1",
@@ -237,11 +240,17 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               
               if (!existing) {
                 const newChan = store.addChannel(server_id, cleanChan, ChannelType.TEXT);
+                if (pending.password) {
+                  store.updateChannelKey(server_id, newChan.id, pending.password);
+                }
                 store.setPendingJoin(null, null);
                 if (newChan?.id) {
                   navigate(`/servers/${server_id}/channels/${newChan.id}`);
                 }
               } else {
+                if (pending.password) {
+                  store.updateChannelKey(server_id, existing.id, pending.password);
+                }
                 store.setPendingJoin(null, null);
                 navigate(`/servers/${server_id}/channels/${existing.id}`);
               }
@@ -369,19 +378,14 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             const { server_id, channel, error } = event.payload;
             const cleanChan = channel.replace(/^#/, "");
 
+            // We purposefully do NOT delete the channel here, because if they had it
+            // in their sidebar, we don't want to wipe their history just because the key was wrong or changed.
+            
             const store = useMockStore.getState();
-            const targetServer = store.servers.find((s) => s.id === server_id);
-            const existingChan = targetServer?.channels.find(
-              (c) => c.name.toLowerCase() === cleanChan.toLowerCase()
-            );
-            if (existingChan) {
-              store.deleteChannel(server_id, existingChan.id);
-            }
-
             const pending = store.pendingJoin;
             let isWrongPassword = false;
             if (pending && pending.serverId === server_id && pending.channelName.toLowerCase() === cleanChan.toLowerCase()) {
-              isWrongPassword = !!pending.hasPassword;
+              isWrongPassword = !!pending.password;
               store.setPendingJoin(null, null);
             }
 

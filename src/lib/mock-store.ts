@@ -139,8 +139,8 @@ interface MockState {
   updateInviteCode: (serverId: string) => string;
 
   // Channel Actions
-  pendingJoin: { serverId: string; channelName: string; hasPassword?: boolean } | null;
-  setPendingJoin: (serverId: string | null, channelName: string | null, hasPassword?: boolean) => void;
+  pendingJoin: { serverId: string; channelName: string; password?: string } | null;
+  setPendingJoin: (serverId: string | null, channelName: string | null, password?: string) => void;
   addChannel: (serverId: string, name: string, type: ChannelType, isTemporary?: boolean) => Channel;
   updateChannel: (serverId: string, channelId: string, name: string, type: ChannelType) => void;
   updateChannelTopic: (serverId: string, channelId: string, topic: string) => void;
@@ -183,11 +183,11 @@ export const useMockStore = create<MockState>()(
       historyNextOffset: null,
       historyHasMore: false,
       pendingJoin: null,
-      setPendingJoin: (serverId, channelName, hasPassword = false) => {
-        if (serverId && channelName) {
-          set({ pendingJoin: { serverId, channelName: channelName.replace(/^#/, ""), hasPassword } });
-        } else {
+      setPendingJoin: (serverId, channelName, password) => {
+        if (!serverId || !channelName) {
           set({ pendingJoin: null });
+        } else {
+          set({ pendingJoin: { serverId, channelName: channelName.replace(/^#/, ""), password } });
         }
       },
       activeConversations: {},

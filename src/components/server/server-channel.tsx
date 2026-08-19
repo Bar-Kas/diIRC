@@ -100,7 +100,7 @@ export const ServerChannel = ({
       <ContextMenuContent className="w-56 bg-white dark:bg-[#111214] text-zinc-900 dark:text-zinc-100 border-zinc-200 dark:border-zinc-800">
         {isChannelOp ? (
           <ContextMenuItem
-            onClick={() => onOpen("setChannelPassword", { server, channel })}
+            onSelect={() => setTimeout(() => onOpen("setChannelPassword", { server, channel }), 0)}
             className="cursor-pointer flex items-center gap-x-2"
           >
             <KeyRound className="w-4 h-4" />
