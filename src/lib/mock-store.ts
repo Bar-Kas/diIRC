@@ -858,6 +858,21 @@ export const useMockStore = create<MockState>()(
 
       openConversation: (serverId, memberId) => {
         set((state) => {
+          const server = state.servers.find((s) => s.id === serverId);
+          if (server) {
+            const currentProfile = state.currentProfile;
+            const currentMember = server.members.find(
+              (m) =>
+                m.profileId === currentProfile.id ||
+                m.profile?.id === currentProfile.id ||
+                (server.nicknames && server.nicknames.includes(m.profile?.name)) ||
+                m.id.startsWith("member-")
+            );
+            if (currentMember && currentMember.id === memberId) {
+              return state;
+            }
+          }
+
           const current = state.activeConversations[serverId] || [];
           if (current.includes(memberId)) return state;
           return {
@@ -894,31 +909,12 @@ export const useMockStore = create<MockState>()(
           updatedAt: new Date().toISOString(),
         };
 
-        set((state) => {
-          const serverId = member.serverId;
-          const currentConvs = serverId ? state.activeConversations[serverId] || [] : [];
-          const updatedConvs = serverId && !currentConvs.includes(member.id)
-            ? [...currentConvs, member.id]
-            : currentConvs;
-
-          return {
-            ...(state.activeChatKey === chatKey("conversation", conversationId)
-              ? {
-                  directMessages: {
-                    [conversationId]: [...(state.directMessages[conversationId] || []), newDm].slice(-MAX_MESSAGES_IN_MEMORY),
-                  },
-                }
-              : {}),
-            ...(serverId
-              ? {
-                  activeConversations: {
-                    ...state.activeConversations,
-                    [serverId]: updatedConvs,
-                  },
-                }
-              : {}),
-          };
-        });
+        set((state) => ({
+          directMessages: {
+            ...state.directMessages,
+            [conversationId]: [...(state.directMessages[conversationId] || []), newDm].slice(-MAX_MESSAGES_IN_MEMORY),
+          },
+        }));
 
         return newDm;
       },

@@ -324,7 +324,14 @@ export const ChatInput = ({
         return;
       }
 
-      let currentMember = activeServer.members.find((m) => m.profileId === currentProfile.id) || activeServer.members[0];
+      let currentMember =
+        activeServer.members.find(
+          (m) =>
+            m.profileId === currentProfile.id ||
+            m.profile?.id === currentProfile.id ||
+            (activeServer.nicknames && activeServer.nicknames.includes(m.profile?.name)) ||
+            m.id.startsWith("member-")
+        ) || activeServer.members[0];
       const primaryNick = activeServer.nicknames?.[0];
       if (primaryNick && currentMember) {
         currentMember = {

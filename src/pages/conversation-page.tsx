@@ -18,6 +18,12 @@ export const ConversationPage = () => {
   const targetMember = server?.members.find((m) => m.id === memberId);
 
   useEffect(() => {
+    if (serverId && memberId) {
+      useMockStore.getState().openConversation(serverId, memberId);
+    }
+  }, [serverId, memberId]);
+
+  useEffect(() => {
     if (!server && servers.length > 0) {
       navigate(`/servers/${servers[0].id}`, { replace: true });
     }
@@ -27,7 +33,14 @@ export const ConversationPage = () => {
     return null;
   }
 
-  const currentMember = server.members.find((m) => m.profileId === currentProfile.id) || server.members[0];
+  const currentMember =
+    server.members.find(
+      (m) =>
+        m.profileId === currentProfile.id ||
+        m.profile?.id === currentProfile.id ||
+        (server.nicknames && server.nicknames.includes(m.profile?.name)) ||
+        m.id.startsWith("member-")
+    ) || server.members[0];
   const conversationId = [currentMember.id, targetMember.id].sort().join("-");
 
   return (

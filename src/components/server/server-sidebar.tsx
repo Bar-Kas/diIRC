@@ -21,6 +21,7 @@ const iconMap = {
 export const ServerSidebar = ({
   serverId
 }: ServerSidebarProps) => {
+  const currentProfile = useMockStore((state) => state.currentProfile);
   const servers = useMockStore((state) => state.servers);
   const activeConversations = useMockStore((state) => state.activeConversations);
 
@@ -65,7 +66,17 @@ export const ServerSidebar = ({
   const channels = server.channels || [];
   const textChannels = channels.filter((channel) => channel.type === ChannelType.TEXT);
 
-  const activeMemberIds = activeConversations[server.id] || [];
+  const currentMember = server.members.find(
+    (m) =>
+      m.profileId === currentProfile?.id ||
+      m.profile?.id === currentProfile?.id ||
+      (server.nicknames && server.nicknames.includes(m.profile?.name)) ||
+      m.id.startsWith("member-")
+  );
+
+  const activeMemberIds = (activeConversations[server.id] || []).filter(
+    (memberId) => memberId !== currentMember?.id
+  );
   const pmMembers = activeMemberIds
     .map((memberId) => server.members.find((m) => m.id === memberId))
     .filter((m): m is NonNullable<typeof m> => !!m);
