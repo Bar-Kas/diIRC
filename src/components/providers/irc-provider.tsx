@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useMockStore } from "@/lib/mock-store";
 import { useModalStore } from "@/hooks/use-modal-store";
 import { Server, ChannelType } from "@/types";
+import { getChannelBuffer, getConversationBuffer } from "@/lib/chat-buffer";
 
 interface IrcMessagePayload {
   serverId?: string;
@@ -14,6 +15,7 @@ interface IrcMessagePayload {
   channel: string;
   isSystem?: boolean;
   is_system?: boolean;
+  timestamp?: string;
 }
 
 interface IrcUserEventPayload {
@@ -24,7 +26,9 @@ interface IrcUserEventPayload {
 }
 
 export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
-  const addMessage = useMockStore((state) => state.addMessage);
+  const ingestIncomingDirectMessage = useMockStore((state) => state.ingestIncomingDirectMessage);
+  const pendingChannelsRef = useRef<Array<{ buffer: ReturnType<typeof getChannelBuffer>; member: any; content: string; fileUrl: string | null; isSystem?: boolean; timestamp?: string }>>([]);
+  const pendingFlushRef = useRef<number | null>(null);
   const currentProfile = useMockStore((state) => state.currentProfile);
   const servers = useMockStore((state) => state.servers);
   const addServerMember = useMockStore((state) => state.addServerMember);
@@ -144,10 +148,22 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     let isCancelled = false;
     let unlistenFn: (() => void) | null = null;
 
+    const flushPendingChannels = () => {
+      pendingFlushRef.current = null;
+      const batch = pendingChannelsRef.current;
+      if (batch.length === 0) return;
+      pendingChannelsRef.current = [];
+      useMockStore.getState().ingestIncomingChannelBatch(batch as any);
+    };
+    const scheduleFlush = () => {
+      if (pendingFlushRef.current !== null) return;
+      pendingFlushRef.current = requestAnimationFrame(flushPendingChannels);
+    };
+
     const setupListener = async () => {
       try {
         const unlisten = await listen<IrcMessagePayload>("irc_message", (event) => {
-          const { sender, content, channel } = event.payload;
+           const { sender, content, channel, timestamp } = event.payload;
           const serverId = event.payload.serverId || event.payload.server_id;
           const isSystem = event.payload.isSystem ?? event.payload.is_system;
 
@@ -171,16 +187,22 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
             if (senderMember && currentMember) {
               const conversationId = [currentMember.id, senderMember.id].sort().join("-");
-              store.addDirectMessage(conversationId, senderMember, content, null);
+              ingestIncomingDirectMessage(
+                getConversationBuffer(targetServer.id, conversationId, sender),
+               senderMember,
+               content,
+               null,
+                timestamp,
+              );
               store.openConversation(targetServer.id, senderMember.id);
             }
             return;
           }
 
           const cleanName = channel.replace(/^#/, "").toLowerCase();
-          const targetChannel = targetServer.channels.find(
-            (c) => c.name.toLowerCase() === cleanName
-          );
+           const targetChannel = targetServer.channels.find(
+             (c) => c.name.toLowerCase() === cleanName
+           );
 
           const mockMember = {
             id: `irc-${sender}`,
@@ -199,11 +221,17 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             updatedAt: new Date().toISOString(),
           };
 
-          if (targetChannel) {
-            addMessage(targetChannel.id, mockMember as any, content, null, isSystem);
-          } else if (targetServer.channels.length > 0) {
-            addMessage(targetServer.channels[0].id, mockMember as any, content, null, isSystem);
-          }
+           if (targetChannel) {
+             pendingChannelsRef.current.push({
+               buffer: getChannelBuffer(targetServer.id, targetChannel.id, targetChannel.name),
+               member: mockMember,
+               content,
+               fileUrl: null,
+               isSystem,
+               timestamp,
+             } as any);
+             scheduleFlush();
+           }
         });
 
         if (isCancelled) {
@@ -237,7 +265,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             ) {
               const activeServer = store.servers.find(s => s.id === server_id);
               const existing = activeServer?.channels.find(c => c.name.toLowerCase() === cleanChan.toLowerCase());
-              
+
               if (!existing) {
                 const newChan = store.addChannel(server_id, cleanChan, ChannelType.TEXT);
                 if (pending.password) {
@@ -380,7 +408,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
             // We purposefully do NOT delete the channel here, because if they had it
             // in their sidebar, we don't want to wipe their history just because the key was wrong or changed.
-            
+
             const store = useMockStore.getState();
             const pending = store.pendingJoin;
             let isWrongPassword = false;
@@ -411,6 +439,11 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
     return () => {
       isCancelled = true;
+      if (pendingFlushRef.current !== null) {
+        cancelAnimationFrame(pendingFlushRef.current);
+        pendingFlushRef.current = null;
+      }
+      pendingChannelsRef.current = [];
       if (unlistenFn) {
         unlistenFn();
       }
@@ -433,7 +466,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
         unlistenBadKeyFn();
       }
     };
-  }, [addMessage, addServerMember, removeServerMember, setIrcConnected]);
+  }, [ingestIncomingDirectMessage, addServerMember, removeServerMember, setIrcConnected]);
 
   return <>{children}</>;
 };

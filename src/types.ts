@@ -3,6 +3,57 @@ export enum ChannelType {
   TEXT = "TEXT"
 }
 
+export type BufferKind = "channel" | "conversation";
+export type BufferKey = string;
+
+export interface BufferRef {
+  key: BufferKey;
+  serverId: string;
+  kind: BufferKind;
+  id: string;
+  target: string;
+}
+
+export interface MessageAnchor {
+  timestamp: string;
+  messageId?: string;
+  sender?: string;
+  fingerprint?: string;
+}
+
+export interface BufferReadState {
+  initialized: boolean;
+  lastReadTimestamp: string | null;
+  lastReadMessageId?: string;
+  unreadCount: number;
+  mentionCount: number;
+  firstUnread: MessageAnchor | null;
+  latestMessageTimestamp: string | null;
+  latestMessageId?: string;
+}
+
+export interface ScrollGeometry {
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+  distanceFromBottom: number;
+  distanceFromTop: number;
+}
+
+export interface ScrollViewportState {
+  bufferKey: BufferKey;
+  geometry: ScrollGeometry;
+  isAtBottom: boolean;
+  isAtTop: boolean;
+  revision: number;
+}
+
+export interface MentionMatch {
+  matched: boolean;
+  source: "nickname" | "keyword" | null;
+  value?: string;
+}
+
 export interface Profile {
   id: string;
   userId: string;
@@ -45,6 +96,8 @@ export interface Message {
   channelId: string;
   deleted: boolean;
   isSystem?: boolean;
+  sourceTimestamp?: string;
+  mention?: MentionMatch;
   createdAt: string;
   updatedAt: string;
 }
@@ -58,6 +111,8 @@ export interface DirectMessage {
   conversationId: string;
   deleted: boolean;
   isSystem?: boolean;
+  sourceTimestamp?: string;
+  mention?: MentionMatch;
   createdAt: string;
   updatedAt: string;
 }
@@ -99,6 +154,7 @@ export interface Server {
   password?: string;
   useTls?: boolean;
   autoJoinChannels?: string[];
+  highlightKeywords?: string[];
 }
 
 export type ServerWithMembersWithProfiles = Server;

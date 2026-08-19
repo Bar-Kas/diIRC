@@ -5,6 +5,7 @@ import { ModeToggle } from "@/components/mode-toggle";
 import { Separator } from "@/components/ui/separator";
 import { ActionTooltip } from "@/components/action-tooltip";
 import { useMockStore } from "@/lib/mock-store";
+import { getBufferKey } from "@/lib/chat-buffer";
 import { useModal } from "@/hooks/use-modal-store";
 
 import { NavigationAction } from "./navigation-action";
@@ -12,6 +13,9 @@ import { NavigationItem } from "./navigation-item";
 
 export const NavigationSidebar = () => {
   const servers = useMockStore((state) => state.servers);
+const currentProfile = useMockStore((state) => state.currentProfile);
+  const readStates = useMockStore((state) => state.readStates);
+  const activeConversations = useMockStore((state) => state.activeConversations);
   const { onOpen } = useModal();
 
   return (
@@ -29,6 +33,32 @@ export const NavigationSidebar = () => {
               id={server.id}
               name={server.name}
               imageUrl={server.imageUrl}
+              unreadCount={(() => {
+                const currentMember = server.members.find((m) => m.profileId === currentProfile.id) || server.members[0];
+                const channelUnread = server.channels.reduce(
+                  (total, channel) => total + (readStates[getBufferKey(server.id, "channel", channel.id)]?.unreadCount || 0),
+                  0,
+                );
+                const pmUnread = (activeConversations[server.id] || []).reduce((total, memberId) => {
+                  if (!currentMember) return total;
+                  const convId = [currentMember.id, memberId].sort().join("-");
+                  return total + (readStates[getBufferKey(server.id, "conversation", convId)]?.unreadCount || 0);
+                }, 0);
+                return channelUnread + pmUnread;
+              })()}
+              mentionCount={(() => {
+                const currentMember = server.members.find((m) => m.profileId === currentProfile.id) || server.members[0];
+                const channelMentions = server.channels.reduce(
+                  (total, channel) => total + (readStates[getBufferKey(server.id, "channel", channel.id)]?.mentionCount || 0),
+                  0,
+                );
+                const pmMentions = (activeConversations[server.id] || []).reduce((total, memberId) => {
+                  if (!currentMember) return total;
+                  const convId = [currentMember.id, memberId].sort().join("-");
+                  return total + (readStates[getBufferKey(server.id, "conversation", convId)]?.mentionCount || 0);
+                }, 0);
+                return channelMentions + pmMentions;
+              })()}
             />
           </div>
         ))}

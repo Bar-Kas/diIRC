@@ -7,12 +7,16 @@ interface NavigationItemProps {
   id: string;
   imageUrl: string;
   name: string;
+  unreadCount?: number;
+  mentionCount?: number;
 }
 
 export const NavigationItem = ({
   id,
   imageUrl,
-  name
+  name,
+  unreadCount = 0,
+  mentionCount = 0,
 }: NavigationItemProps) => {
   const params = useParams();
   const navigate = useNavigate();
@@ -47,6 +51,14 @@ export const NavigationItem = ({
             alt={name}
             className="w-full h-full object-cover"
           />
+          {!!mentionCount && (
+            <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-600 px-1.5 py-0.5 text-center text-[10px] font-bold text-white">
+              {mentionCount > 99 ? "99+" : mentionCount}
+            </span>
+          )}
+          {!!unreadCount && !mentionCount && (
+            <span className="absolute -left-1 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-white dark:bg-zinc-200" />
+          )}
         </div>
       </button>
     </ActionTooltip>
