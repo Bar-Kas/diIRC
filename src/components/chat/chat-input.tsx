@@ -63,6 +63,7 @@ export const ChatInput = ({
   const [commandQuery, setCommandQuery] = useState("");
   const [showCommands, setShowCommands] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
+  const [isFocused, setIsFocused] = useState(true);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -74,12 +75,13 @@ export const ChatInput = ({
   const activeId = query?.channelId || query?.conversationId;
   useEffect(() => {
     form.setFocus("content");
+    setIsFocused(true);
   }, [activeId, form]);
 
   const content = form.watch("content");
 
   useEffect(() => {
-    if (enableCommandSuggestions && content?.startsWith("/")) {
+    if (enableCommandSuggestions && isFocused && content?.startsWith("/")) {
       if (content.indexOf(" ") === -1) {
         setCommandQuery(content.slice(1).toLowerCase());
         setShowCommands(true);
@@ -90,7 +92,7 @@ export const ChatInput = ({
     } else {
       setShowCommands(false);
     }
-  }, [content, enableCommandSuggestions]);
+  }, [content, enableCommandSuggestions, isFocused]);
 
   const filteredCommands = commandRegistry.getAll().filter(cmd => 
     cmd.name.toLowerCase().includes(commandQuery)
@@ -548,7 +550,10 @@ export const ChatInput = ({
                         {filteredCommands.map((cmd, idx) => (
                           <div
                             key={cmd.name}
-                            onClick={() => onCommandSelect(cmd.name)}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              onCommandSelect(cmd.name);
+                            }}
                             className={`flex items-center gap-x-3 px-3 py-2 rounded-md cursor-pointer transition-colors ${
                               idx === selectedCommandIndex
                                 ? "bg-zinc-100 dark:bg-zinc-700/50"
@@ -583,6 +588,8 @@ export const ChatInput = ({
                           : `Message ${type === "conversation" ? name : "#" + name}`
                       }
                       {...field}
+                      onFocus={() => setIsFocused(true)}
+                      onBlur={() => setIsFocused(false)}
                       onKeyDown={handleInputKeyDown}
                     />
 
