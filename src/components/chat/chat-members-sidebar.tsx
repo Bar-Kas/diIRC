@@ -4,6 +4,8 @@ import { UserHoverCard, getMemberDisplayName } from "@/components/user-hover-car
 import { useNavigate } from "react-router-dom";
 import { useMockStore } from "@/lib/mock-store";
 import { cn } from "@/lib/utils";
+import { Crown } from "lucide-react";
+import { ActionTooltip } from "@/components/action-tooltip";
 
 interface ChatMembersSidebarProps {
   server: Server;
@@ -18,6 +20,7 @@ export const ChatMembersSidebar = ({
   const openConversation = useMockStore((state) => state.openConversation);
   const currentProfile = useMockStore((state) => state.currentProfile);
   const channelMembersMap = useMockStore((state) => state.channelMembers);
+  const channelOpsMap = useMockStore((state) => state.channelOps);
   const ircConnectedServers = useMockStore((state) => state.ircConnectedServers);
 
   const isConnected = !!ircConnectedServers[server.id];
@@ -82,6 +85,13 @@ export const ChatMembersSidebar = ({
 
   const renderMember = (member: Member, isSelf: boolean = false) => {
     const displayName = getMemberDisplayName(member, server);
+    const channelOps = channel ? channelOpsMap[channel.id] || [] : [];
+    const isOp = channel
+      ? channelOps.some(
+          (opNick) => opNick.toLowerCase() === member.profile.name.toLowerCase()
+        )
+      : false;
+
     return (
       <UserHoverCard member={member} server={server} side="left">
         <div
@@ -98,6 +108,11 @@ export const ChatMembersSidebar = ({
               {displayName}
             </p>
           </div>
+          {isOp && (
+            <ActionTooltip label="Channel Operator">
+              <Crown className="w-4 h-4 ml-auto text-amber-500 fill-amber-500/20 shrink-0" />
+            </ActionTooltip>
+          )}
         </div>
       </UserHoverCard>
     );
@@ -124,3 +139,4 @@ export const ChatMembersSidebar = ({
     </div>
   );
 };
+

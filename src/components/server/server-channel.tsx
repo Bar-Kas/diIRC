@@ -48,7 +48,7 @@ export const ServerChannel = ({
   const isChannelOwner = channel?.profileId === currentProfile.id;
 
   const channelOps = channelOpsMap[channel.id] || [];
-  const isChannelOp = isServerOwner || isChannelOwner || channelOps.some(
+  const isChannelOp = channelOps.some(
     (opNick) => opNick.toLowerCase() === ourNick.toLowerCase()
   );
 

@@ -40,9 +40,8 @@ export const EditTopicModal = () => {
     (opNick) => opNick.toLowerCase() === ourNick.toLowerCase()
   );
 
-  // User is considered to have permission if they are server owner, channel owner, or op in channel
-  // If ops list is empty (standalone/mock), assume user has permission by default
-  const hasPermission = isServerOwner || isChannelOwner || isChannelOp || channelOps.length === 0;
+  // User is considered to have permission if they are op in channel, or if ops list hasn't loaded (standalone/mock fallback)
+  const hasPermission = isChannelOp || channelOps.length === 0;
 
   useEffect(() => {
     if (channel) {
