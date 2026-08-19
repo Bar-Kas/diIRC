@@ -6,6 +6,7 @@ import { ChatHeader } from "@/components/chat/chat-header";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatMessages } from "@/components/chat/chat-messages";
 import { ChatMembersSidebar } from "@/components/chat/chat-members-sidebar";
+import { getMemberDisplayName } from "@/components/user-hover-card";
 
 export const ConversationPage = () => {
   const { serverId, memberId } = useParams();
@@ -18,6 +19,12 @@ export const ConversationPage = () => {
   const targetMember = server?.members.find((m) => m.id === memberId);
 
   useEffect(() => {
+    if (serverId && memberId) {
+      useMockStore.getState().openConversation(serverId, memberId);
+    }
+  }, [serverId, memberId]);
+
+  useEffect(() => {
     if (!server && servers.length > 0) {
       navigate(`/servers/${servers[0].id}`, { replace: true });
     }
@@ -27,22 +34,32 @@ export const ConversationPage = () => {
     return null;
   }
 
-  const currentMember = server.members.find((m) => m.profileId === currentProfile.id) || server.members[0];
+  const currentMember =
+    server.members.find(
+      (m) =>
+        m.profileId === currentProfile.id ||
+        m.profile?.id === currentProfile.id ||
+        (server.nicknames && server.nicknames.includes(m.profile?.name)) ||
+        m.id.startsWith("member-")
+    ) || server.members[0];
   const conversationId = [currentMember.id, targetMember.id].sort().join("-");
+  const displayName = getMemberDisplayName(targetMember, server);
 
   return (
     <div className="bg-white dark:bg-[#313338] flex flex-col h-full">
       <ChatHeader
         imageUrl={targetMember.profile.imageUrl}
-        name={targetMember.profile.name}
+        name={displayName}
         serverId={server.id}
         type="conversation"
+        targetMember={targetMember}
+        server={server}
       />
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-col flex-1 h-full min-w-0">
           <ChatMessages
             member={currentMember}
-            name={targetMember.profile.name}
+            name={displayName}
             chatId={conversationId}
             serverId={server.id}
             type="conversation"
@@ -50,7 +67,7 @@ export const ConversationPage = () => {
             paramValue={conversationId}
           />
           <ChatInput
-            name={targetMember.profile.name}
+            name={displayName}
             type="conversation"
             query={{
               conversationId,

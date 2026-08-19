@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/user-avatar";
+import { UserHoverCard, getMemberDisplayName } from "@/components/user-hover-card";
 import { ActionTooltip } from "@/components/action-tooltip";
 import { useMockStore } from "@/lib/mock-store";
 import { getBufferKey } from "@/lib/chat-buffer";
@@ -27,6 +28,7 @@ export const ServerConversation = ({
   const readState = useMockStore((state) => state.readStates[
     getBufferKey(server.id, "conversation", conversationId)
   ]);
+  const displayName = getMemberDisplayName(member, server);
 
   const onClick = () => {
     navigate(`/servers/${server.id}/conversations/${member.id}`);
@@ -68,27 +70,29 @@ export const ServerConversation = ({
         isSelected && "bg-zinc-700/20 dark:bg-zinc-700"
       )}
     >
-      <UserAvatar
-        src={member.profile.imageUrl}
-        name={member.profile.name}
-        className="h-7 w-7 md:h-7 md:w-7"
-      />
-      <p
-        className={cn(
-          "line-clamp-1 text-sm text-zinc-500 group-hover:text-zinc-600 dark:text-zinc-400 dark:group-hover:text-zinc-300 transition",
-          readState?.unreadCount ? "font-bold" : "font-semibold",
-          isSelected && "text-primary dark:text-zinc-200 dark:group-hover:text-white"
-        )}
-      >
-        {member.profile.name}
-      </p>
-      <div className="ml-auto flex items-center gap-x-2">
+<div className="flex items-center gap-x-2 overflow-hidden flex-1">
+        <UserAvatar
+          src={member.profile.imageUrl}
+          name={displayName}
+          className="h-7 w-7 md:h-7 md:w-7"
+        />
+        <p
+          className={cn(
+            "line-clamp-1 text-sm text-zinc-500 group-hover:text-zinc-600 dark:text-zinc-400 dark:group-hover:text-zinc-300 transition text-left",
+            readState?.unreadCount ? "font-bold" : "font-semibold",
+            isSelected && "text-primary dark:text-zinc-200 dark:group-hover:text-white"
+          )}
+        >
+          {displayName}
+        </p>
+        {!!readState?.unreadCount && <span className="h-2 w-2 rounded-full bg-white dark:bg-zinc-200 flex-shrink-0" />}
+      </div>
+      <div className="ml-auto flex items-center gap-x-2 shrink-0">
         {!!readState?.mentionCount && (
           <span className="min-w-5 rounded-full bg-rose-600 px-1.5 py-0.5 text-center text-[10px] font-bold text-white">
             {readState.mentionCount > 99 ? "99+" : readState.mentionCount}
           </span>
         )}
-        {!!readState?.unreadCount && <span className="h-2 w-2 rounded-full bg-white dark:bg-zinc-200" />}
         <ActionTooltip label="Close PM">
           <X
             onClick={onClose}

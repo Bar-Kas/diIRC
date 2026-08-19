@@ -33,6 +33,7 @@ const formSchema = z.object({
   host: z.string().min(1, { message: "Server address is required." }),
   port: z.coerce.number().min(1).max(65535),
   nicknames: z.array(z.object({ value: z.string().min(1, { message: "Nickname is required." }) })).min(1),
+  realname: z.string().optional(),
   password: z.string().optional(),
   channels: z.array(z.object({ value: z.string() })).min(1),
   useTls: z.boolean().default(false),
@@ -53,6 +54,7 @@ export const CreateServerModal = () => {
       host: "127.0.0.1",
       port: 6667,
       nicknames: [{ value: currentProfile.name.replace(/\s+/g, "") || "ReactUser" }],
+      realname: "",
       password: "",
       channels: [{ value: "test" }, { value: "general" }],
       useTls: false,
@@ -76,6 +78,7 @@ export const CreateServerModal = () => {
         host: "127.0.0.1",
         port: 6667,
         nicknames: [{ value: currentProfile.name.replace(/\s+/g, "") || "ReactUser" }],
+        realname: "",
         password: "",
         channels: [{ value: "test" }, { value: "general" }],
         useTls: false,
@@ -100,6 +103,7 @@ export const CreateServerModal = () => {
         host: values.host,
         port: values.port,
         nicknames: nickArray,
+        realname: values.realname || "",
         password: values.password || "",
         useTls: values.useTls,
         autoJoinChannels: channelArray,
@@ -231,6 +235,27 @@ export const CreateServerModal = () => {
                       disabled={isLoading}
                       className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10 w-full"
                       placeholder="Optional"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="realname"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
+                    Real Name (Optional)
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      disabled={isLoading}
+                      className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10 w-full"
+                      placeholder="e.g. John Doe"
                       {...field}
                     />
                   </FormControl>

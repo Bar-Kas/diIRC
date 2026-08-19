@@ -4,6 +4,7 @@ import { Reply } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { UserAvatar } from "@/components/user-avatar";
+import { UserHoverCard, getMemberDisplayName } from "@/components/user-hover-card";
 import { ActionTooltip } from "@/components/action-tooltip";
 import { cn } from "@/lib/utils";
 import { useMockStore } from "@/lib/mock-store";
@@ -115,15 +116,25 @@ export const ChatItem = ({
     });
   };
 
+  const isAction = typeof content === "string" && /^\x01ACTION ([\s\S]*)\x01?$/i.test(content.trim());
+  const actionText = isAction
+    ? content.trim().replace(/^\x01ACTION /i, "").replace(/\x01$/, "").trim()
+    : content;
+
   // Check if there is any visible text remaining after hiding image URLs
-  const renderedElements = renderContentWithLinks(content);
+  const textToEvaluate = isAction ? actionText : content;
+  const renderedElements = renderContentWithLinks(textToEvaluate);
   const hasVisibleText = Array.isArray(renderedElements)
     ? renderedElements.some((item) => item !== null && typeof item === "string" ? item.trim().length > 0 : item !== null)
     : Boolean(renderedElements);
 
   const extractedUrls = enableLinkPreviews && !deleted && !fileUrl
-    ? Array.from(new Set(content.match(urlRegex) || []))
+    ? Array.from(new Set(textToEvaluate.match(urlRegex) || []))
     : [];
+
+  const servers = useMockStore((state) => state.servers);
+  const activeServer = servers.find((s) => s.id === params?.serverId) || servers[0];
+  const displayName = getMemberDisplayName(member, activeServer);
 
   if (isSystem) {
     return (
@@ -149,9 +160,11 @@ export const ChatItem = ({
     )}>
       <div className="group flex gap-x-2 items-start w-full">
         {!compactMode && !compact ? (
-          <div onClick={onMemberClick} className="cursor-pointer hover:drop-shadow-md transition shrink-0">
-            <UserAvatar src={member.profile.imageUrl} name={member.profile.name} className="h-10 w-10 md:h-10 md:w-10" />
-          </div>
+          <UserHoverCard member={member} server={activeServer} side="right">
+            <div onClick={onMemberClick} className="cursor-pointer hover:drop-shadow-md transition shrink-0">
+              <UserAvatar src={member.profile.imageUrl} name={displayName} className="h-10 w-10 md:h-10 md:w-10" />
+            </div>
+          </UserHoverCard>
         ) : !compactMode && compact ? (
           <div className="w-10 h-5 flex items-center justify-center shrink-0">
             <span className="text-[10px] text-zinc-400 dark:text-zinc-500 hidden group-hover:block select-none font-mono">
@@ -162,11 +175,15 @@ export const ChatItem = ({
         <div className="flex flex-col w-full">
           {!compact && (
             <div className="flex items-center gap-x-2">
-              <div className="flex items-center">
-                <p onClick={onMemberClick} className="font-semibold text-sm hover:underline cursor-pointer">
-                  {member.profile.name}
-                </p>
-              </div>
+              {!isAction && (
+                <div className="flex items-center">
+                  <UserHoverCard member={member} server={activeServer} side="right">
+                    <p onClick={onMemberClick} className="font-semibold text-sm hover:underline cursor-pointer text-zinc-800 dark:text-zinc-100">
+                      {displayName}
+                    </p>
+                  </UserHoverCard>
+                </div>
+              )}
               <span className="text-xs text-zinc-500 dark:text-zinc-400">
                 {timestamp}
               </span>
@@ -184,12 +201,24 @@ export const ChatItem = ({
           {!fileUrl && (
             <div className="space-y-1">
               {(hasVisibleText || deleted) && (
-                <p className={cn(
-                  "text-sm text-zinc-600 dark:text-zinc-300",
-                  deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
-                )}>
-                  {renderContentWithLinks(content)}
-                </p>
+                isAction ? (
+                  <p className="text-sm text-zinc-600 dark:text-zinc-300 italic">
+                    <span className="font-bold text-indigo-500 dark:text-indigo-400 not-italic mr-1.5">*</span>
+                    <UserHoverCard member={member} server={activeServer} side="right">
+                      <span onClick={onMemberClick} className="font-semibold not-italic hover:underline cursor-pointer text-zinc-800 dark:text-zinc-100 mr-1.5">
+                        {displayName}
+                      </span>
+                    </UserHoverCard>
+                    <span>{renderContentWithLinks(actionText)}</span>
+                  </p>
+                ) : (
+                  <p className={cn(
+                    "text-sm text-zinc-600 dark:text-zinc-300",
+                    deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
+                  )}>
+                    {renderContentWithLinks(content)}
+                  </p>
+                )
               )}
               {extractedUrls.map((url) => (
                 <LinkPreview

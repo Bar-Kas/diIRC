@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Paperclip, Loader2, X, FileIcon } from "lucide-react";
+import { Paperclip, Loader2, X, FileIcon, Command } from "lucide-react";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -21,19 +21,13 @@ import { useMockStore } from "@/lib/mock-store";
 import { uploadImage } from "@/lib/upload/services";
 import { ImageContextMenu } from "@/components/image-context-menu";
 import { isMediaUrl } from "@/lib/image-utils";
+import { commandRegistry } from "@/lib/commands/command-system";
+import { useDraftStore, AttachedImage } from "@/hooks/use-draft-store";
 
 interface ChatInputProps {
   query: Record<string, string>;
   name: string;
   type: "conversation" | "channel";
-}
-
-interface AttachedImage {
-  id: string;
-  previewUrl: string;
-  url?: string;
-  name: string;
-  isUploading: boolean;
 }
 
 const formSchema = z.object({
@@ -51,23 +45,96 @@ export const ChatInput = ({
   const currentProfile = useMockStore((state) => state.currentProfile);
   const uploadConfig = useMockStore((state) => state.uploadConfig);
   const ircConnectedServers = useMockStore((state) => state.ircConnectedServers);
+  const enableCommandSuggestions = useMockStore((state) => state.enableCommandSuggestions ?? true);
   const { onOpen } = useModal();
 
-  const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
+  const activeId = query?.channelId || query?.conversationId;
+
+  const setDraft = useDraftStore((state) => state.setDraft);
+  const getDraft = useDraftStore((state) => state.getDraft);
+  const clearDraft = useDraftStore((state) => state.clearDraft);
+
+  const initialDraft = activeId ? getDraft(activeId) : { content: "", attachedImages: [] };
+
+  const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(initialDraft.attachedImages || []);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [commandQuery, setCommandQuery] = useState("");
+  const [showCommands, setShowCommands] = useState(false);
+  const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
+  const [isFocused, setIsFocused] = useState(true);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      content: "",
+      content: initialDraft.content || "",
     }
   });
 
-  const activeId = query?.channelId || query?.conversationId;
+  const prevActiveIdRef = useRef<string | undefined>(undefined);
+  const isSwitchingRef = useRef<boolean>(false);
+  const attachedImagesRef = useRef(attachedImages);
+  attachedImagesRef.current = attachedImages;
+
   useEffect(() => {
+    if (!activeId) return;
+
+    isSwitchingRef.current = true;
+
+    const prevId = prevActiveIdRef.current;
+    if (prevId && prevId !== activeId) {
+      const currentContent = form.getValues("content") || "";
+      setDraft(prevId, {
+        content: currentContent,
+        attachedImages: attachedImagesRef.current,
+      });
+    }
+
+    const draft = getDraft(activeId);
+    form.reset({ content: draft.content || "" });
+    setAttachedImages(draft.attachedImages || []);
+
+    prevActiveIdRef.current = activeId;
+
     form.setFocus("content");
-  }, [activeId, form]);
+    setIsFocused(true);
+
+    const timer = setTimeout(() => {
+      isSwitchingRef.current = false;
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [activeId, form, getDraft, setDraft]);
+
+  const content = form.watch("content");
+
+  useEffect(() => {
+    if (!activeId || isSwitchingRef.current) return;
+    if (prevActiveIdRef.current !== activeId) return;
+
+    setDraft(activeId, {
+      content: content || "",
+      attachedImages: attachedImages,
+    });
+  }, [content, attachedImages, activeId, setDraft]);
+
+  useEffect(() => {
+    if (enableCommandSuggestions && isFocused && content?.startsWith("/")) {
+      if (content.indexOf(" ") === -1) {
+        setCommandQuery(content.slice(1).toLowerCase());
+        setShowCommands(true);
+        setSelectedCommandIndex(0);
+      } else {
+        setShowCommands(false);
+      }
+    } else {
+      setShowCommands(false);
+    }
+  }, [content, enableCommandSuggestions, isFocused]);
+
+  const filteredCommands = commandRegistry.getAll().filter(cmd =>
+    cmd.name.toLowerCase().includes(commandQuery)
+  );
 
   /**
    * Re-applies focus to the message input after a send.
@@ -196,9 +263,6 @@ export const ChatInput = ({
     }
   }, [uploadConfig, processFileUpload]);
 
-  const attachedImagesRef = useRef(attachedImages);
-  attachedImagesRef.current = attachedImages;
-
   useEffect(() => {
     return () => {
       attachedImagesRef.current.forEach((img) => {
@@ -316,6 +380,30 @@ export const ChatInput = ({
     }
   };
 
+  const onCommandSelect = (commandName: string) => {
+    form.setValue("content", `/${commandName} `);
+    form.setFocus("content");
+    setShowCommands(false);
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (showCommands && filteredCommands.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedCommandIndex((prev) => (prev + 1) % filteredCommands.length);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedCommandIndex((prev) => (prev - 1 + filteredCommands.length) % filteredCommands.length);
+      } else if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        onCommandSelect(filteredCommands[selectedCommandIndex].name);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        setShowCommands(false);
+      }
+    }
+  };
+
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     const textContent = values.content?.trim() || "";
     const readyImages = attachedImages.filter((img) => !img.isUploading && img.url);
@@ -347,7 +435,14 @@ export const ChatInput = ({
         return;
       }
 
-      let currentMember = activeServer.members.find((m) => m.profileId === currentProfile.id) || activeServer.members[0];
+      let currentMember =
+        activeServer.members.find(
+          (m) =>
+            m.profileId === currentProfile.id ||
+            m.profile?.id === currentProfile.id ||
+            (activeServer.nicknames && activeServer.nicknames.includes(m.profile?.name)) ||
+            m.id.startsWith("member-")
+        ) || activeServer.members[0];
       const primaryNick = activeServer.nicknames?.[0];
       if (primaryNick && currentMember) {
         currentMember = {
@@ -357,6 +452,50 @@ export const ChatInput = ({
             name: primaryNick,
           },
         };
+      }
+
+      if (textContent.startsWith("/")) {
+        const isHandled = await commandRegistry.execute(textContent, {
+          serverId: activeServer.id,
+          channelName: name,
+          channelId: query?.channelId,
+          conversationId: query?.conversationId,
+          type,
+          currentMember,
+          activeServer,
+          addMessage,
+          addDirectMessage,
+        });
+
+        if (isHandled) {
+          // Send attached images if any were queued alongside slash command
+          for (const img of readyImages) {
+            if (img.url) {
+              if (type === "channel" && query?.channelId) {
+                await invoke("send_message", {
+                  serverId: activeServer.id,
+                  channel: name.startsWith("#") ? name : `#${name}`,
+                  message: img.url,
+                }).catch((e) => console.error(e));
+                addMessage(query.channelId, currentMember, img.url);
+              } else if (type === "conversation" && query?.conversationId) {
+                await invoke("send_message", {
+                  serverId: activeServer.id,
+                  channel: name,
+                  message: img.url,
+                }).catch((e) => console.error(e));
+                addDirectMessage(query.conversationId, currentMember, img.url);
+              }
+            }
+          }
+          if (activeId) {
+            clearDraft(activeId);
+          }
+          form.reset({ content: "" });
+          clearAllAttachments();
+          form.setFocus("content");
+          return;
+        }
       }
 
       for (const line of linesToSend) {
@@ -387,7 +526,10 @@ export const ChatInput = ({
         }
       }
 
-      form.reset();
+      if (activeId) {
+        clearDraft(activeId);
+      }
+      form.reset({ content: "" });
       clearAllAttachments();
       restoreInputFocus();
     } catch (error) {
@@ -463,6 +605,42 @@ export const ChatInput = ({
                     </div>
                   )}
 
+                  {showCommands && filteredCommands.length > 0 && (
+                    <div className="absolute bottom-full left-4 mb-2 w-80 bg-white dark:bg-[#2b2d31] border border-zinc-200 dark:border-zinc-800 rounded-md shadow-xl overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                      <div className="px-3 py-2 text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider bg-zinc-50 dark:bg-[#232428] border-b border-zinc-200 dark:border-zinc-800">
+                        Commands matching /{commandQuery}
+                      </div>
+                      <div className="max-h-60 overflow-y-auto p-1">
+                        {filteredCommands.map((cmd, idx) => (
+                          <div
+                            key={cmd.name}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              onCommandSelect(cmd.name);
+                            }}
+                            className={`flex items-center gap-x-3 px-3 py-2 rounded-md cursor-pointer transition-colors ${
+                              idx === selectedCommandIndex
+                                ? "bg-zinc-100 dark:bg-zinc-700/50"
+                                : "hover:bg-zinc-100 dark:hover:bg-zinc-700/30"
+                            }`}
+                          >
+                            <div className="bg-indigo-100 dark:bg-indigo-500/20 p-2 rounded-md shrink-0">
+                              <Command className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                                /{cmd.name}
+                              </span>
+                              <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                                {cmd.description}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="relative flex items-center">
                     <Input
                       disabled={isLoading && attachedImages.length === 0}
@@ -475,6 +653,8 @@ export const ChatInput = ({
                           : `Message ${type === "conversation" ? name : "#" + name}`
                       }
                       {...field}
+onFocus={() => setIsFocused(true)}
+                      onBlur={() => setIsFocused(false)}
                       onKeyDown={(e) => {
                         // Pressing Enter on an empty field normally triggers the
                         // implicit form submit, which makes react-hook-form set
@@ -488,6 +668,7 @@ export const ChatInput = ({
                             e.preventDefault();
                           }
                         }
+                        handleInputKeyDown(e);
                       }}
                     />
 

@@ -58,6 +58,7 @@ export interface Profile {
   id: string;
   userId: string;
   name: string;
+  realname?: string;
   imageUrl: string;
   email: string;
   createdAt?: string;
@@ -80,6 +81,7 @@ export interface Channel {
   profileId: string;
   serverId: string;
   topic?: string;
+  key?: string;
   isTemporary?: boolean;
   createdAt?: string;
   updatedAt?: string;

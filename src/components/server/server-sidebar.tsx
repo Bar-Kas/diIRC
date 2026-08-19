@@ -1,9 +1,10 @@
 import { ChannelType } from "@/types";
-import { Hash } from "lucide-react";
+import { Hash, User } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useMockStore } from "@/lib/mock-store";
+import { getMemberDisplayName } from "@/components/user-hover-card";
 import { getBufferKey } from "@/lib/chat-buffer";
 import { ServerHeader } from "./server-header";
 import { ServerSearch } from "./server-search";
@@ -22,6 +23,7 @@ const iconMap = {
 export const ServerSidebar = ({
   serverId
 }: ServerSidebarProps) => {
+  const currentProfile = useMockStore((state) => state.currentProfile);
   const servers = useMockStore((state) => state.servers);
   const activeConversations = useMockStore((state) => state.activeConversations);
 
@@ -107,7 +109,25 @@ export const ServerSidebar = ({
     };
   }, [readStates, server.id, textChannelIds]);
 
-  const activeMemberIds = activeConversations[server.id] || [];
+  const currentMember = server.members.find(
+    (m) =>
+      m.profileId === currentProfile?.id ||
+      m.profile?.id === currentProfile?.id ||
+      (server.nicknames && server.nicknames.includes(m.profile?.name)) ||
+      m.id.startsWith("member-")
+  );
+
+  const otherMembers = (server.members || []).filter(
+    (m) =>
+      m.id !== currentMember?.id &&
+      m.profileId !== currentProfile?.id &&
+      m.profile?.name?.toLowerCase() !== server.nicknames?.[0]?.toLowerCase() &&
+      !m.id.startsWith("self-")
+  );
+
+  const activeMemberIds = (activeConversations[server.id] || []).filter(
+    (memberId) => memberId !== currentMember?.id
+  );
   const pmMembers = activeMemberIds
     .map((memberId) => server.members.find((m) => m.id === memberId))
     .filter((m): m is NonNullable<typeof m> => !!m);
@@ -127,6 +147,7 @@ export const ServerSidebar = ({
           <ScrollArea viewportRef={channelsViewportRef} className="flex-1 px-3">
             <div className="mt-2">
               <ServerSearch
+                serverId={server.id}
                 data={[
                   {
                     label: "Text Channels",
@@ -136,6 +157,24 @@ export const ServerSidebar = ({
                       name: channel.name,
                       icon: iconMap[channel.type],
                     }))
+                  },
+                  {
+                    label: "Members",
+                    type: "member",
+                    data: otherMembers?.map((member) => {
+                      const displayName = getMemberDisplayName(member, server);
+                      const nickname = member.profile?.name;
+                      const nameWithNick =
+                        displayName && nickname && displayName !== nickname
+                          ? `${displayName} (${nickname})`
+                          : displayName || nickname || "User";
+
+                      return {
+                        id: member.id,
+                        name: nameWithNick,
+                        icon: <User className="mr-2 h-4 w-4" />,
+                      };
+                    })
                   }
                 ]}
               />

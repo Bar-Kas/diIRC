@@ -66,25 +66,21 @@ export const CreateChannelModal = () => {
     try {
       if (activeServerId) {
         const cleanChannelName = values.name.trim().replace(/^#/, "");
-        const newChannel = addChannel(
-          activeServerId,
-          cleanChannelName,
-          ChannelType.TEXT,
-          values.joinTemporary
-        );
         
         try {
+          useMockStore.getState().setPendingJoin(activeServerId, cleanChannelName, undefined);
           await invoke("join_channel", {
             serverId: activeServerId,
-            channel: cleanChannelName
+            channel: cleanChannelName,
+            password: null,
           });
+          form.reset();
+          onClose("createChannel");
         } catch (e) {
           console.error("Failed to join channel on IRC:", e);
+          form.reset();
+          onClose("createChannel");
         }
-
-        form.reset();
-        onClose();
-        navigate(`/servers/${activeServerId}/channels/${newChannel.id}`);
       }
     } catch (error) {
       console.log(error);
@@ -93,7 +89,7 @@ export const CreateChannelModal = () => {
 
   const handleClose = () => {
     form.reset();
-    onClose();
+    onClose("createChannel");
   };
 
   return (

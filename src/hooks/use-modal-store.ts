@@ -13,11 +13,16 @@ export type ModalType =
   | "settings"
   | "imagePreview"
   | "ircError"
-  | "editTopic";
+  | "editTopic"
+  | "joinChannelPassword"
+  | "setChannelPassword";
 
 interface ModalData {
   server?: Server;
   channel?: Channel;
+  serverId?: string;
+  channelName?: string;
+  key?: string;
   channelType?: ChannelType;
   apiUrl?: string;
   query?: Record<string, string | number | boolean | undefined>;

@@ -148,6 +148,7 @@ interface MockState {
   historyNextOffset: number | null;
   historyHasMore: boolean;
   compactMode: boolean;
+  enableCommandSuggestions: boolean;
   enableLinkPreviews: boolean;
   enableWebPagePreviews: boolean;
   linkPreviewApiUrl: string;
@@ -162,6 +163,7 @@ interface MockState {
 
   // Settings Actions
   setCompactMode: (enabled: boolean) => void;
+  setEnableCommandSuggestions: (enabled: boolean) => void;
   setEnableLinkPreviews: (enabled: boolean) => void;
   setEnableWebPagePreviews: (enabled: boolean) => void;
   setLinkPreviewApiUrl: (url: string) => void;
@@ -177,15 +179,18 @@ interface MockState {
   updateInviteCode: (serverId: string) => string;
 
   // Channel Actions
+  pendingJoin: { serverId: string; channelName: string; password?: string } | null;
+  setPendingJoin: (serverId: string | null, channelName: string | null, password?: string) => void;
   addChannel: (serverId: string, name: string, type: ChannelType, isTemporary?: boolean) => Channel;
   updateChannel: (serverId: string, channelId: string, name: string, type: ChannelType) => void;
   updateChannelTopic: (serverId: string, channelId: string, topic: string) => void;
   updateChannelTopicByName: (serverId: string, channelName: string, topic: string) => void;
+  updateChannelKey: (serverId: string, channelId: string, key?: string) => void;
   deleteChannel: (serverId: string, channelId: string) => void;
 
   // Member Actions
   removeMember: (serverId: string, memberId: string) => void;
-  addServerMember: (serverId: string, name: string) => Member | undefined;
+  addServerMember: (serverId: string, name: string, realname?: string) => Member | undefined;
   removeServerMember: (serverId: string, name: string) => void;
   channelMembers: Record<string, string[]>;
   channelOps: Record<string, string[]>;
@@ -227,8 +232,17 @@ export const useMockStore = create<MockState>()(
       historyLoadToken: 0,
       historyNextOffset: null,
       historyHasMore: false,
+      pendingJoin: null,
+      setPendingJoin: (serverId, channelName, password) => {
+        if (!serverId || !channelName) {
+          set({ pendingJoin: null });
+        } else {
+          set({ pendingJoin: { serverId, channelName: channelName.replace(/^#/, ""), password } });
+        }
+      },
       activeConversations: {},
       compactMode: false,
+      enableCommandSuggestions: true,
       enableLinkPreviews: true,
       enableWebPagePreviews: true,
       linkPreviewApiUrl: "https://api.microlink.io",
@@ -251,6 +265,7 @@ export const useMockStore = create<MockState>()(
       setStatusDisplayMode: (mode: StatusDisplayMode) => set({ statusDisplayMode: mode }),
 
       setCompactMode: (enabled: boolean) => set({ compactMode: enabled }),
+      setEnableCommandSuggestions: (enabled: boolean) => set({ enableCommandSuggestions: enabled }),
       setEnableLinkPreviews: (enabled: boolean) => set({ enableLinkPreviews: enabled }),
       setEnableWebPagePreviews: (enabled: boolean) => set({ enableWebPagePreviews: enabled }),
       setLinkPreviewApiUrl: (url: string) => set({ linkPreviewApiUrl: url }),
@@ -582,7 +597,37 @@ export const useMockStore = create<MockState>()(
         }));
       },
 
+      updateChannelKey: (serverId, channelId, key) => {
+        set((state) => ({
+          servers: state.servers.map((s) =>
+            s.id === serverId
+              ? {
+                  ...s,
+                  channels: s.channels.map((c) =>
+                    c.id === channelId || c.name.toLowerCase() === channelId.toLowerCase().replace(/^#/, "")
+                      ? { ...c, key: key || undefined }
+                      : c
+                  ),
+                }
+              : s
+          ),
+        }));
+      },
+
       deleteChannel: (serverId, channelId) => {
+        const state = get();
+        const server = state.servers.find((s) => s.id === serverId);
+        const channel = server?.channels.find((c) => c.id === channelId);
+
+        if (server && channel) {
+          invoke("part_channel", {
+            serverId: server.id,
+            channel: channel.name,
+          }).catch((err) => {
+            console.error("Failed to send PART to IRC server:", err);
+          });
+        }
+
         set((state) => {
           const nextMessages = { ...state.messages };
           delete nextMessages[channelId];
@@ -608,7 +653,7 @@ export const useMockStore = create<MockState>()(
         }));
       },
 
-      addServerMember: (serverId, name) => {
+      addServerMember: (serverId, name, realname) => {
         let resultMember: Member | undefined;
         set((state) => {
           const s = state.servers.find(s => s.id === serverId);
@@ -616,6 +661,9 @@ export const useMockStore = create<MockState>()(
 
           const exists = s.members.find(m => m.profile.name.toLowerCase() === name.toLowerCase());
           if (exists) {
+            if (realname && !exists.profile.realname) {
+              exists.profile.realname = realname;
+            }
             resultMember = exists;
             return state;
           }
@@ -631,6 +679,7 @@ export const useMockStore = create<MockState>()(
                   profile: {
                     ...m.profile,
                     name,
+                    realname: realname || s.realname || m.profile.realname,
                   },
                 };
                 if (!updatedSelf) updatedSelf = updated;
@@ -655,6 +704,7 @@ export const useMockStore = create<MockState>()(
               id: `profile-${name}`,
               userId: `user-${name}`,
               name: name,
+              realname: realname || "",
               imageUrl: "",
               email: `${name}@irc.local`,
               createdAt: new Date().toISOString(),
@@ -1316,6 +1366,21 @@ export const useMockStore = create<MockState>()(
 
       openConversation: (serverId, memberId) => {
         set((state) => {
+          const server = state.servers.find((s) => s.id === serverId);
+          if (server) {
+            const currentProfile = state.currentProfile;
+            const currentMember = server.members.find(
+              (m) =>
+                m.profileId === currentProfile.id ||
+                m.profile?.id === currentProfile.id ||
+                (server.nicknames && server.nicknames.includes(m.profile?.name)) ||
+                m.id.startsWith("member-")
+            );
+            if (currentMember && currentMember.id === memberId) {
+              return state;
+            }
+          }
+
           const current = state.activeConversations[serverId] || [];
           if (current.includes(memberId)) return state;
           return {
@@ -1352,7 +1417,7 @@ export const useMockStore = create<MockState>()(
           updatedAt: new Date().toISOString(),
         };
 
-        set((state) => {
+set((state) => {
           const serverId = member.serverId;
           const currentConvs = serverId ? state.activeConversations[serverId] || [] : [];
           const updatedConvs = serverId && !currentConvs.includes(member.id)

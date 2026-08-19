@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { ImageOff, ImageIcon } from "lucide-react";
@@ -14,7 +15,7 @@ interface SmartImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   onImageError?: () => void;
 }
 
-export const SmartImage: React.FC<SmartImageProps> = ({
+const SmartImageInner: React.FC<SmartImageProps> = ({
   src,
   alt,
   className,
@@ -29,12 +30,24 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const [hasError, setHasError] = useState<boolean>(false);
   const [ratio, setRatio] = useState<number | undefined>(initialAspectRatio);
+  // resolvedSrc is either the original URL or a proxied data: URL
+  const [resolvedSrc, setResolvedSrc] = useState<string>(src);
+  const imgRef = useRef<HTMLImageElement | null>(null);
 
+  // Check if browser already has the image decoded (cache / 304 case)
   useEffect(() => {
-    setIsLoaded(false);
-    setHasError(false);
-    setRatio(initialAspectRatio);
-  }, [src, initialAspectRatio]);
+    const img = imgRef.current;
+    if (!img) return;
+    if (img.complete && img.naturalWidth > 0) {
+      if (img.naturalHeight) {
+        setRatio(img.naturalWidth / img.naturalHeight);
+      }
+      setIsLoaded(true);
+      onImageLoad?.();
+    }
+    // If naturalWidth === 0 while complete, wait for onError to fire
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleLoad = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
     const img = e.currentTarget;
@@ -42,13 +55,27 @@ export const SmartImage: React.FC<SmartImageProps> = ({
       setRatio(img.naturalWidth / img.naturalHeight);
     }
     setIsLoaded(true);
-    if (onImageLoad) onImageLoad();
+    onImageLoad?.();
   };
 
-  const handleError = () => {
-    setHasError(true);
-    setIsLoaded(true);
-    if (onImageError) onImageError();
+  const handleError = async () => {
+    // If we already tried the proxy (resolvedSrc is a data: URL), give up
+    if (resolvedSrc !== src) {
+      setHasError(true);
+      setIsLoaded(true);
+      onImageError?.();
+      return;
+    }
+
+    // Try fetching via Rust backend to bypass CORP / Referer restrictions
+    try {
+      const dataUrl = await invoke<string>("fetch_image_proxy", { url: src });
+      setResolvedSrc(dataUrl);
+    } catch {
+      setHasError(true);
+      setIsLoaded(true);
+      onImageError?.();
+    }
   };
 
   return (
@@ -82,10 +109,12 @@ export const SmartImage: React.FC<SmartImageProps> = ({
       ) : (
         /* Actual Image with Fade-in Effect */
         <img
-          src={src}
+          ref={imgRef}
+          src={resolvedSrc}
           alt={alt}
           onLoad={handleLoad}
           onError={handleError}
+          referrerPolicy="no-referrer"
           className={cn(
             "transition-opacity duration-300 block",
             isLoaded ? "opacity-100" : "opacity-0 absolute inset-0 w-full h-full object-cover",
@@ -97,3 +126,9 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     </div>
   );
 };
+
+// Wrap with key=src so that React fully remounts the component when src changes.
+// This avoids all state-reset race conditions.
+export const SmartImage: React.FC<SmartImageProps> = (props) => (
+  <SmartImageInner key={props.src} {...props} />
+);
