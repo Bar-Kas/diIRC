@@ -131,6 +131,11 @@ export const ChannelOperatorSettingsModal = () => {
       setTogglingFlags((prev) => ({ ...prev, [flag]: true }));
       setErrorMessage(null);
 
+      // Clear any previous error overlay before sending new mode command
+      if (useModal.getState().errorData) {
+        useModal.getState().onClose("ircError");
+      }
+
       const chanTarget = channel.name.startsWith("#") ? channel.name : `#${channel.name}`;
       const modeCmd = `${enable ? "+" : "-"}${flag}`;
 
@@ -142,7 +147,14 @@ export const ChannelOperatorSettingsModal = () => {
       });
 
       // Wait briefly for server response (RPL_CHANNELMODEIS / MODE / error)
-      await new Promise((res) => setTimeout(res, 350));
+      await new Promise((res) => setTimeout(res, 400));
+
+      // If an explicit server error modal was already triggered, do not trigger fallback modal
+      const activeErrorData = useModal.getState().errorData;
+      const isErrorOpen = useModal.getState().isOpen && useModal.getState().type === "ircError";
+      if (activeErrorData !== null || isErrorOpen) {
+        return;
+      }
 
       const updatedModes = useMockStore.getState().channelModes[channel.id] || [];
       const isNowActive = updatedModes.includes(flag);
