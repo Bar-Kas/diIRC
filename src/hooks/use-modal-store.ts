@@ -17,6 +17,7 @@ export type ModalType =
   | "joinChannelPassword"
   | "setChannelPassword"
   | "channelSettings"
+  | "channelOperatorSettings"
   | "connectionDetails";
 
 interface ModalData {

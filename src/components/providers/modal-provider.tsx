@@ -13,8 +13,8 @@ import { ImagePreviewModal } from "@/components/modals/image-preview-modal";
 import { IrcErrorModal } from "@/components/modals/irc-error-modal";
 import { EditTopicModal } from "@/components/modals/edit-topic-modal";
 import { JoinChannelPasswordModal } from "@/components/modals/join-channel-password-modal";
-import { SetChannelPasswordModal } from "@/components/modals/set-channel-password-modal";
 import { ChannelSettingsModal } from "@/components/modals/channel-settings-modal";
+import { ChannelOperatorSettingsModal } from "@/components/modals/channel-operator-settings-modal";
 import { ConnectionDetailsModal } from "@/components/modals/connection-details-modal";
 
 export const ModalProvider = () => {
@@ -43,8 +43,8 @@ export const ModalProvider = () => {
       <IrcErrorModal />
       <EditTopicModal />
       <JoinChannelPasswordModal />
-      <SetChannelPasswordModal />
       <ChannelSettingsModal />
+      <ChannelOperatorSettingsModal />
       <ConnectionDetailsModal />
     </>
   );

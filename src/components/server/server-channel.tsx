@@ -3,7 +3,7 @@ import {
   ChannelType, 
   Server
 } from "@/types";
-import { Hash, X, KeyRound, Lock, Sliders } from "lucide-react";
+import { Hash, X, Lock, Sliders, Settings } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
@@ -45,8 +45,6 @@ export const ServerChannel = ({
   const channelUserModesMap = useMockStore((state) => state.channelUserModes);
 
   const ourNick = server?.nicknames?.[0] || currentProfile.name;
-  const isServerOwner = server?.profileId === currentProfile.id;
-  const isChannelOwner = channel?.profileId === currentProfile.id;
 
   const channelOps = channelOpsMap[channel.id] || [];
   const ourModes = channelUserModesMap[channel.id]?.[ourNick.toLowerCase()] || [];
@@ -91,9 +89,9 @@ export const ServerChannel = ({
           )}
           <div className="ml-auto flex items-center gap-x-2">
             {isChannelOp && (
-              <ActionTooltip label="Channel settings">
+              <ActionTooltip label="Channel settings (operator)">
                 <Sliders
-                  onClick={(e) => onAction(e, "channelSettings")}
+                  onClick={(e) => onAction(e, "channelOperatorSettings")}
                   className="hidden group-hover:block w-4 h-4 text-zinc-500 hover:text-indigo-500 dark:text-zinc-400 dark:hover:text-indigo-400 transition cursor-pointer"
                 />
               </ActionTooltip>
@@ -111,40 +109,45 @@ export const ServerChannel = ({
         {isChannelOp ? (
           <>
             <ContextMenuItem
-              onSelect={() => setTimeout(() => onOpen("channelSettings", { server, channel }), 0)}
+              onSelect={() => setTimeout(() => onOpen("channelOperatorSettings", { server, channel }), 0)}
               className="cursor-pointer flex items-center gap-x-2"
             >
               <Sliders className="w-4 h-4" />
-              Channel settings
+              Channel settings (operator)
             </ContextMenuItem>
             <ContextMenuItem
-              onSelect={() => setTimeout(() => onOpen("setChannelPassword", { server, channel }), 0)}
+              onSelect={() => setTimeout(() => onOpen("channelSettings", { server, channel }), 0)}
               className="cursor-pointer flex items-center gap-x-2"
             >
-              <KeyRound className="w-4 h-4" />
-              Set / remove password
+              <Settings className="w-4 h-4" />
+              Channel settings
             </ContextMenuItem>
           </>
         ) : (
-          <TooltipProvider>
-            <Tooltip delayDuration={0}>
-              <TooltipTrigger asChild>
-                <div className="w-full space-y-1">
-                  <ContextMenuItem disabled className="opacity-50 cursor-not-allowed flex items-center gap-x-2">
-                    <Sliders className="w-4 h-4" />
-                    Channel settings
-                  </ContextMenuItem>
-                  <ContextMenuItem disabled className="opacity-50 cursor-not-allowed flex items-center gap-x-2">
-                    <KeyRound className="w-4 h-4" />
-                    Set / remove password
-                  </ContextMenuItem>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                <p className="text-xs font-medium">You must be a channel operator</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <>
+            <TooltipProvider>
+              <Tooltip delayDuration={0}>
+                <TooltipTrigger asChild>
+                  <div className="w-full">
+                    <ContextMenuItem disabled className="opacity-50 cursor-not-allowed flex items-center gap-x-2">
+                      <Sliders className="w-4 h-4" />
+                      Channel settings (operator)
+                    </ContextMenuItem>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  <p className="text-xs font-medium">You must be a channel operator</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <ContextMenuItem
+              onSelect={() => setTimeout(() => onOpen("channelSettings", { server, channel }), 0)}
+              className="cursor-pointer flex items-center gap-x-2"
+            >
+              <Settings className="w-4 h-4" />
+              Channel settings
+            </ContextMenuItem>
+          </>
         )}
       </ContextMenuContent>
     </ContextMenu>
