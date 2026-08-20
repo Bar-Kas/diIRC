@@ -599,7 +599,7 @@ async fn connect_irc(
                                 for token in users_str.split_whitespace() {
                                     let is_op = token.starts_with('@') || token.starts_with('%') || token.starts_with('~') || token.starts_with('&');
                                     let clean = token.trim_start_matches(&['@', '+', '%', '~', '&'][..]).to_string();
-                                    users.push(clean.clone());
+                                    users.push(token.to_string());
                                     if is_op {
                                         ops.push(clean);
                                     }

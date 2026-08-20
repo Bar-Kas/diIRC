@@ -159,6 +159,7 @@ interface MockState {
   removeServerMember: (serverId: string, name: string) => void;
   channelMembers: Record<string, string[]>;
   channelOps: Record<string, string[]>;
+  channelUserModes: Record<string, Record<string, string[]>>;
   channelModes: Record<string, string[]>;
   updateChannelMembers: (serverId: string, channelName: string, users: string[], eventType: "NAMES" | "JOIN" | "PART" | "QUIT") => void;
   updateChannelOps: (serverId: string, channelName: string, ops: string[]) => void;
@@ -713,6 +714,7 @@ export const useMockStore = create<MockState>()(
 
       channelMembers: {},
       channelOps: {},
+      channelUserModes: {},
       channelModes: {},
 
       updateChannelOps: (serverId, channelName, ops) => {
@@ -753,6 +755,7 @@ export const useMockStore = create<MockState>()(
           const chId = targetChannel.id;
           const currentFlags = new Set(state.channelModes[chId] || []);
           const existingOps = state.channelOps[chId] || [];
+          const currentUserModes = { ...(state.channelUserModes[chId] || {}) };
 
           // Map lower-cased nick -> original nick casing for ops
           const opsMap = new Map<string, string>();
@@ -772,20 +775,30 @@ export const useMockStore = create<MockState>()(
             } else if (char === "-") {
               sign = "-";
             } else {
-              // User status modes: o = op, h = halfop, a = admin, q = owner
-              if (["o", "h", "a", "q"].includes(char)) {
+              // User status modes: o = op, h = halfop, a = admin, q = owner, v = voice
+              if (["o", "h", "a", "q", "v"].includes(char)) {
                 const targetNick = modeArgs[argIdx++];
                 if (targetNick) {
                   const lower = targetNick.toLowerCase();
-                  if (sign === "+") {
-                    opsMap.set(lower, targetNick);
-                  } else {
-                    opsMap.delete(lower);
+                  
+                  // Update channelOps (legacy)
+                  if (char !== "v") {
+                    if (sign === "+") {
+                      opsMap.set(lower, targetNick);
+                    } else {
+                      opsMap.delete(lower);
+                    }
                   }
+                  
+                  // Update channelUserModes
+                  const userModes = new Set(currentUserModes[lower] || []);
+                  if (sign === "+") {
+                    userModes.add(char);
+                  } else {
+                    userModes.delete(char);
+                  }
+                  currentUserModes[lower] = Array.from(userModes);
                 }
-              } else if (char === "v") {
-                // Voice mode (consumes 1 arg)
-                if (argIdx < modeArgs.length) argIdx++;
               } else if (char === "k") {
                 // Channel key / password
                 if (sign === "+") {
@@ -827,15 +840,20 @@ export const useMockStore = create<MockState>()(
               ...state.channelOps,
               [chId]: newOps,
             },
+            channelUserModes: {
+              ...state.channelUserModes,
+              [chId]: currentUserModes,
+            }
           };
         });
       },
 
       updateChannelMembers: (serverId, channelName, users, eventType) => {
-        // Ensure all users exist as server members
+        // Ensure all users exist as server members (stripping prefixes like @, +, etc.)
         users.forEach((u) => {
           if (u && u.trim()) {
-            get().addServerMember(serverId, u.trim());
+            const cleanNick = u.trim().replace(/^[~&@%+]+/, "");
+            get().addServerMember(serverId, cleanNick);
           }
         });
 
@@ -847,6 +865,7 @@ export const useMockStore = create<MockState>()(
 
           const updatedChannelMembers = { ...state.channelMembers };
           const updatedChannelOps = { ...state.channelOps };
+          const updatedChannelUserModes = { ...state.channelUserModes };
 
           if (cleanChan) {
             const targetChannel = targetServer.channels.find(
@@ -856,17 +875,40 @@ export const useMockStore = create<MockState>()(
             if (targetChannel) {
               const chId = targetChannel.id;
               const currentUsers = updatedChannelMembers[chId] || [];
+              const currentUserModes = { ...(updatedChannelUserModes[chId] || {}) };
 
               if (eventType === "NAMES") {
-                updatedChannelMembers[chId] = Array.from(new Set(users));
+                const plainUsers = users.map((u) => {
+                  const prefixMatch = u.match(/^([~&@%+]+)/);
+                  const nick = prefixMatch ? u.substring(prefixMatch[1].length) : u;
+                  const prefixes = prefixMatch ? prefixMatch[1] : "";
+                  
+                  const modes: string[] = [];
+                  if (prefixes.includes("~")) modes.push("q");
+                  if (prefixes.includes("&")) modes.push("a");
+                  if (prefixes.includes("@")) modes.push("o");
+                  if (prefixes.includes("%")) modes.push("h");
+                  if (prefixes.includes("+")) modes.push("v");
+                  
+                  if (modes.length > 0) {
+                    currentUserModes[nick.toLowerCase()] = modes;
+                  }
+                  
+                  return nick;
+                });
+                updatedChannelMembers[chId] = Array.from(new Set(plainUsers));
+                updatedChannelUserModes[chId] = currentUserModes;
               } else if (eventType === "JOIN") {
-                updatedChannelMembers[chId] = Array.from(new Set([...currentUsers, ...users]));
+                const plainUsers = users.map((u) => u.trim().replace(/^[~&@%+]+/, ""));
+                updatedChannelMembers[chId] = Array.from(new Set([...currentUsers, ...plainUsers]));
               } else if (eventType === "PART") {
                 const toRemove = new Set(users.map((u) => u.toLowerCase()));
                 updatedChannelMembers[chId] = currentUsers.filter((u) => !toRemove.has(u.toLowerCase()));
                 if (updatedChannelOps[chId]) {
                   updatedChannelOps[chId] = updatedChannelOps[chId].filter((u) => !toRemove.has(u.toLowerCase()));
                 }
+                users.forEach(u => delete currentUserModes[u.toLowerCase()]);
+                updatedChannelUserModes[chId] = currentUserModes;
               }
             }
           }
@@ -884,12 +926,18 @@ export const useMockStore = create<MockState>()(
                   (u) => !toRemove.has(u.toLowerCase())
                 );
               }
+              if (updatedChannelUserModes[c.id]) {
+                const newModes = { ...updatedChannelUserModes[c.id] };
+                users.forEach(u => delete newModes[u.toLowerCase()]);
+                updatedChannelUserModes[c.id] = newModes;
+              }
             });
           }
 
           return {
             channelMembers: updatedChannelMembers,
             channelOps: updatedChannelOps,
+            channelUserModes: updatedChannelUserModes,
           };
         });
       },

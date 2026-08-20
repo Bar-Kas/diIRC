@@ -1,15 +1,17 @@
 import React from "react";
-import { Member, Profile, Server } from "@/types";
+import { Channel, Member, Profile, Server } from "@/types";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
 import { MessageSquare } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useMockStore } from "@/lib/mock-store";
+import { UserRoleIcon, getHighestChannelRole } from "@/components/user-role-icon";
 
 interface UserHoverCardProps {
   member: Member & { profile: Profile };
   server?: Server;
+  channel?: Channel;
   children: React.ReactNode;
   side?: "top" | "right" | "bottom" | "left";
   align?: "start" | "center" | "end";
@@ -39,6 +41,7 @@ export const getMemberDisplayName = (
 export const UserHoverCard = ({
   member,
   server,
+  channel,
   children,
   side = "right",
   align = "start",
@@ -47,9 +50,13 @@ export const UserHoverCard = ({
   const currentProfile = useMockStore((state) => state.currentProfile);
   const servers = useMockStore((state) => state.servers);
   const openConversation = useMockStore((state) => state.openConversation);
+  const channelUserModesMap = useMockStore((state) => state.channelUserModes);
 
   const activeServer = server || servers[0];
   const nickname = member.profile.name;
+
+  const userModes = channel ? channelUserModesMap[channel.id]?.[nickname.toLowerCase()] || [] : [];
+  const highestRole = getHighestChannelRole(userModes);
 
   const displayName = getMemberDisplayName(member, activeServer);
   const isSelf =
@@ -114,9 +121,14 @@ export const UserHoverCard = ({
 
           {/* User Names & Details */}
           <div className="space-y-1">
-            <h4 className="font-bold text-base text-zinc-900 dark:text-zinc-100 leading-tight">
-              {displayName}
-            </h4>
+            <div className="flex items-center justify-between gap-x-2">
+              <h4 className="font-bold text-base text-zinc-900 dark:text-zinc-100 leading-tight truncate">
+                {displayName}
+              </h4>
+              {highestRole && (
+                <UserRoleIcon role={highestRole} showLabel showTooltip={false} />
+              )}
+            </div>
             <p className="text-xs font-mono text-zinc-500 dark:text-zinc-400">
               @{nickname}
             </p>

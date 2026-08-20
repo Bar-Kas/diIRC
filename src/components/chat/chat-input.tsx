@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { useModal } from "@/hooks/use-modal-store";
 import { EmojiPicker } from "@/components/emoji-picker";
 import { useMockStore } from "@/lib/mock-store";
+import { getHighestChannelRole } from "@/components/user-role-icon";
 import { uploadImage } from "@/lib/upload/services";
 import { ImageContextMenu } from "@/components/image-context-menu";
 import { isMediaUrl } from "@/lib/image-utils";
@@ -64,6 +65,38 @@ export const ChatInput = ({
   const [showCommands, setShowCommands] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [isFocused, setIsFocused] = useState(true);
+
+  const channelModesMap = useMockStore((state) => state.channelModes);
+  const channelUserModesMap = useMockStore((state) => state.channelUserModes);
+  
+  const currentChannelModes = (type === "channel" && activeId) ? (channelModesMap[activeId] || []) : [];
+  const isModerated = currentChannelModes.includes("m");
+
+  const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : (servers[0] || null);
+
+  let currentMember = activeServer?.members.find(
+    (m) =>
+      m.profileId === currentProfile.id ||
+      m.profile?.id === currentProfile.id ||
+      (activeServer.nicknames && activeServer.nicknames.includes(m.profile?.name)) ||
+      m.id.startsWith("member-")
+  ) || activeServer?.members[0];
+
+  const primaryNick = activeServer?.nicknames?.[0];
+  if (primaryNick && currentMember) {
+    currentMember = {
+      ...currentMember,
+      profile: {
+        ...currentMember.profile,
+        name: primaryNick,
+      },
+    };
+  }
+
+  const currentUserModes = (type === "channel" && activeId && currentMember) ? (channelUserModesMap[activeId]?.[currentMember.profile.name.toLowerCase()] || []) : [];
+  const hasVoiceOrHigher = getHighestChannelRole(currentUserModes) !== null;
+
+  const isMuted = type === "channel" && isModerated && !hasVoiceOrHigher;
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -155,10 +188,9 @@ export const ChatInput = ({
     });
   }, []);
 
-  const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : (servers[0] || null);
   const isIrcConnected = activeServer ? !!ircConnectedServers[activeServer.id] : true;
   const isUploading = attachedImages.some((img) => img.isUploading);
-  const isLoading = form.formState.isSubmitting || isUploading || !isIrcConnected;
+  const isLoading = form.formState.isSubmitting || isUploading || !isIrcConnected || isMuted;
 
   const processFileUpload = useCallback(async (file: File) => {
     if (uploadConfig.provider === "disabled") {
@@ -414,15 +446,6 @@ export const ChatInput = ({
         return;
       }
 
-      let currentMember =
-        activeServer.members.find(
-          (m) =>
-            m.profileId === currentProfile.id ||
-            m.profile?.id === currentProfile.id ||
-            (activeServer.nicknames && activeServer.nicknames.includes(m.profile?.name)) ||
-            m.id.startsWith("member-")
-        ) || activeServer.members[0];
-      const primaryNick = activeServer.nicknames?.[0];
       if (primaryNick && currentMember) {
         currentMember = {
           ...currentMember,
@@ -628,6 +651,8 @@ export const ChatInput = ({
                       placeholder={
                         !isIrcConnected
                           ? "Disconnected from IRC server"
+                          : isMuted
+                          ? "You do not have permission to send messages in this moderated channel"
                           : isUploading
                           ? "Uploading files..."
                           : `Message ${type === "conversation" ? name : "#" + name}`
