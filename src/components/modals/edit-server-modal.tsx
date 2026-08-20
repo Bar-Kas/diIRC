@@ -32,7 +32,13 @@ const formSchema = z.object({
   name: z.string().min(1, { message: "Server name is required." }),
   host: z.string().min(1, { message: "Server address is required." }),
   port: z.coerce.number().min(1).max(65535),
-  nicknames: z.array(z.object({ value: z.string().min(1, { message: "Nickname is required." }) })).min(1),
+  nicknames: z.array(
+    z.object({
+      value: z.string()
+        .min(1, { message: "Nickname is required." })
+        .refine((val) => !/\s/.test(val), { message: "Nickname cannot contain spaces." }),
+    })
+  ).min(1),
   realname: z.string().optional(),
   password: z.string().optional(),
   channels: z.array(z.object({ value: z.string() })).min(1),
