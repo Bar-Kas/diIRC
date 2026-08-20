@@ -73,6 +73,20 @@ struct IrcBadChannelKeyEvent {
 }
 
 #[derive(Serialize, Clone)]
+struct IrcInviteOnlyEvent {
+    server_id: String,
+    channel: String,
+    error: String,
+}
+
+#[derive(Serialize, Clone)]
+struct IrcInvitedEvent {
+    server_id: String,
+    channel: String,
+    inviter: String,
+}
+
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct LogEntry {
     timestamp: String,
@@ -552,11 +566,20 @@ async fn connect_irc(
 
                                 let payload_users = IrcUserEvent {
                                     server_id: stream_server_id.clone(),
-                                    channel,
-                                    users: vec![sender_name],
+                                    channel: channel.clone(),
+                                    users: vec![sender_name.clone()],
                                     event_type: "JOIN".to_string(),
                                 };
                                 let _ = app_clone.emit("irc_user_event", payload_users);
+
+                                let my_nick = nicknames_clone.lock().await.get(&stream_server_id).cloned();
+                                if let Some(ref nick) = my_nick {
+                                    if nick.eq_ignore_ascii_case(&sender_name) {
+                                        if let Some(s) = senders_clone.lock().await.get(&stream_server_id) {
+                                            let _ = s.send(Command::Raw("MODE".to_string(), vec![channel.clone()]));
+                                        }
+                                    }
+                                }
                             }
                         }
                         Command::PART(channel, _) => {
@@ -756,6 +779,60 @@ async fn connect_irc(
                                 error: reason,
                             };
                             let _ = app_clone.emit("irc_bad_channel_key", err_payload);
+                        }
+                        Command::Response(Response::ERR_INVITEONLYCHAN, ref args) => {
+                            let channel = args
+                                .iter()
+                                .find(|a| a.starts_with('#') || a.starts_with('&'))
+                                .cloned()
+                                .unwrap_or_else(|| args.get(1).cloned().unwrap_or_default());
+                            let reason = args
+                                .last()
+                                .cloned()
+                                .unwrap_or_else(|| "Cannot join channel (+i)".to_string());
+
+                            let msg_payload = IrcMessage {
+                                server_id: stream_server_id.clone(),
+                                sender: "System".to_string(),
+                                content: format!("Cannot join channel {}: {}", channel, reason),
+                                channel: channel.clone(),
+                                is_system: true,
+                            };
+                            let _ = app_clone.emit("irc_message", msg_payload);
+
+                            let err_payload = IrcInviteOnlyEvent {
+                                server_id: stream_server_id.clone(),
+                                channel,
+                                error: reason,
+                            };
+                            let _ = app_clone.emit("irc_invite_only", err_payload);
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "473" => {
+                            let channel = args
+                                .iter()
+                                .find(|a| a.starts_with('#') || a.starts_with('&'))
+                                .cloned()
+                                .unwrap_or_else(|| args.get(1).cloned().unwrap_or_default());
+                            let reason = args
+                                .last()
+                                .cloned()
+                                .unwrap_or_else(|| "Cannot join channel (+i)".to_string());
+
+                            let msg_payload = IrcMessage {
+                                server_id: stream_server_id.clone(),
+                                sender: "System".to_string(),
+                                content: format!("Cannot join channel {}: {}", channel, reason),
+                                channel: channel.clone(),
+                                is_system: true,
+                            };
+                            let _ = app_clone.emit("irc_message", msg_payload);
+
+                            let err_payload = IrcInviteOnlyEvent {
+                                server_id: stream_server_id.clone(),
+                                channel,
+                                error: reason,
+                            };
+                            let _ = app_clone.emit("irc_invite_only", err_payload);
                         }
                         Command::Response(Response::ERR_NOPRIVILEGES, ref args) => {
                             let reason = args.get(1).cloned().unwrap_or_else(|| "Permission Denied".to_string());
@@ -963,6 +1040,56 @@ async fn connect_irc(
                                 };
                                 let _ = app_clone.emit("irc_mode_event", mode_payload);
                             }
+                        }
+                        Command::Response(Response::RPL_INVITING, ref args) => {
+                            if args.len() >= 3 {
+                                let target_user = &args[1];
+                                let channel = &args[2];
+                                let msg_payload = IrcMessage {
+                                    server_id: stream_server_id.clone(),
+                                    sender: "System".to_string(),
+                                    content: format!("Invited {} to {}", target_user, channel),
+                                    channel: channel.to_string(),
+                                    is_system: true,
+                                };
+                                let _ = app_clone.emit("irc_message", msg_payload);
+                            }
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "341" => {
+                            if args.len() >= 3 {
+                                let target_user = &args[1];
+                                let channel = &args[2];
+                                let msg_payload = IrcMessage {
+                                    server_id: stream_server_id.clone(),
+                                    sender: "System".to_string(),
+                                    content: format!("Invited {} to {}", target_user, channel),
+                                    channel: channel.to_string(),
+                                    is_system: true,
+                                };
+                                let _ = app_clone.emit("irc_message", msg_payload);
+                            }
+                        }
+                        Command::INVITE(ref target, ref channel) => {
+                            let sender_name = message.prefix.as_ref().map(|source| match source {
+                                Prefix::Nickname(nick, _, _) => nick.clone(),
+                                Prefix::ServerName(name) => name.clone(),
+                            }).unwrap_or_else(|| "Server".to_string());
+
+                            let msg_payload = IrcMessage {
+                                server_id: stream_server_id.clone(),
+                                sender: sender_name.clone(),
+                                content: format!("{} invited {} to join {}", sender_name, target, channel),
+                                channel: channel.clone(),
+                                is_system: true,
+                            };
+                            let _ = app_clone.emit("irc_message", msg_payload);
+
+                            let invite_payload = IrcInvitedEvent {
+                                server_id: stream_server_id.clone(),
+                                channel: channel.clone(),
+                                inviter: sender_name,
+                            };
+                            let _ = app_clone.emit("irc_invited", invite_payload);
                         }
                         _ => {}
                     }
@@ -1376,6 +1503,49 @@ async fn fetch_image_proxy(url: String) -> Result<String, String> {
     Ok(format!("data:{};base64,{}", content_type, encoded))
 }
 
+#[tauri::command]
+async fn send_invite(
+    app: AppHandle,
+    state: State<'_, IrcState>,
+    server_id: String,
+    channel: String,
+    nickname: String,
+) -> Result<(), String> {
+    log::info!(
+        "send_invite called for server: {}, channel: {}, nickname: {}",
+        server_id,
+        channel,
+        nickname
+    );
+    let senders = state.senders.lock().await;
+    if let Some(sender) = senders.get(&server_id) {
+        let formatted_channel = if channel.starts_with('#') || channel.starts_with('&') {
+            channel
+        } else {
+            format!("#{}", channel)
+        };
+        log::info!("Sending INVITE {} to {}", nickname, formatted_channel);
+        if let Err(e) = sender.send(Command::INVITE(nickname, formatted_channel)) {
+            log::error!("Error sending INVITE: {}", e);
+            drop(senders);
+            state.senders.lock().await.remove(&server_id);
+            let _ = app.emit(
+                "irc_status",
+                IrcStatusEvent {
+                    server_id: server_id.clone(),
+                    connected: false,
+                    error: Some(e.to_string()),
+                },
+            );
+            return Err(e.to_string());
+        }
+        Ok(())
+    } else {
+        log::error!("Not connected to server {}", server_id);
+        Err(format!("Not connected to server {}", server_id))
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1401,6 +1571,7 @@ pub fn run() {
             set_channel_topic,
             set_channel_key,
             send_mode,
+            send_invite,
             refresh_channel_names,
             fetch_image_proxy
         ])

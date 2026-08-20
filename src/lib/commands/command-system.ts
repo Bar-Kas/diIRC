@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Member, Server } from "@/types";
+import { inviteUserToChannel } from "@/lib/irc-actions";
 
 export interface CommandContext {
   serverId: string;
@@ -117,6 +118,28 @@ commandRegistry.register({
     } catch (err) {
       console.error("Failed to send /join via Tauri IRC:", err);
     }
+  },
+});
+
+commandRegistry.register({
+  name: "invite",
+  description: "Invites a user to a channel: /invite <nickname> [#channel]",
+  execute: async (args: string, ctx: CommandContext) => {
+    const parts = args.trim().split(/\s+/).filter(Boolean);
+    if (!parts[0]) return;
+
+    const nickname = parts[0];
+    let channelTarget = parts[1] || "";
+
+    if (!channelTarget) {
+      if (ctx.type === "channel" && ctx.channelName) {
+        channelTarget = ctx.channelName;
+      } else {
+        return;
+      }
+    }
+
+    await inviteUserToChannel(ctx.serverId, nickname, channelTarget);
   },
 });
 

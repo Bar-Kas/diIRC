@@ -448,6 +448,68 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
     setupBadKeyListener();
 
+    let unlistenInviteOnlyFn: (() => void) | null = null;
+    const setupInviteOnlyListener = async () => {
+      try {
+        const unlistenInviteOnly = await listen<{ server_id: string; channel: string; error: string }>(
+          "irc_invite_only",
+          (event) => {
+            const { server_id, channel, error } = event.payload;
+            const cleanChan = channel.replace(/^#/, "");
+            const formattedChan = channel.startsWith("#") || channel.startsWith("&") ? channel : `#${channel}`;
+
+            const store = useMockStore.getState();
+            store.setChannelTemporary(server_id, cleanChan, true);
+
+            const pending = store.pendingJoin;
+            if (
+              pending &&
+              pending.serverId === server_id &&
+              pending.channelName.toLowerCase() === cleanChan.toLowerCase()
+            ) {
+              store.setPendingJoin(null, null);
+            }
+
+            useModalStore.getState().onOpen("ircError", {
+              title: "Cannot join channel",
+              description: `Cannot join ${formattedChan}: ${error || "Cannot join channel (+i)"}.`,
+            });
+          }
+        );
+
+        if (isCancelled) {
+          unlistenInviteOnly();
+        } else {
+          unlistenInviteOnlyFn = unlistenInviteOnly;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC invite-only listener:", error);
+      }
+    };
+
+    let unlistenInvitedFn: (() => void) | null = null;
+    const setupInvitedListener = async () => {
+      try {
+        const unlistenInvited = await listen<{ server_id: string; channel: string; inviter: string }>(
+          "irc_invited",
+          (event) => {
+            const { server_id, channel, inviter } = event.payload;
+            useMockStore.getState().addPendingInvite(server_id, channel, inviter);
+          }
+        );
+
+        if (isCancelled) {
+          unlistenInvited();
+        } else {
+          unlistenInvitedFn = unlistenInvited;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC invited listener:", error);
+      }
+    };
+
+    setupInvitedListener();
+
     let unlistenModeFn: (() => void) | null = null;
     const setupModeListener = async () => {
       try {
@@ -493,6 +555,12 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
       }
       if (unlistenBadKeyFn) {
         unlistenBadKeyFn();
+      }
+      if (unlistenInviteOnlyFn) {
+        unlistenInviteOnlyFn();
+      }
+      if (unlistenInvitedFn) {
+        unlistenInvitedFn();
       }
       if (unlistenModeFn) {
         unlistenModeFn();

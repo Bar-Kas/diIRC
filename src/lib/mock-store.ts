@@ -9,7 +9,8 @@ import {
   DirectMessage, 
   Profile, 
   ChannelType,
-  LogPage
+  LogPage,
+  PendingInvite
 } from "@/types";
 import { 
   INITIAL_SERVERS, 
@@ -152,6 +153,12 @@ interface MockState {
   updateChannelTopicByName: (serverId: string, channelName: string, topic: string) => void;
   updateChannelKey: (serverId: string, channelId: string, key?: string) => void;
   deleteChannel: (serverId: string, channelId: string) => void;
+  setChannelTemporary: (serverId: string, channelName: string, isTemporary: boolean) => void;
+  pendingInvites: Record<string, PendingInvite[]>;
+  addPendingInvite: (serverId: string, channelName: string, inviter: string) => void;
+  removePendingInvite: (serverId: string, channelName: string) => void;
+  acceptPendingInvite: (serverId: string, channelName: string) => Promise<void>;
+  ignorePendingInvite: (serverId: string, channelName: string) => void;
 
   // Member Actions
   removeMember: (serverId: string, memberId: string) => void;
@@ -191,6 +198,7 @@ export const useMockStore = create<MockState>()(
       historyNextOffset: null,
       historyHasMore: false,
       pendingJoin: null,
+      pendingInvites: {},
       setPendingJoin: (serverId, channelName, password) => {
         if (!serverId || !channelName) {
           set({ pendingJoin: null });
@@ -617,6 +625,24 @@ export const useMockStore = create<MockState>()(
         });
       },
 
+      setChannelTemporary: (serverId, channelName, isTemporary) => {
+        const cleanChan = channelName.trim().replace(/^#/, "").toLowerCase();
+        set((state) => ({
+          servers: state.servers.map((s) =>
+            s.id === serverId
+              ? {
+                  ...s,
+                  channels: s.channels.map((c) =>
+                    c.name.toLowerCase().replace(/^#/, "") === cleanChan
+                      ? { ...c, isTemporary }
+                      : c
+                  ),
+                }
+              : s
+          ),
+        }));
+      },
+
       removeMember: (serverId, memberId) => {
         set((state) => ({
           servers: state.servers.map((s) =>
@@ -863,11 +889,31 @@ export const useMockStore = create<MockState>()(
           }
 
           const newOps = Array.from(opsMap.values());
+          const updatedFlags = Array.from(currentFlags);
+          const isInviteOnly = currentFlags.has("i");
+
+          const updatedServers = state.servers.map((s) =>
+            s.id === serverId
+              ? {
+                  ...s,
+                  channels: s.channels.map((c) =>
+                    c.id === chId
+                      ? {
+                          ...c,
+                          isTemporary: isInviteOnly,
+                          modes: updatedFlags,
+                        }
+                      : c
+                  ),
+                }
+              : s
+          );
 
           return {
+            servers: updatedServers,
             channelModes: {
               ...state.channelModes,
-              [chId]: Array.from(currentFlags),
+              [chId]: updatedFlags,
             },
             channelOps: {
               ...state.channelOps,
@@ -1111,6 +1157,67 @@ export const useMockStore = create<MockState>()(
         }
 
         return newMessage;
+      },
+
+      addPendingInvite: (serverId, channelName, inviter) => {
+        const cleanChan = channelName.trim().replace(/^#/, "");
+        set((state) => {
+          const current = state.pendingInvites[serverId] || [];
+          const exists = current.some(
+            (i) => i.channelName.toLowerCase() === cleanChan.toLowerCase()
+          );
+          if (exists) return state;
+
+          const newInvite: PendingInvite = {
+            id: `invite-${uuidv4().slice(0, 8)}`,
+            serverId,
+            channelName: cleanChan,
+            inviter,
+            createdAt: new Date().toISOString(),
+          };
+
+          return {
+            pendingInvites: {
+              ...state.pendingInvites,
+              [serverId]: [...current, newInvite],
+            },
+          };
+        });
+      },
+
+      removePendingInvite: (serverId, channelName) => {
+        const cleanChan = channelName.trim().replace(/^#/, "");
+        set((state) => {
+          const current = state.pendingInvites[serverId] || [];
+          return {
+            pendingInvites: {
+              ...state.pendingInvites,
+              [serverId]: current.filter(
+                (i) => i.channelName.toLowerCase() !== cleanChan.toLowerCase()
+              ),
+            },
+          };
+        });
+      },
+
+      acceptPendingInvite: async (serverId, channelName) => {
+        const cleanChan = channelName.trim().replace(/^#/, "");
+        get().removePendingInvite(serverId, cleanChan);
+        get().setPendingJoin(serverId, cleanChan, undefined);
+
+        try {
+          await invoke("join_channel", {
+            serverId,
+            channel: cleanChan,
+            password: null,
+          });
+        } catch (err) {
+          console.error("Failed to join channel from invite:", err);
+        }
+      },
+
+      ignorePendingInvite: (serverId, channelName) => {
+        get().removePendingInvite(serverId, channelName);
       },
 
       deleteMessage: (channelId, messageId) => {

@@ -37,6 +37,14 @@ export interface Channel {
   updatedAt?: string;
 }
 
+export interface PendingInvite {
+  id: string;
+  serverId: string;
+  channelName: string;
+  inviter: string;
+  createdAt: string;
+}
+
 export interface Message {
   id: string;
   content: string;

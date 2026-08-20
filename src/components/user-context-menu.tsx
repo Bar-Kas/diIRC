@@ -5,12 +5,16 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { useMockStore } from "@/lib/mock-store";
+import { inviteUserToChannel } from "@/lib/irc-actions";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
-import { MessageSquare, ShieldAlert, ShieldOff, Mic, MicOff } from "lucide-react";
+import { MessageSquare, ShieldAlert, ShieldOff, Mic, MicOff, UserPlus, Hash } from "lucide-react";
 
 interface UserContextMenuProps {
   member: Member & { profile: Profile };
@@ -30,6 +34,8 @@ export const UserContextMenu: React.FC<UserContextMenuProps> = ({
   const servers = useMockStore((state) => state.servers);
   const openConversation = useMockStore((state) => state.openConversation);
   const channelUserModesMap = useMockStore((state) => state.channelUserModes);
+  const channelOpsMap = useMockStore((state) => state.channelOps);
+  const channelModesMap = useMockStore((state) => state.channelModes);
 
   const activeServer = server || servers[0];
   const nickname = member.profile.name;
@@ -54,6 +60,23 @@ export const UserContextMenu: React.FC<UserContextMenuProps> = ({
     (activeServer?.nicknames?.[0] &&
       nickname.toLowerCase() === activeServer.nicknames[0].toLowerCase());
 
+  // Channels on activeServer where our current user is operator AND channel is invite-only (+i)
+  const eligibleInviteChannels = activeServer
+    ? activeServer.channels.filter((c) => {
+        const uModes = channelUserModesMap[c.id]?.[ourNick.toLowerCase()] || [];
+        const isOpInUserModes = uModes.some((m) => ["o", "a", "q", "h"].includes(m.toLowerCase()));
+        const isOpInOpsList = (channelOpsMap[c.id] || []).some(
+          (op) => op.toLowerCase() === ourNick.toLowerCase()
+        );
+        const isOperator = isOpInUserModes || isOpInOpsList;
+
+        const flags = channelModesMap[c.id] || c.modes || [];
+        const isInviteOnly = flags.length > 0 ? flags.includes("i") : !!c.isTemporary;
+
+        return isOperator && isInviteOnly;
+      })
+    : [];
+
   const onOpenDM = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!activeServer || isSelf) return;
@@ -74,6 +97,12 @@ export const UserContextMenu: React.FC<UserContextMenuProps> = ({
 
     openConversation(activeServer.id, targetMember.id);
     navigate(`/servers/${activeServer.id}/conversations/${targetMember.id}`);
+  };
+
+  const handleInviteToChannel = async (e: React.MouseEvent, targetChannelName: string) => {
+    e.stopPropagation();
+    if (!activeServer || !nickname) return;
+    await inviteUserToChannel(activeServer.id, nickname, targetChannelName);
   };
 
   const handleToggleOp = async (e: React.MouseEvent) => {
@@ -136,6 +165,32 @@ export const UserContextMenu: React.FC<UserContextMenuProps> = ({
               <MessageSquare className="w-4 h-4 text-zinc-500" />
               <span>Private message</span>
             </ContextMenuItem>
+
+            <ContextMenuSub>
+              <ContextMenuSubTrigger className="gap-x-2">
+                <UserPlus className="w-4 h-4 text-zinc-500" />
+                <span>Invite to channel</span>
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent className="w-48">
+                {eligibleInviteChannels.length > 0 ? (
+                  eligibleInviteChannels.map((chan) => (
+                    <ContextMenuItem
+                      key={chan.id}
+                      onClick={(e) => handleInviteToChannel(e, chan.name)}
+                      className="gap-x-2 cursor-pointer"
+                    >
+                      <Hash className="w-4 h-4 text-zinc-500 shrink-0" />
+                      <span className="truncate">#{chan.name}</span>
+                    </ContextMenuItem>
+                  ))
+                ) : (
+                  <ContextMenuItem disabled className="text-zinc-400 dark:text-zinc-500 text-xs">
+                    No channels available
+                  </ContextMenuItem>
+                )}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+
             {channel && <ContextMenuSeparator />}
           </>
         )}

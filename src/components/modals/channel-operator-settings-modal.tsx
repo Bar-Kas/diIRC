@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Sliders, AlertCircle, Loader2, KeyRound, ShieldCheck, Trash2 } from "lucide-react";
+import { Sliders, AlertCircle, Loader2, KeyRound, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 
 import {
   Dialog,
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useMockStore } from "@/lib/mock-store";
+import { inviteUserToChannel } from "@/lib/irc-actions";
 
 interface FlagConfig {
   flag: string;
@@ -82,6 +83,10 @@ export const ChannelOperatorSettingsModal = () => {
   const [isPasswordLoading, setIsPasswordLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const [inviteNickname, setInviteNickname] = useState("");
+  const [isInviteLoading, setIsInviteLoading] = useState(false);
+  const [inviteSuccessMessage, setInviteSuccessMessage] = useState<string | null>(null);
+
   const activeFlags = new Set(channel ? channelModesMap[channel.id] || [] : []);
   const hasExistingKey = !!channel?.key;
 
@@ -91,6 +96,9 @@ export const ChannelOperatorSettingsModal = () => {
       setTogglingFlags({});
       setPassword(channel.key || "");
       setIsPasswordLoading(false);
+      setInviteNickname("");
+      setIsInviteLoading(false);
+      setInviteSuccessMessage(null);
 
       // Query current channel modes from IRC server
       const chanTarget = channel.name.startsWith("#") ? channel.name : `#${channel.name}`;
@@ -110,6 +118,9 @@ export const ChannelOperatorSettingsModal = () => {
     setTogglingFlags({});
     setPassword("");
     setIsPasswordLoading(false);
+    setInviteNickname("");
+    setIsInviteLoading(false);
+    setInviteSuccessMessage(null);
     onClose("channelOperatorSettings");
   };
 
@@ -184,6 +195,28 @@ export const ChannelOperatorSettingsModal = () => {
       setErrorMessage(err?.toString() || "Failed to remove password. Make sure you are channel operator.");
     } finally {
       setIsPasswordLoading(false);
+    }
+  };
+
+  const handleSendInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!server?.id || !channel?.name || !inviteNickname.trim()) return;
+
+    try {
+      setIsInviteLoading(true);
+      setInviteSuccessMessage(null);
+      setErrorMessage(null);
+
+      const targetNick = inviteNickname.trim();
+      await inviteUserToChannel(server.id, targetNick, channel.name);
+
+      setInviteSuccessMessage(`Invite sent to ${targetNick}`);
+      setInviteNickname("");
+    } catch (err: any) {
+      console.error("Failed to send invite from settings modal:", err);
+      setErrorMessage(err?.toString() || "Failed to send invite.");
+    } finally {
+      setIsInviteLoading(false);
     }
   };
 
@@ -284,34 +317,80 @@ export const ChannelOperatorSettingsModal = () => {
                 return (
                   <div
                     key={flag}
-                    className="flex items-center justify-between p-3 rounded-lg bg-zinc-100 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/50 hover:bg-zinc-200/50 dark:hover:bg-zinc-800 transition"
+                    className="flex flex-col p-3 rounded-lg bg-zinc-100 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/50 hover:bg-zinc-200/50 dark:hover:bg-zinc-800 transition"
                   >
-                    <div className="space-y-0.5 max-w-[78%]">
-                      <div className="flex items-center gap-x-2">
-                        <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                          {label}
-                        </span>
-                        {isChecked && (
-                          <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
-                            Active
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5 max-w-[78%]">
+                        <div className="flex items-center gap-x-2">
+                          <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                            {label}
                           </span>
+                          {isChecked && (
+                            <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                          {description}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {isToggling ? (
+                          <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />
+                        ) : (
+                          <Switch
+                            checked={isChecked}
+                            onCheckedChange={(checked) => handleToggleFlag(flag, checked)}
+                          />
                         )}
                       </div>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                        {description}
-                      </p>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      {isToggling ? (
-                        <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />
-                      ) : (
-                        <Switch
-                          checked={isChecked}
-                          onCheckedChange={(checked) => handleToggleFlag(flag, checked)}
-                        />
-                      )}
-                    </div>
+                    {flag === "i" && isChecked && (
+                      <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700/60 space-y-2">
+                        <div className="flex items-center gap-x-2">
+                          <UserPlus className="w-3.5 h-3.5 text-indigo-500" />
+                          <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                            Invite user to channel
+                          </span>
+                        </div>
+                        <form onSubmit={handleSendInvite} className="flex gap-x-2">
+                          <Input
+                            disabled={isInviteLoading}
+                            type="text"
+                            value={inviteNickname}
+                            onChange={(e) => {
+                              setInviteNickname(e.target.value);
+                              if (inviteSuccessMessage) setInviteSuccessMessage(null);
+                            }}
+                            placeholder="Enter nickname..."
+                            className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 focus-visible:ring-1 focus-visible:ring-indigo-500 text-black dark:text-white text-xs h-9"
+                          />
+                          <Button
+                            type="submit"
+                            disabled={isInviteLoading || !inviteNickname.trim()}
+                            size="sm"
+                            className="bg-indigo-500 hover:bg-indigo-600 text-white shrink-0 h-9 text-xs gap-x-1"
+                          >
+                            {isInviteLoading ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <>
+                                <UserPlus className="w-3.5 h-3.5" />
+                                Send invite
+                              </>
+                            )}
+                          </Button>
+                        </form>
+                        {inviteSuccessMessage && (
+                          <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                            {inviteSuccessMessage}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
