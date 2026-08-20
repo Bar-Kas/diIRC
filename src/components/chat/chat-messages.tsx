@@ -6,7 +6,7 @@ import { Loader2, ServerCrash } from "lucide-react";
 
 import { useChatQuery } from "@/hooks/use-chat-query";
 import { useChatSocket } from "@/hooks/use-chat-socket";
-import { useMockStore } from "@/lib/mock-store";
+import { useMockStore, formatMessageDate } from "@/lib/mock-store";
 
 import { ChatWelcome } from "./chat-welcome";
 import { ChatItem } from "./chat-item";
@@ -46,6 +46,8 @@ export const ChatMessages = ({
   const loadChatHistory = useMockStore((state) => state.loadChatHistory);
   const loadOlderHistory = useMockStore((state) => state.loadOlderHistory);
   const historyHasMore = useMockStore((state) => state.historyHasMore);
+  const dateFormatPreset = useMockStore((state) => state.dateFormatPreset) || "d MMM yyyy, HH:mm";
+  const customDateFormat = useMockStore((state) => state.customDateFormat) || "yyyy/MM/dd HH:mm";
 
   const {
     data,
@@ -263,7 +265,7 @@ export const ChatMessages = ({
                   content={message.content}
                   fileUrl={message.fileUrl || null}
                   deleted={message.deleted}
-                  timestamp={format(new Date(message.createdAt), DATE_FORMAT)}
+                  timestamp={formatMessageDate(message.createdAt, dateFormatPreset, customDateFormat)}
                   compactTime={format(new Date(message.createdAt), TIME_FORMAT)}
                   channelId={paramKey === "channelId" ? paramValue : undefined}
                   conversationId={paramKey === "conversationId" ? paramValue : undefined}

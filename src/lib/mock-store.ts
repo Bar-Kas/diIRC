@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { invoke } from "@tauri-apps/api/core";
+import { format } from "date-fns";
 import { 
   Server, 
   Channel, 
@@ -22,6 +23,28 @@ import { v4 as uuidv4 } from "uuid";
 import { ImageUploadConfig, UrlAuthRule } from "./upload/types";
 
 export const MAX_MESSAGES_IN_MEMORY = 500;
+
+export const formatMessageDate = (
+  date: Date | string | number,
+  dateFormatPreset: string = "d MMM yyyy, HH:mm",
+  customDateFormat: string = "yyyy/MM/dd HH:mm"
+): string => {
+  const pattern = dateFormatPreset === "custom" 
+    ? (customDateFormat.trim() || "d MMM yyyy, HH:mm") 
+    : dateFormatPreset;
+  try {
+    const d = typeof date === "string" || typeof date === "number" ? new Date(date) : date;
+    if (isNaN(d.getTime())) return String(date);
+    return format(d, pattern);
+  } catch {
+    try {
+      const d = typeof date === "string" || typeof date === "number" ? new Date(date) : date;
+      return format(d, "d MMM yyyy, HH:mm");
+    } catch {
+      return String(date);
+    }
+  }
+};
 
 const chatKey = (type: "channel" | "conversation", id: string) => `${type}:${id}`;
 
@@ -123,6 +146,8 @@ interface MockState {
   ircConnectedServers: Record<string, boolean>;
   ircConnectionErrors: Record<string, string | null>;
   statusDisplayMode: StatusDisplayMode;
+  dateFormatPreset: string;
+  customDateFormat: string;
 
   // Connection Actions
   setIrcConnected: (serverId: string, isConnected: boolean, error?: string | null) => void;
@@ -138,6 +163,8 @@ interface MockState {
   setUploadConfig: (config: ImageUploadConfig) => void;
   addUrlAuthRule: (rule: Omit<UrlAuthRule, "id">) => void;
   removeUrlAuthRule: (id: string) => void;
+  setDateFormatPreset: (preset: string) => void;
+  setCustomDateFormat: (format: string) => void;
 
   // Server Actions
   addServer: (optionsOrName: string | AddServerOptions, imageUrl?: string) => Server;
@@ -223,6 +250,8 @@ export const useMockStore = create<MockState>()(
       ircConnectedServers: {},
       ircConnectionErrors: {},
       statusDisplayMode: "always",
+      dateFormatPreset: "d MMM yyyy, HH:mm",
+      customDateFormat: "yyyy/MM/dd HH:mm",
 
       setIrcConnected: (serverId: string, isConnected: boolean, error: string | null = null) =>
         set((state) => ({
@@ -237,6 +266,8 @@ export const useMockStore = create<MockState>()(
         })),
 
       setStatusDisplayMode: (mode: StatusDisplayMode) => set({ statusDisplayMode: mode }),
+      setDateFormatPreset: (preset: string) => set({ dateFormatPreset: preset }),
+      setCustomDateFormat: (format: string) => set({ customDateFormat: format }),
 
       setCompactMode: (enabled: boolean) => set({ compactMode: enabled }),
       setConfirmLeaveChannel: (enabled: boolean) => set({ confirmLeaveChannel: enabled }),
