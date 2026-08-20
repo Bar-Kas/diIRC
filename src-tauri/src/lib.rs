@@ -835,6 +835,71 @@ async fn connect_irc(
                                 let _ = app_clone.emit("irc_mode_event", mode_payload);
                             }
                         }
+                        Command::KICK(ref channel, ref target, ref comment_opt) => {
+                            let sender_name = message.prefix.as_ref().map(|source| match source {
+                                Prefix::Nickname(nick, _, _) => nick.clone(),
+                                Prefix::ServerName(name) => name.clone(),
+                            }).unwrap_or_else(|| "Server".to_string());
+
+                            let reason = comment_opt.as_deref().unwrap_or("");
+                            let sys_content = if reason.is_empty() {
+                                format!("{} was kicked from {} by {}", target, channel, sender_name)
+                            } else {
+                                format!("{} was kicked from {} by {} ({})", target, channel, sender_name, reason)
+                            };
+
+                            let msg_payload = IrcMessage {
+                                server_id: stream_server_id.clone(),
+                                sender: sender_name,
+                                content: sys_content,
+                                channel: channel.clone(),
+                                is_system: true,
+                            };
+                            let _ = app_clone.emit("irc_message", msg_payload);
+
+                            let payload_users = IrcUserEvent {
+                                server_id: stream_server_id.clone(),
+                                channel: channel.clone(),
+                                users: vec![target.clone()],
+                                event_type: "PART".to_string(),
+                            };
+                            let _ = app_clone.emit("irc_user_event", payload_users);
+                        }
+                        Command::ChannelMODE(ref channel, ref modes) => {
+                            let sender_name = message.prefix.as_ref().map(|source| match source {
+                                Prefix::Nickname(nick, _, _) => nick.clone(),
+                                Prefix::ServerName(name) => name.clone(),
+                            }).unwrap_or_else(|| "Server".to_string());
+
+                            let modes_str = modes
+                                .iter()
+                                .map(|m| m.to_string())
+                                .collect::<Vec<_>>()
+                                .join(" ");
+
+                            let sys_text = if modes_str.is_empty() {
+                                format!("Query mode for {}", channel)
+                            } else {
+                                format!("{} set mode: {} {}", sender_name, channel, modes_str)
+                            };
+
+                            let msg_payload = IrcMessage {
+                                server_id: stream_server_id.clone(),
+                                sender: sender_name.clone(),
+                                content: sys_text,
+                                channel: channel.clone(),
+                                is_system: true,
+                            };
+                            let _ = app_clone.emit("irc_message", msg_payload);
+
+                            let mode_payload = IrcModeEvent {
+                                server_id: stream_server_id.clone(),
+                                channel: channel.clone(),
+                                modes: modes_str,
+                                set_by: Some(sender_name),
+                            };
+                            let _ = app_clone.emit("irc_mode_event", mode_payload);
+                        }
                         Command::Raw(ref cmd, ref args) if cmd == "MODE" => {
                             let sender_name = message.prefix.as_ref().map(|source| match source {
                                 Prefix::Nickname(nick, _, _) => nick.clone(),
