@@ -16,7 +16,8 @@ export type ModalType =
   | "editTopic"
   | "joinChannelPassword"
   | "setChannelPassword"
-  | "channelSettings";
+  | "channelSettings"
+  | "connectionDetails";
 
 interface ModalData {
   server?: Server;

@@ -115,10 +115,11 @@ interface MockState {
   uploadConfig: ImageUploadConfig;
   urlAuthRules: UrlAuthRule[];
   ircConnectedServers: Record<string, boolean>;
+  ircConnectionErrors: Record<string, string | null>;
   statusDisplayMode: StatusDisplayMode;
 
   // Connection Actions
-  setIrcConnected: (serverId: string, isConnected: boolean) => void;
+  setIrcConnected: (serverId: string, isConnected: boolean, error?: string | null) => void;
   setStatusDisplayMode: (mode: StatusDisplayMode) => void;
 
   // Settings Actions
@@ -204,13 +205,18 @@ export const useMockStore = create<MockState>()(
       },
       urlAuthRules: [],
       ircConnectedServers: {},
+      ircConnectionErrors: {},
       statusDisplayMode: "always",
 
-      setIrcConnected: (serverId: string, isConnected: boolean) =>
+      setIrcConnected: (serverId: string, isConnected: boolean, error: string | null = null) =>
         set((state) => ({
           ircConnectedServers: {
             ...state.ircConnectedServers,
             [serverId]: isConnected,
+          },
+          ircConnectionErrors: {
+            ...state.ircConnectionErrors,
+            [serverId]: isConnected ? null : (error ?? state.ircConnectionErrors[serverId] ?? null),
           },
         })),
 

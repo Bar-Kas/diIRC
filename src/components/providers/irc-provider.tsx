@@ -60,11 +60,11 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
           useTls: server.useTls || false,
         }
       });
-      setIrcConnected(server.id, true);
-      console.log(`Connected IRC server ${server.name} (${server.id}) with nicks:`, nicks);
+      console.log(`Initiated IRC connection for server ${server.name} (${server.id}) with nicks:`, nicks);
     } catch (error) {
       console.error(`Failed to connect IRC for server ${server.name}:`, error);
-      setIrcConnected(server.id, false);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      setIrcConnected(server.id, false, errMsg);
     } finally {
       connectingRef.current.delete(server.id);
     }
@@ -273,11 +273,11 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     let unlistenStatusFn: (() => void) | null = null;
     const setupStatusListener = async () => {
       try {
-        const unlistenStatus = await listen<{ server_id: string; connected: boolean }>(
+        const unlistenStatus = await listen<{ server_id: string; connected: boolean; error?: string }>(
           "irc_status",
           (event) => {
-            const { server_id, connected } = event.payload;
-            setIrcConnected(server_id, connected);
+            const { server_id, connected, error } = event.payload;
+            setIrcConnected(server_id, connected, error || null);
             if (!connected) {
               connectedConfigsRef.current.delete(server_id);
             }

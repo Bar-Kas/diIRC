@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 
 export interface ConnectionStatuses {
   irc: boolean;
+  ircError: string | null;
   resourceServer: boolean;
   internet: boolean;
 }
@@ -12,10 +13,12 @@ export const useConnectionStatus = (): ConnectionStatuses => {
   const { serverId } = useParams();
   const servers = useMockStore((state) => state.servers);
   const ircConnectedServers = useMockStore((state) => state.ircConnectedServers);
+  const ircConnectionErrors = useMockStore((state) => state.ircConnectionErrors);
   const uploadConfig = useMockStore((state) => state.uploadConfig);
 
   const activeServerId = serverId || (servers.length > 0 ? servers[0].id : null);
   const isIrcConnected = activeServerId ? !!ircConnectedServers[activeServerId] : Object.values(ircConnectedServers).some(Boolean);
+  const activeIrcError = activeServerId ? (ircConnectionErrors[activeServerId] || null) : null;
 
   const [isInternetConnected, setIsInternetConnected] = useState<boolean>(
     typeof navigator !== "undefined" ? navigator.onLine : true
@@ -83,6 +86,7 @@ export const useConnectionStatus = (): ConnectionStatuses => {
 
   return {
     irc: isIrcConnected,
+    ircError: activeIrcError,
     resourceServer: isResourceServerConnected,
     internet: isInternetConnected,
   };

@@ -32,6 +32,7 @@ struct IrcUserEvent {
 struct IrcStatusEvent {
     server_id: String,
     connected: bool,
+    error: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -358,6 +359,7 @@ async fn connect_irc(
                 IrcStatusEvent {
                     server_id: server_id.clone(),
                     connected: true,
+                    error: None,
                 },
             );
             return Ok(());
@@ -404,25 +406,29 @@ async fn connect_irc(
     );
 
     let mut client = Client::from_config(config).await.map_err(|e| {
+        let err_msg = e.to_string();
         let _ = app.emit(
             "irc_status",
             IrcStatusEvent {
                 server_id: server_id.clone(),
                 connected: false,
+                error: Some(err_msg.clone()),
             },
         );
-        e.to_string()
+        err_msg
     })?;
 
     client.identify().map_err(|e| {
+        let err_msg = e.to_string();
         let _ = app.emit(
             "irc_status",
             IrcStatusEvent {
                 server_id: server_id.clone(),
                 connected: false,
+                error: Some(err_msg.clone()),
             },
         );
-        e.to_string()
+        err_msg
     })?;
 
     let sender = client.sender();
@@ -432,14 +438,6 @@ async fn connect_irc(
         .lock()
         .await
         .insert(server_id.clone(), primary_nickname.clone());
-
-    let _ = app.emit(
-        "irc_status",
-        IrcStatusEvent {
-            server_id: server_id.clone(),
-            connected: true,
-        },
-    );
 
     let stream_server_id = server_id.clone();
     let senders_clone = state.senders.clone();
@@ -455,10 +453,11 @@ async fn connect_irc(
         let mut stream = match client.stream() {
             Ok(s) => s,
             Err(e) => {
+                let err_msg = e.to_string();
                 log::error!(
                     "Failed to open stream for server {}: {}",
                     stream_server_id,
-                    e
+                    err_msg
                 );
                 senders_clone.lock().await.remove(&stream_server_id);
                 nicknames_clone.lock().await.remove(&stream_server_id);
@@ -467,6 +466,7 @@ async fn connect_irc(
                     IrcStatusEvent {
                         server_id: stream_server_id,
                         connected: false,
+                        error: Some(err_msg),
                     },
                 );
                 return;
@@ -619,6 +619,14 @@ async fn connect_irc(
                             }
                         }
                         Command::Response(Response::RPL_WELCOME, ref _args) => {
+                            let _ = app_clone.emit(
+                                "irc_status",
+                                IrcStatusEvent {
+                                    server_id: stream_server_id.clone(),
+                                    connected: true,
+                                    error: None,
+                                },
+                            );
                             if let Some(s) = senders_clone.lock().await.get(&stream_server_id) {
                                 for chan in &initial_channels {
                                     let mut formatted = chan.name.clone();
@@ -633,6 +641,20 @@ async fn connect_irc(
                                     }
                                 }
                             }
+                        }
+                        Command::ERROR(ref reason) => {
+                            log::error!("IRC [{}] Received ERROR: {}", stream_server_id, reason);
+                            let _ = app_clone.emit(
+                                "irc_status",
+                                IrcStatusEvent {
+                                    server_id: stream_server_id.clone(),
+                                    connected: false,
+                                    error: Some(reason.clone()),
+                                },
+                            );
+                            senders_clone.lock().await.remove(&stream_server_id);
+                            nicknames_clone.lock().await.remove(&stream_server_id);
+                            break;
                         }
                         Command::Response(Response::ERR_CHANOPRIVSNEEDED, ref args) => {
                             let channel = args.get(1).cloned().unwrap_or_default();
@@ -867,7 +889,19 @@ async fn connect_irc(
                     }
                 }
                 Err(e) => {
-                    log::error!("IRC [{}] Stream error: {}", stream_server_id, e);
+                    let err_msg = e.to_string();
+                    log::error!("IRC [{}] Stream error: {}", stream_server_id, err_msg);
+                    let _ = app_clone.emit(
+                        "irc_status",
+                        IrcStatusEvent {
+                            server_id: stream_server_id.clone(),
+                            connected: false,
+                            error: Some(err_msg),
+                        },
+                    );
+                    senders_clone.lock().await.remove(&stream_server_id);
+                    nicknames_clone.lock().await.remove(&stream_server_id);
+                    break;
                 }
             }
         }
@@ -881,6 +915,7 @@ async fn connect_irc(
             IrcStatusEvent {
                 server_id: stream_server_id,
                 connected: false,
+                error: Some("Stream closed".to_string()),
             },
         );
 
@@ -912,6 +947,7 @@ async fn send_message(
                 IrcStatusEvent {
                     server_id: server_id.clone(),
                     connected: false,
+                    error: Some(e.to_string()),
                 },
             );
             return Err(e.to_string());
@@ -978,6 +1014,7 @@ async fn join_channel(
                 IrcStatusEvent {
                     server_id: server_id.clone(),
                     connected: false,
+                    error: Some(e.to_string()),
                 },
             );
             return Err(e.to_string());
@@ -1023,6 +1060,7 @@ async fn set_channel_key(
                 IrcStatusEvent {
                     server_id: server_id.clone(),
                     connected: false,
+                    error: Some(e.to_string()),
                 },
             );
             return Err(e.to_string());
@@ -1078,6 +1116,7 @@ async fn send_mode(
                 IrcStatusEvent {
                     server_id: server_id.clone(),
                     connected: false,
+                    error: Some(e.to_string()),
                 },
             );
             return Err(e.to_string());
@@ -1117,6 +1156,7 @@ async fn part_channel(
                 IrcStatusEvent {
                     server_id: server_id.clone(),
                     connected: false,
+                    error: Some(e.to_string()),
                 },
             );
             return Err(e.to_string());
@@ -1149,6 +1189,7 @@ async fn set_channel_topic(
             let _ = app.emit("irc_status", IrcStatusEvent {
                 server_id: server_id.clone(),
                 connected: false,
+                error: Some(e.to_string()),
             });
             return Err(e.to_string());
         }
@@ -1176,6 +1217,7 @@ async fn disconnect_irc(
         IrcStatusEvent {
             server_id: server_id.clone(),
             connected: false,
+            error: None,
         },
     );
     Ok(())

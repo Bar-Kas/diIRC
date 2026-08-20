@@ -15,6 +15,7 @@ import { EditTopicModal } from "@/components/modals/edit-topic-modal";
 import { JoinChannelPasswordModal } from "@/components/modals/join-channel-password-modal";
 import { SetChannelPasswordModal } from "@/components/modals/set-channel-password-modal";
 import { ChannelSettingsModal } from "@/components/modals/channel-settings-modal";
+import { ConnectionDetailsModal } from "@/components/modals/connection-details-modal";
 
 export const ModalProvider = () => {
   const [isMounted, setIsMounted] = useState(false);
@@ -44,6 +45,7 @@ export const ModalProvider = () => {
       <JoinChannelPasswordModal />
       <SetChannelPasswordModal />
       <ChannelSettingsModal />
+      <ConnectionDetailsModal />
     </>
   );
 };

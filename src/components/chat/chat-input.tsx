@@ -155,8 +155,10 @@ export const ChatInput = ({
     });
   }, []);
 
+  const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : (servers[0] || null);
+  const isIrcConnected = activeServer ? !!ircConnectedServers[activeServer.id] : true;
   const isUploading = attachedImages.some((img) => img.isUploading);
-  const isLoading = form.formState.isSubmitting || isUploading;
+  const isLoading = form.formState.isSubmitting || isUploading || !isIrcConnected;
 
   const processFileUpload = useCallback(async (file: File) => {
     if (uploadConfig.provider === "disabled") {
@@ -620,11 +622,13 @@ export const ChatInput = ({
 
                   <div className="relative flex items-center">
                     <Input
-                      disabled={isLoading && attachedImages.length === 0}
+                      disabled={isLoading}
                       autoFocus
-                      className="pl-4 pr-24 py-6 bg-zinc-200/90 dark:bg-zinc-700/75 border-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200"
+                      className="pl-4 pr-24 py-6 bg-zinc-200/90 dark:bg-zinc-700/75 border-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200 disabled:opacity-60 disabled:cursor-not-allowed"
                       placeholder={
-                        isUploading
+                        !isIrcConnected
+                          ? "Disconnected from IRC server"
+                          : isUploading
                           ? "Uploading files..."
                           : `Message ${type === "conversation" ? name : "#" + name}`
                       }
@@ -639,7 +643,7 @@ export const ChatInput = ({
                         type="button"
                         disabled={isLoading}
                         onClick={() => fileInputRef.current?.click()}
-                        className="h-7 w-7 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition flex items-center justify-center rounded-md hover:bg-zinc-300/50 dark:hover:bg-zinc-600/50"
+                        className="h-7 w-7 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition flex items-center justify-center rounded-md hover:bg-zinc-300/50 dark:hover:bg-zinc-600/50 disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Attach files (System dialog)"
                       >
                         {isUploading ? (
@@ -650,6 +654,7 @@ export const ChatInput = ({
                       </button>
 
                       <EmojiPicker
+                        disabled={isLoading}
                         onChange={(emoji: string) => {
                           field.onChange(`${field.value ? field.value + " " : ""}${emoji}`);
                           form.setFocus("content");
