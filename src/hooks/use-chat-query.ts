@@ -10,23 +10,26 @@ export const useChatQuery = ({
   paramKey,
   paramValue
 }: ChatQueryProps) => {
-  const messagesMap = useMockStore((state) => 
-    paramKey === "channelId" ? state.messages : state.directMessages
+  const items = useMockStore((state) =>
+    paramKey === "channelId"
+      ? state.messages[paramValue] || []
+      : state.directMessages[paramValue] || []
   );
 
-  const items = messagesMap[paramValue] || [];
+  const hasNextPage = useMockStore((state) => state.historyHasMore);
+  const nextCursor = useMockStore((state) => state.historyNextOffset);
 
   return {
     data: {
       pages: [
         {
           items: items,
-          nextCursor: null,
+          nextCursor: nextCursor,
         }
       ]
     },
     fetchNextPage: () => {},
-    hasNextPage: false,
+    hasNextPage,
     isFetchingNextPage: false,
     status: "success" as "success" | "loading" | "error",
   };

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { format } from "date-fns";
 import { Member, Message } from "@/types";
@@ -10,6 +10,7 @@ import { useMockStore } from "@/lib/mock-store";
 
 import { ChatWelcome } from "./chat-welcome";
 import { ChatItem } from "./chat-item";
+import { clearProxyCache } from "./smart-image";
 
 const DATE_FORMAT = "d MMM yyyy, HH:mm";
 const TIME_FORMAT = "HH:mm";
@@ -41,11 +42,13 @@ export const ChatMessages = ({
   const shouldStickToBottomRef = useRef(true);
   const hasInitializedRef = useRef(false);
   const isLoadingOlderRef = useRef(false);
-  const prependScrollRef = useRef<{ height: number; top: number } | null>(null);
+  const pendingPrependRef = useRef<{ prevScrollHeight: number; prevScrollTop: number } | null>(null);
+  const remeasureCallbacksRef = useRef(new Map<string, () => void>());
   const layoutFrameRef = useRef<number | null>(null);
   const loadChatHistory = useMockStore((state) => state.loadChatHistory);
   const loadOlderHistory = useMockStore((state) => state.loadOlderHistory);
-  const historyHasMore = useMockStore((state) => state.historyHasMore);
+  const historyCursor = useMockStore((state) => state.historyNextOffset);
+  const hasMoreHistory = useMockStore((state) => state.historyHasMore);
 
   const {
     data,
@@ -57,22 +60,52 @@ export const ChatMessages = ({
   });
   useChatSocket({ queryKey, addKey, updateKey });
 
-  const items = data?.pages.flatMap((page) => page.items as Message[]) || [];
+  const items = useMemo(() => data?.pages.flatMap((page) => page.items as Message[]) || [], [data]);
   const historyTarget = type === "channel" && !name.startsWith("#") ? `#${name}` : name;
+  const hasWelcome = !hasMoreHistory && historyCursor === null;
+  const totalCount = items.length + (hasWelcome ? 1 : 0);
+
   const virtualizer = useVirtualizer({
-    count: items.length,
+    count: totalCount,
     getScrollElement: () => chatRef.current,
-    getItemKey: (index) => items[index]?.id ?? index,
-    estimateSize: () => 72,
-    overscan: 8,
+    getItemKey: (index) => {
+      if (hasWelcome && index === 0) return "__welcome__";
+      const msgIndex = hasWelcome ? index - 1 : index;
+      return items[msgIndex]?.id ?? index;
+    },
+    estimateSize: (index) => {
+      if (hasWelcome && index === 0) return 160;
+      const msgIndex = hasWelcome ? index - 1 : index;
+      const msg = items[msgIndex];
+      if (!msg) return 44;
+      if (msg.fileUrl) return 240;
+      const prev = items[msgIndex - 1];
+      const isSameAuthor = prev && prev.member?.id === msg.member?.id;
+      const isWithin5Min = prev && (new Date(msg.createdAt).getTime() - new Date(prev.createdAt).getTime() < 300000);
+      const isCompact = isSameAuthor && isWithin5Min && !prev.deleted && !msg.fileUrl && !prev.isSystem && !msg.isSystem;
+      return isCompact ? 24 : 48;
+    },
+    overscan: 10,
     useAnimationFrameWithResizeObserver: true,
   });
+
+  const registerRowElement = useCallback((element: HTMLDivElement | null, id: string) => {
+    if (element) {
+      rowElementsRef.current.set(id, element);
+    } else {
+      rowElementsRef.current.delete(id);
+    }
+    virtualizer.measureElement(element);
+  }, [virtualizer]);
 
   useEffect(() => {
     hasInitializedRef.current = false;
     shouldStickToBottomRef.current = true;
     isLoadingOlderRef.current = false;
-    prependScrollRef.current = null;
+    pendingPrependRef.current = null;
+    rowElementsRef.current.clear();
+    remeasureCallbacksRef.current.clear();
+    clearProxyCache();
     void loadChatHistory(
       type,
       chatId,
@@ -81,16 +114,12 @@ export const ChatMessages = ({
     );
   }, [chatId, historyTarget, loadChatHistory, serverId, type]);
 
-  const handleChatScroll = () => {
+  const triggerLoadOlder = useCallback(() => {
     const element = chatRef.current;
-    if (!element) return;
-
-    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
-    shouldStickToBottomRef.current = distanceFromBottom <= 100;
-
     if (
-      element.scrollTop > 24
-      || !historyHasMore
+      !element
+      || historyCursor === null
+      || !hasMoreHistory
       || isLoadingOlderRef.current
       || items.length === 0
     ) {
@@ -98,60 +127,126 @@ export const ChatMessages = ({
     }
 
     isLoadingOlderRef.current = true;
-    prependScrollRef.current = {
-      height: element.scrollHeight,
-      top: element.scrollTop,
+    pendingPrependRef.current = {
+      prevScrollHeight: element.scrollHeight,
+      prevScrollTop: element.scrollTop,
     };
 
-    void loadOlderHistory(type, chatId, serverId, historyTarget).then((loaded) => {
-      if (!loaded) {
-        prependScrollRef.current = null;
+    // Fallback: unblock after 5s if invoke hangs
+    const fallbackTimer = setTimeout(() => {
+      if (isLoadingOlderRef.current) {
         isLoadingOlderRef.current = false;
-        return;
+        pendingPrependRef.current = null;
+      }
+    }, 5000);
+
+    void loadOlderHistory(type, chatId, serverId, historyTarget).then((loaded: boolean) => {
+      clearTimeout(fallbackTimer);
+      if (!loaded) {
+        pendingPrependRef.current = null;
+        isLoadingOlderRef.current = false;
+      }
+    });
+  }, [historyCursor, hasMoreHistory, items.length, loadOlderHistory, type, chatId, serverId, historyTarget]);
+
+  const handleChatScroll = useCallback(() => {
+    const element = chatRef.current;
+    if (!element) return;
+
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    // User is stuck to bottom if within 30px of the bottom edge
+    shouldStickToBottomRef.current = distanceFromBottom < 30;
+
+    // Proactively load older history when user reaches upper 400px of chat
+    if (element.scrollTop <= 400) {
+      triggerLoadOlder();
+    }
+  }, [triggerLoadOlder]);
+
+  const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    const element = chatRef.current;
+    if (!element) return;
+
+    if (e.deltaY < 0) {
+      shouldStickToBottomRef.current = false;
+    }
+
+    // Capture upward wheel scroll even when scrollTop === 0 (where browser scroll events stop firing)
+    if (e.deltaY < 0 && element.scrollTop <= 400) {
+      triggerLoadOlder();
+    }
+  }, [triggerLoadOlder]);
+
+  // Synchronously restore scroll position before browser paint when messages are prepended
+  useLayoutEffect(() => {
+    const prependSnapshot = pendingPrependRef.current;
+    if (prependSnapshot && chatRef.current && items.length > 0) {
+      const newScrollHeight = chatRef.current.scrollHeight;
+      const heightDiff = newScrollHeight - prependSnapshot.prevScrollHeight;
+      if (heightDiff > 0) {
+        chatRef.current.scrollTop = prependSnapshot.prevScrollTop + heightDiff;
       }
 
-      requestAnimationFrame(() => {
+      shouldStickToBottomRef.current = false;
+      pendingPrependRef.current = null;
+      isLoadingOlderRef.current = false;
+
+      // Fast-scroll continuous loading: if user is still near the top after prepending, seamlessly fetch next page
+      if (chatRef.current.scrollTop <= 400 && historyCursor !== null && hasMoreHistory) {
         requestAnimationFrame(() => {
-          const currentElement = chatRef.current;
-          const snapshot = prependScrollRef.current;
-          if (currentElement && snapshot) {
-            currentElement.scrollTop = snapshot.top + currentElement.scrollHeight - snapshot.height;
-          }
-          prependScrollRef.current = null;
-          isLoadingOlderRef.current = false;
-        });
-      });
-    });
-  };
-
-  useEffect(() => {
-    if (items.length === 0) return;
-
-    let followUpFrame: number | undefined;
-    const frame = requestAnimationFrame(() => {
-      if (!hasInitializedRef.current || shouldStickToBottomRef.current) {
-        virtualizer.scrollToEnd({ behavior: "auto" });
-        followUpFrame = requestAnimationFrame(() => {
-          if (shouldStickToBottomRef.current) {
-            virtualizer.scrollToEnd({ behavior: "auto" });
-          }
+          triggerLoadOlder();
         });
       }
-      hasInitializedRef.current = true;
-    });
+    }
+  }, [items, historyCursor, hasMoreHistory, triggerLoadOlder]);
 
-    return () => {
-      cancelAnimationFrame(frame);
-      if (followUpFrame !== undefined) cancelAnimationFrame(followUpFrame);
-    };
-  }, [chatId, items.length, virtualizer]);
+  // Keep scroll pinned to bottom whenever new messages arrive or elements resize, ONLY if user is at the bottom
+  useLayoutEffect(() => {
+    if (shouldStickToBottomRef.current && chatRef.current && totalCount > 0 && !pendingPrependRef.current) {
+      chatRef.current.scrollTop = chatRef.current.scrollHeight;
+    }
+  }, [virtualizer.getTotalSize(), totalCount, items]);
+
+  // Initial mount / channel change settle sequence
+  useEffect(() => {
+    if (totalCount === 0) return;
+
+    if (!hasInitializedRef.current) {
+      const pinToBottom = () => {
+        if (chatRef.current && !hasInitializedRef.current) {
+          chatRef.current.scrollTop = chatRef.current.scrollHeight;
+          virtualizer.scrollToEnd({ behavior: "auto" });
+        }
+      };
+
+      pinToBottom();
+      const raf1 = requestAnimationFrame(pinToBottom);
+      const raf2 = requestAnimationFrame(() => {
+        requestAnimationFrame(pinToBottom);
+      });
+      const t1 = setTimeout(pinToBottom, 60);
+      const t2 = setTimeout(pinToBottom, 180);
+      const t3 = setTimeout(() => {
+        pinToBottom();
+        hasInitializedRef.current = true;
+      }, 350);
+
+      return () => {
+        cancelAnimationFrame(raf1);
+        cancelAnimationFrame(raf2);
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
+    }
+  }, [totalCount, virtualizer]);
 
   useEffect(() => {
     const refreshLayout = () => {
       if (
         document.visibilityState !== "visible"
         || !shouldStickToBottomRef.current
-        || items.length === 0
+        || totalCount === 0
       ) {
         return;
       }
@@ -161,6 +256,9 @@ export const ChatMessages = ({
       }
       layoutFrameRef.current = requestAnimationFrame(() => {
         layoutFrameRef.current = null;
+        if (chatRef.current) {
+          chatRef.current.scrollTop = chatRef.current.scrollHeight;
+        }
         virtualizer.scrollToEnd({ behavior: "auto" });
       });
     };
@@ -178,20 +276,24 @@ export const ChatMessages = ({
         layoutFrameRef.current = null;
       }
     };
-  }, [items.length, virtualizer]);
+  }, [totalCount, virtualizer]);
 
-  const remeasureRow = (messageId: string) => {
-    requestAnimationFrame(() => {
-      const element = rowElementsRef.current.get(messageId);
-      const index = items.findIndex((item) => item.id === messageId);
-      if (element && index >= 0) {
-        virtualizer.resizeItem(index, element.offsetHeight);
-        if (shouldStickToBottomRef.current) {
-          virtualizer.scrollToEnd({ behavior: "auto" });
+  const getRemeasureCallback = useCallback((messageId: string) => {
+    let cb = remeasureCallbacksRef.current.get(messageId);
+    if (!cb) {
+      cb = () => {
+        const element = rowElementsRef.current.get(messageId);
+        if (element) {
+          virtualizer.measureElement(element);
+          if (shouldStickToBottomRef.current && chatRef.current) {
+            chatRef.current.scrollTop = chatRef.current.scrollHeight;
+          }
         }
-      }
-    });
-  };
+      };
+      remeasureCallbacksRef.current.set(messageId, cb);
+    }
+    return cb;
+  }, [virtualizer]);
 
   if (status === "loading") {
     return (
@@ -215,67 +317,72 @@ export const ChatMessages = ({
     <div
       ref={chatRef}
       onScroll={handleChatScroll}
-      className="flex-1 min-h-0 flex flex-col py-4 overflow-y-auto"
+      onWheel={handleWheel}
+      className="flex-1 min-h-0 flex flex-col py-4 overflow-y-auto overflow-x-hidden discord-scrollbar-chat"
     >
-      {items.length === 0 ? (
-        <div className="flex flex-1 flex-col justify-end">
-          <ChatWelcome type={type} name={name} />
-        </div>
-      ) : (
-        <div
-          className="relative w-full shrink-0"
-          style={{ height: `${virtualizer.getTotalSize()}px` }}
-        >
-          {virtualizer.getVirtualItems().map((virtualRow) => {
-            const message = items[virtualRow.index];
-            const prevMessage = items[virtualRow.index - 1];
-            const isSameAuthor = prevMessage?.member?.id === message.member?.id;
-            const isWithinTimeLimit = prevMessage
-              && new Date(message.createdAt).getTime() - new Date(prevMessage.createdAt).getTime() < 300000;
-            const isCompact = Boolean(
-              isSameAuthor
-              && isWithinTimeLimit
-              && !prevMessage.deleted
-              && !message.fileUrl
-              && !prevMessage.isSystem
-              && !message.isSystem,
-            );
-
+      <div
+        className="relative w-full shrink-0"
+        style={{ height: `${virtualizer.getTotalSize()}px` }}
+      >
+        {virtualizer.getVirtualItems().map((virtualRow) => {
+          if (hasWelcome && virtualRow.index === 0) {
             return (
               <div
-                key={message.id}
+                key="__welcome__"
                 data-index={virtualRow.index}
-                ref={(element) => {
-                  if (element) {
-                    rowElementsRef.current.set(message.id, element);
-                    virtualizer.measureElement(element);
-                  } else {
-                    rowElementsRef.current.delete(message.id);
-                  }
-                }}
-                className="absolute left-0 top-0 w-full flow-root"
+                ref={virtualizer.measureElement}
+                className="absolute left-0 top-0 w-full"
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
               >
-                <ChatItem
-                  id={message.id}
-                  currentMember={member}
-                  member={message.member}
-                  content={message.content}
-                  fileUrl={message.fileUrl || null}
-                  deleted={message.deleted}
-                  timestamp={format(new Date(message.createdAt), DATE_FORMAT)}
-                  compactTime={format(new Date(message.createdAt), TIME_FORMAT)}
-                  channelId={paramKey === "channelId" ? paramValue : undefined}
-                  conversationId={paramKey === "conversationId" ? paramValue : undefined}
-                  compact={isCompact}
-                  isSystem={message.isSystem}
-                  onContentSizeChange={() => remeasureRow(message.id)}
-                />
+                <ChatWelcome type={type} name={name} />
               </div>
             );
-          })}
-        </div>
-      )}
+          }
+
+          const messageIndex = hasWelcome ? virtualRow.index - 1 : virtualRow.index;
+          const message = items[messageIndex];
+          if (!message) return null;
+
+          const prevMessage = items[messageIndex - 1];
+          const isSameAuthor = prevMessage?.member?.id === message.member?.id;
+          const isWithinTimeLimit = prevMessage
+            && new Date(message.createdAt).getTime() - new Date(prevMessage.createdAt).getTime() < 300000;
+          const isCompact = Boolean(
+            isSameAuthor
+            && isWithinTimeLimit
+            && !prevMessage.deleted
+            && !message.fileUrl
+            && !prevMessage.isSystem
+            && !message.isSystem,
+          );
+
+          return (
+            <div
+              key={message.id}
+              data-index={virtualRow.index}
+              ref={(element) => registerRowElement(element, message.id)}
+              className="absolute left-0 top-0 w-full flow-root"
+              style={{ transform: `translateY(${virtualRow.start}px)` }}
+            >
+              <ChatItem
+                id={message.id}
+                currentMember={member}
+                member={message.member}
+                content={message.content}
+                fileUrl={message.fileUrl || null}
+                deleted={message.deleted}
+                timestamp={format(new Date(message.createdAt), DATE_FORMAT)}
+                compactTime={format(new Date(message.createdAt), TIME_FORMAT)}
+                channelId={paramKey === "channelId" ? paramValue : undefined}
+                conversationId={paramKey === "conversationId" ? paramValue : undefined}
+                compact={isCompact}
+                isSystem={message.isSystem}
+                onContentSizeChange={getRemeasureCallback(message.id)}
+              />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };

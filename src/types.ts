@@ -48,6 +48,8 @@ export interface Message {
   isSystem?: boolean;
   createdAt: string;
   updatedAt: string;
+  /** Byte offset in the native log (windowed pagination). */
+  offset?: number;
 }
 
 export interface DirectMessage {
@@ -61,17 +63,23 @@ export interface DirectMessage {
   isSystem?: boolean;
   createdAt: string;
   updatedAt: string;
+  /** Byte offset in the native log (windowed pagination). */
+  offset?: number;
 }
 
 export interface LogEntry {
   timestamp: string;
   sender: string;
   content: string;
+  /** Byte offset of the line start in the native log file (used for windowed pagination). */
+  offset?: number;
 }
 
 export interface LogPage {
   entries: LogEntry[];
   nextOffset: number | null;
+  /** Forward-pagination cursor: offset of the last returned line (continue from here). */
+  nextAfter?: number | null;
 }
 
 export interface Conversation {
@@ -103,5 +111,7 @@ export interface Server {
 }
 
 export type ServerWithMembersWithProfiles = Server;
+
+export type StatusDisplayMode = "always" | "on_error" | "disabled";
 
 

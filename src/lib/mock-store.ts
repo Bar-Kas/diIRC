@@ -9,7 +9,8 @@ import {
   DirectMessage, 
   Profile, 
   ChannelType,
-  LogPage
+  LogPage,
+  StatusDisplayMode
 } from "@/types";
 import { 
   INITIAL_SERVERS, 
@@ -20,7 +21,7 @@ import {
 import { v4 as uuidv4 } from "uuid";
 import { ImageUploadConfig, UrlAuthRule } from "./upload/types";
 
-export const MAX_MESSAGES_IN_MEMORY = 500;
+export const MAX_MESSAGES_IN_MEMORY = 50000;
 
 const chatKey = (type: "channel" | "conversation", id: string) => `${type}:${id}`;
 
@@ -57,9 +58,13 @@ const mapLogEntries = (
     (item) => item.profile.name.toLowerCase() === entry.sender.toLowerCase()
   ) || createIrcMember(serverId, entry.sender);
   const createdAt = parseLogTimestamp(entry.timestamp);
+  const stableId = entry.offset !== undefined
+    ? `log-${serverId}-${chatId}-${entry.offset}`
+    : `log-${serverId}-${chatId}-${entry.timestamp}-${entry.sender}`;
 
   return {
-    id: `log-${uuidv4().slice(0, 12)}`,
+    id: stableId,
+    offset: entry.offset,
     content: entry.content,
     fileUrl: null,
     memberId: member.id,
@@ -96,7 +101,7 @@ export interface UpdateServerOptions {
   imageUrl?: string;
 }
 
-export type StatusDisplayMode = "always" | "on_error" | "disabled";
+export type { StatusDisplayMode };
 
 interface MockState {
   currentProfile: Profile;
@@ -108,6 +113,7 @@ interface MockState {
   historyNextOffset: number | null;
   historyHasMore: boolean;
   compactMode: boolean;
+  enableMarkdown: boolean;
   enableCommandSuggestions: boolean;
   enableLinkPreviews: boolean;
   enableWebPagePreviews: boolean;
@@ -123,6 +129,7 @@ interface MockState {
 
   // Settings Actions
   setCompactMode: (enabled: boolean) => void;
+  setEnableMarkdown: (enabled: boolean) => void;
   setEnableCommandSuggestions: (enabled: boolean) => void;
   setEnableLinkPreviews: (enabled: boolean) => void;
   setEnableWebPagePreviews: (enabled: boolean) => void;
@@ -194,6 +201,7 @@ export const useMockStore = create<MockState>()(
       },
       activeConversations: {},
       compactMode: false,
+      enableMarkdown: true,
       enableCommandSuggestions: true,
       enableLinkPreviews: true,
       enableWebPagePreviews: true,
@@ -217,6 +225,7 @@ export const useMockStore = create<MockState>()(
       setStatusDisplayMode: (mode: StatusDisplayMode) => set({ statusDisplayMode: mode }),
 
       setCompactMode: (enabled: boolean) => set({ compactMode: enabled }),
+      setEnableMarkdown: (enabled: boolean) => set({ enableMarkdown: enabled }),
       setEnableCommandSuggestions: (enabled: boolean) => set({ enableCommandSuggestions: enabled }),
       setEnableLinkPreviews: (enabled: boolean) => set({ enableLinkPreviews: enabled }),
       setEnableWebPagePreviews: (enabled: boolean) => set({ enableWebPagePreviews: enabled }),
@@ -813,8 +822,6 @@ export const useMockStore = create<MockState>()(
           historyLoadToken: requestToken,
           historyNextOffset: null,
           historyHasMore: false,
-          messages: {},
-          directMessages: {},
         });
 
         try {
@@ -828,19 +835,29 @@ export const useMockStore = create<MockState>()(
 
           const server = state.servers.find((item) => item.id === serverId);
           const messages = mapLogEntries(page.entries, server, serverId, type, chatId);
+          const currentMsgs = (type === "channel" ? state.messages[chatId] : state.directMessages[chatId]) || [];
+
+          let finalMessages = messages;
+          if (messages.length === 0) {
+            finalMessages = currentMsgs as any[];
+          } else if (currentMsgs.length > 0) {
+            const logOffsets = new Set((messages as any[]).map((m) => m.offset).filter((o) => o !== undefined));
+            const liveOnly = (currentMsgs as any[]).filter((m) => m.offset === undefined || !logOffsets.has(m.offset));
+            finalMessages = [...messages, ...liveOnly].slice(-MAX_MESSAGES_IN_MEMORY);
+          }
 
           if (type === "channel") {
-            set({
-              messages: { [chatId]: messages as Message[] },
+            set((s) => ({
+              messages: { ...s.messages, [chatId]: finalMessages as Message[] },
               historyNextOffset: page.nextOffset,
               historyHasMore: page.nextOffset !== null,
-            });
+            }));
           } else {
-            set({
-              directMessages: { [chatId]: messages as DirectMessage[] },
+            set((s) => ({
+              directMessages: { ...s.directMessages, [chatId]: finalMessages as DirectMessage[] },
               historyNextOffset: page.nextOffset,
               historyHasMore: page.nextOffset !== null,
-            });
+            }));
           }
         } catch (error) {
           console.error(`Failed to load IRC history for ${target}:`, error);
@@ -873,27 +890,31 @@ export const useMockStore = create<MockState>()(
 
           const server = current.servers.find((item) => item.id === serverId);
           const olderMessages = mapLogEntries(page.entries, server, serverId, type, chatId);
-          const currentMessages = type === "channel"
-            ? current.messages[chatId] || []
-            : current.directMessages[chatId] || [];
-          const combinedMessages = [...olderMessages, ...currentMessages].slice(-MAX_MESSAGES_IN_MEMORY);
-          const hasMore = page.nextOffset !== null && combinedMessages.length < MAX_MESSAGES_IN_MEMORY;
+          const currentMessages = (type === "channel"
+            ? current.messages[chatId]
+            : current.directMessages[chatId]) || [];
+
+          // Deduplicate older entries
+          const existingIds = new Set(currentMessages.map((m) => m.id));
+          const newOlder = olderMessages.filter((m) => !existingIds.has(m.id));
+          const combinedMessages = [...newOlder, ...currentMessages].slice(-MAX_MESSAGES_IN_MEMORY);
+          const hasMore = page.nextOffset !== null;
 
           if (type === "channel") {
-            set({
-              messages: { [chatId]: combinedMessages as Message[] },
+            set((s) => ({
+              messages: { ...s.messages, [chatId]: combinedMessages as Message[] },
               historyNextOffset: page.nextOffset,
               historyHasMore: hasMore,
-            });
+            }));
           } else {
-            set({
-              directMessages: { [chatId]: combinedMessages as DirectMessage[] },
+            set((s) => ({
+              directMessages: { ...s.directMessages, [chatId]: combinedMessages as DirectMessage[] },
               historyNextOffset: page.nextOffset,
               historyHasMore: hasMore,
-            });
+            }));
           }
 
-          return olderMessages.length > 0;
+          return newOlder.length > 0;
         } catch (error) {
           console.error(`Failed to load older IRC history for ${target}:`, error);
           return false;
@@ -926,13 +947,12 @@ export const useMockStore = create<MockState>()(
           updatedAt: new Date().toISOString(),
         };
 
-        if (get().activeChatKey === chatKey("channel", channelId)) {
-          set((state) => ({
-            messages: {
-              [channelId]: [...(state.messages[channelId] || []), newMessage].slice(-MAX_MESSAGES_IN_MEMORY),
-            },
-          }));
-        }
+        set((state) => ({
+          messages: {
+            ...state.messages,
+            [channelId]: [...(state.messages[channelId] || []), newMessage].slice(-MAX_MESSAGES_IN_MEMORY),
+          },
+        }));
 
         return newMessage;
       },
