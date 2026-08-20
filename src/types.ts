@@ -100,6 +100,8 @@ export interface Server {
   password?: string;
   useTls?: boolean;
   autoJoinChannels?: string[];
+  autoConnect?: boolean;
+  autoReconnect?: boolean;
 }
 
 export type ServerWithMembersWithProfiles = Server;

@@ -473,6 +473,8 @@ async fn connect_irc(
             }
         };
 
+        let mut last_error: Option<String> = None;
+
         while let Some(message_res) = stream.next().await {
             match message_res {
                 Ok(message) => {
@@ -644,6 +646,7 @@ async fn connect_irc(
                         }
                         Command::ERROR(ref reason) => {
                             log::error!("IRC [{}] Received ERROR: {}", stream_server_id, reason);
+                            last_error = Some(reason.clone());
                             let _ = app_clone.emit(
                                 "irc_status",
                                 IrcStatusEvent {
@@ -891,6 +894,7 @@ async fn connect_irc(
                 Err(e) => {
                     let err_msg = e.to_string();
                     log::error!("IRC [{}] Stream error: {}", stream_server_id, err_msg);
+                    last_error = Some(err_msg.clone());
                     let _ = app_clone.emit(
                         "irc_status",
                         IrcStatusEvent {
@@ -910,12 +914,13 @@ async fn connect_irc(
         senders_clone.lock().await.remove(&stream_server_id);
         nicknames_clone.lock().await.remove(&stream_server_id);
         close_server_logs(&log_state_clone, &stream_server_id).await;
+        let final_error = last_error.unwrap_or_else(|| "Stream closed".to_string());
         let _ = app_clone.emit(
             "irc_status",
             IrcStatusEvent {
                 server_id: stream_server_id,
                 connected: false,
-                error: Some("Stream closed".to_string()),
+                error: Some(final_error),
             },
         );
 

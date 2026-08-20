@@ -43,6 +43,8 @@ const formSchema = z.object({
   password: z.string().optional(),
   channels: z.array(z.object({ value: z.string() })).min(1),
   useTls: z.boolean().default(false),
+  autoConnect: z.boolean().default(true),
+  autoReconnect: z.boolean().default(true),
 });
 
 export const EditServerModal = () => {
@@ -69,6 +71,8 @@ export const EditServerModal = () => {
       password: "",
       channels: [{ value: "general" }],
       useTls: false,
+      autoConnect: true,
+      autoReconnect: true,
     }
   });
 
@@ -101,6 +105,8 @@ export const EditServerModal = () => {
         password: server.password || "",
         channels: defaultChannels,
         useTls: server.useTls ?? false,
+        autoConnect: server.autoConnect ?? true,
+        autoReconnect: server.autoReconnect ?? true,
       });
     }
   }, [server, isModalOpen, form]);
@@ -126,6 +132,8 @@ export const EditServerModal = () => {
         realname: values.realname || "",
         password: values.password || "",
         useTls: values.useTls,
+        autoConnect: values.autoConnect,
+        autoReconnect: values.autoReconnect,
         autoJoinChannels: channelArray,
       });
 
@@ -408,6 +416,52 @@ export const EditServerModal = () => {
                             form.setValue("port", 6667, { shouldDirty: true });
                           }
                         }}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="autoConnect"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-xl border border-zinc-300/80 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-3.5 shadow-sm">
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-sm font-semibold text-zinc-900 dark:text-zinc-200 cursor-pointer">
+                        Auto-connect on startup
+                      </FormLabel>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Automatically connect to this server when application starts
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="autoReconnect"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-xl border border-zinc-300/80 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-3.5 shadow-sm">
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-sm font-semibold text-zinc-900 dark:text-zinc-200 cursor-pointer">
+                        Auto-reconnect on disconnect
+                      </FormLabel>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Automatically attempt to reconnect if connection drops
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
                       />
                     </FormControl>
                   </FormItem>

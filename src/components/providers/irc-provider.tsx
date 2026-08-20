@@ -34,6 +34,8 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
   const connectedConfigsRef = useRef<Map<string, string>>(new Map());
   const connectingRef = useRef<Set<string>>(new Set());
+  const attemptsRef = useRef<Map<string, number>>(new Map());
+  const nextReconnectTimeRef = useRef<Map<string, number>>(new Map());
 
   const attemptConnect = useCallback(async (server: Server) => {
     if (connectingRef.current.has(server.id)) return;
@@ -88,10 +90,12 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     servers.forEach(async (server) => {
+      // Respect autoConnect setting on startup/config load
+      if (server.autoConnect === false) return;
+
       const nicks = server.nicknames && server.nicknames.length > 0 
         ? server.nicknames 
         : [server.nicknames?.[0] || currentProfile.name.replace(/\s+/g, "") || "ReactUser"];
-      // Channels are now joined manually after connection in the irc_status listener
 
       const configHash = JSON.stringify({
         host: server.host || "127.0.0.1",
@@ -124,15 +128,42 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     });
   }, [servers, attemptConnect, setIrcConnected]);
 
-  // Auto-reconnect loop every 5 seconds for disconnected servers
+  // Auto-reconnect loop with exponential backoff & error throttling for disconnected servers
   useEffect(() => {
     const interval = setInterval(() => {
-      const { ircConnectedServers, servers: currentServers } = useMockStore.getState();
+      const { ircConnectedServers, ircConnectionErrors, servers: currentServers } = useMockStore.getState();
+      const now = Date.now();
+
       currentServers.forEach((server) => {
-        if (!ircConnectedServers[server.id] && !connectingRef.current.has(server.id)) {
-          console.log(`Auto-reconnecting to IRC server ${server.name}...`);
-          attemptConnect(server);
+        // Skip if server auto-reconnect is disabled
+        if (server.autoReconnect === false) return;
+
+        // Skip if already connected or currently connecting
+        if (ircConnectedServers[server.id] || connectingRef.current.has(server.id)) {
+          attemptsRef.current.delete(server.id);
+          nextReconnectTimeRef.current.delete(server.id);
+          return;
         }
+
+        // Check if server is blocked by rate-limiting
+        const activeErr = ircConnectionErrors[server.id];
+        if (activeErr && (activeErr.toLowerCase().includes("too many times") || activeErr.toLowerCase().includes("rate limit"))) {
+          return;
+        }
+
+        // Backoff cooldown check
+        const nextTime = nextReconnectTimeRef.current.get(server.id) || 0;
+        if (now < nextTime) return;
+
+        const currentAttempts = attemptsRef.current.get(server.id) || 0;
+        // Exponential backoff: 15s, 30s, 60s, 120s, max 300s (5 min)
+        const backoffMs = Math.min(15000 * Math.pow(2, currentAttempts), 300000);
+
+        attemptsRef.current.set(server.id, currentAttempts + 1);
+        nextReconnectTimeRef.current.set(server.id, now + backoffMs);
+
+        console.log(`Auto-reconnecting to IRC server ${server.name} (attempt ${currentAttempts + 1}, backoff ${backoffMs / 1000}s)...`);
+        attemptConnect(server);
       });
     }, 5000);
 
@@ -278,7 +309,10 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
           (event) => {
             const { server_id, connected, error } = event.payload;
             setIrcConnected(server_id, connected, error || null);
-            if (!connected) {
+            if (connected) {
+              attemptsRef.current.delete(server_id);
+              nextReconnectTimeRef.current.delete(server_id);
+            } else {
               connectedConfigsRef.current.delete(server_id);
             }
           }

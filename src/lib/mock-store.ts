@@ -82,6 +82,8 @@ export interface AddServerOptions {
   useTls: boolean;
   autoJoinChannels?: string[];
   imageUrl?: string;
+  autoConnect?: boolean;
+  autoReconnect?: boolean;
 }
 
 export interface UpdateServerOptions {
@@ -94,6 +96,8 @@ export interface UpdateServerOptions {
   useTls: boolean;
   autoJoinChannels?: string[];
   imageUrl?: string;
+  autoConnect?: boolean;
+  autoReconnect?: boolean;
 }
 
 export type StatusDisplayMode = "always" | "on_error" | "disabled";
@@ -251,6 +255,8 @@ export const useMockStore = create<MockState>()(
         let realname = "";
         let password = "";
         let useTls = false;
+        let autoConnect = true;
+        let autoReconnect = true;
         let autoJoinChannels: string[] = ["general", "test"];
         let imageUrl = imageUrlParam || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80";
 
@@ -262,6 +268,8 @@ export const useMockStore = create<MockState>()(
           realname = optionsOrName.realname || "";
           password = optionsOrName.password || "";
           useTls = optionsOrName.useTls ?? false;
+          autoConnect = optionsOrName.autoConnect ?? true;
+          autoReconnect = optionsOrName.autoReconnect ?? true;
           if (optionsOrName.autoJoinChannels && optionsOrName.autoJoinChannels.length > 0) {
             autoJoinChannels = optionsOrName.autoJoinChannels;
           }
@@ -304,6 +312,8 @@ export const useMockStore = create<MockState>()(
           realname,
           password,
           useTls,
+          autoConnect,
+          autoReconnect,
           autoJoinChannels,
           imageUrl,
           inviteCode: `invite-${uuidv4().slice(0, 8)}`,
@@ -401,6 +411,8 @@ export const useMockStore = create<MockState>()(
                 realname: updatedRealname,
                 password: optionsOrName.password ?? s.password,
                 useTls: optionsOrName.useTls ?? s.useTls,
+                autoConnect: optionsOrName.autoConnect ?? s.autoConnect ?? true,
+                autoReconnect: optionsOrName.autoReconnect ?? s.autoReconnect ?? true,
                 autoJoinChannels: optionsOrName.autoJoinChannels || s.autoJoinChannels,
                 imageUrl: optionsOrName.imageUrl || s.imageUrl,
                 channels: updatedChannels,

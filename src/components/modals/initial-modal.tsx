@@ -37,6 +37,8 @@ const formSchema = z.object({
   password: z.string().optional(),
   channels: z.string().optional(),
   useTls: z.boolean().default(false),
+  autoConnect: z.boolean().default(true),
+  autoReconnect: z.boolean().default(true),
   imageUrl: z.string().optional()
 });
 
@@ -61,6 +63,8 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
       password: "",
       channels: "#test, #general",
       useTls: false,
+      autoConnect: true,
+      autoReconnect: true,
       imageUrl: "",
     }
   });
@@ -81,6 +85,8 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
         realname: values.realname || "",
         password: values.password || "",
         useTls: values.useTls,
+        autoConnect: values.autoConnect,
+        autoReconnect: values.autoReconnect,
         autoJoinChannels: channelArray,
         imageUrl: values.imageUrl || "",
       });
