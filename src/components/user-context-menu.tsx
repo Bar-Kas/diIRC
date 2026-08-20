@@ -23,12 +23,10 @@ interface UserContextMenuProps {
   children: React.ReactNode;
 }
 
-export const UserContextMenu: React.FC<UserContextMenuProps> = ({
-  member,
-  server,
-  channel,
-  children,
-}) => {
+export const UserContextMenu = React.forwardRef<
+  HTMLDivElement,
+  UserContextMenuProps & React.HTMLAttributes<HTMLDivElement>
+>(({ member, server, channel, children, ...props }, ref) => {
   const navigate = useNavigate();
   const currentProfile = useMockStore((state) => state.currentProfile);
   const servers = useMockStore((state) => state.servers);
@@ -157,7 +155,9 @@ export const UserContextMenu: React.FC<UserContextMenuProps> = ({
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuTrigger ref={ref} asChild {...props}>
+        {children}
+      </ContextMenuTrigger>
       <ContextMenuContent className="w-52 select-none">
         {!isSelf && activeServer && (
           <>
@@ -229,4 +229,7 @@ export const UserContextMenu: React.FC<UserContextMenuProps> = ({
       </ContextMenuContent>
     </ContextMenu>
   );
-};
+});
+
+UserContextMenu.displayName = "UserContextMenu";
+

@@ -89,11 +89,11 @@ export const UserHoverCard = ({
 
   return (
     <HoverCard openDelay={150} closeDelay={300}>
-      <HoverCardTrigger asChild>
-        <UserContextMenu member={member} server={activeServer} channel={activeChannel}>
+      <UserContextMenu member={member} server={activeServer} channel={activeChannel}>
+        <HoverCardTrigger asChild>
           {children}
-        </UserContextMenu>
-      </HoverCardTrigger>
+        </HoverCardTrigger>
+      </UserContextMenu>
       <HoverCardContent
         side={side}
         align={align}
