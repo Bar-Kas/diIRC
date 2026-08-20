@@ -113,6 +113,7 @@ interface MockState {
   historyNextOffset: number | null;
   historyHasMore: boolean;
   compactMode: boolean;
+  confirmLeaveChannel: boolean;
   enableCommandSuggestions: boolean;
   enableLinkPreviews: boolean;
   enableWebPagePreviews: boolean;
@@ -129,6 +130,7 @@ interface MockState {
 
   // Settings Actions
   setCompactMode: (enabled: boolean) => void;
+  setConfirmLeaveChannel: (enabled: boolean) => void;
   setEnableCommandSuggestions: (enabled: boolean) => void;
   setEnableLinkPreviews: (enabled: boolean) => void;
   setEnableWebPagePreviews: (enabled: boolean) => void;
@@ -208,6 +210,7 @@ export const useMockStore = create<MockState>()(
       },
       activeConversations: {},
       compactMode: false,
+      confirmLeaveChannel: true,
       enableCommandSuggestions: true,
       enableLinkPreviews: true,
       enableWebPagePreviews: true,
@@ -236,6 +239,7 @@ export const useMockStore = create<MockState>()(
       setStatusDisplayMode: (mode: StatusDisplayMode) => set({ statusDisplayMode: mode }),
 
       setCompactMode: (enabled: boolean) => set({ compactMode: enabled }),
+      setConfirmLeaveChannel: (enabled: boolean) => set({ confirmLeaveChannel: enabled }),
       setEnableCommandSuggestions: (enabled: boolean) => set({ enableCommandSuggestions: enabled }),
       setEnableLinkPreviews: (enabled: boolean) => set({ enableLinkPreviews: enabled }),
       setEnableWebPagePreviews: (enabled: boolean) => set({ enableWebPagePreviews: enabled }),

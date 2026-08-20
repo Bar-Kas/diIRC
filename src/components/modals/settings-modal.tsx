@@ -25,7 +25,8 @@ import {
   Trash2, 
   ShieldCheck,
   Activity,
-  Command
+  Command,
+  LogOut
 } from "lucide-react";
 import { StatusDisplayMode } from "@/lib/mock-store";
 
@@ -33,6 +34,9 @@ export const SettingsModal = () => {
   const { isOpen, onClose, type } = useModal();
   const compactMode = useMockStore((state) => state.compactMode);
   const setCompactMode = useMockStore((state) => state.setCompactMode);
+
+  const confirmLeaveChannel = useMockStore((state) => state.confirmLeaveChannel ?? true);
+  const setConfirmLeaveChannel = useMockStore((state) => state.setConfirmLeaveChannel);
 
   const enableCommandSuggestions = useMockStore((state) => state.enableCommandSuggestions ?? true);
   const setEnableCommandSuggestions = useMockStore((state) => state.setEnableCommandSuggestions);
@@ -116,6 +120,25 @@ export const SettingsModal = () => {
             <Switch
               checked={compactMode}
               onCheckedChange={(checked) => setCompactMode(checked)}
+            />
+          </div>
+
+          {/* Confirm Before Leaving Channel */}
+          <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
+            <div className="space-y-0.5 pr-4">
+              <div className="flex items-center gap-x-2">
+                <LogOut className="w-4 h-4 text-rose-500 dark:text-rose-400" />
+                <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 cursor-pointer">
+                  Confirm before leaving channel
+                </label>
+              </div>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                Show a confirmation dialog when leaving a channel.
+              </p>
+            </div>
+            <Switch
+              checked={confirmLeaveChannel}
+              onCheckedChange={(checked) => setConfirmLeaveChannel(checked)}
             />
           </div>
 
