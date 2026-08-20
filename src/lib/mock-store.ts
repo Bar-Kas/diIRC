@@ -349,6 +349,7 @@ export const useMockStore = create<MockState>()(
                   })
                 : s.channels;
 
+              const updatedRealname = optionsOrName.realname ?? s.realname;
               const updatedMembers = s.members.map((m) => {
                 if (m.profileId === get().currentProfile.id || m.id.startsWith("member-")) {
                   return {
@@ -356,6 +357,7 @@ export const useMockStore = create<MockState>()(
                     profile: {
                       ...m.profile,
                       name: primaryNick,
+                      realname: updatedRealname,
                     },
                   };
                 }
@@ -374,6 +376,7 @@ export const useMockStore = create<MockState>()(
                           profile: {
                             ...msg.member.profile,
                             name: primaryNick,
+                            realname: updatedRealname,
                           },
                         },
                       };
@@ -389,7 +392,7 @@ export const useMockStore = create<MockState>()(
                 host: optionsOrName.host || s.host,
                 port: optionsOrName.port || s.port,
                 nicknames: newNicknames,
-                realname: optionsOrName.realname ?? s.realname,
+                realname: updatedRealname,
                 password: optionsOrName.password ?? s.password,
                 useTls: optionsOrName.useTls ?? s.useTls,
                 autoJoinChannels: optionsOrName.autoJoinChannels || s.autoJoinChannels,

@@ -44,10 +44,13 @@ export const EditServerModal = () => {
   const updateServer = useMockStore((state) => state.updateServer);
 
   const isModalOpen = isOpen && type === "editServer";
-  const { server } = data;
+  const { server: initialServer } = data;
 
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [pendingValues, setPendingValues] = useState<z.infer<typeof formSchema> | null>(null);
+  const server = useMockStore((state) =>
+    state.servers.find((s) => s.id === initialServer?.id)
+  ) || initialServer;
+
+  const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -56,6 +59,7 @@ export const EditServerModal = () => {
       host: "127.0.0.1",
       port: 6667,
       nicknames: [{ value: "ReactUser" }],
+      realname: "",
       password: "",
       channels: [{ value: "general" }],
       useTls: false,
@@ -97,55 +101,40 @@ export const EditServerModal = () => {
 
   const isLoading = form.formState.isSubmitting;
 
-  const onFormSubmit = (values: z.infer<typeof formSchema>) => {
-    // Only prompt confirmation if changes were actually made
-    if (!form.formState.isDirty) {
-      form.reset();
-      onClose();
-      return;
-    }
-
-    setPendingValues(values);
-    setConfirmOpen(true);
-  };
-
-  const handleConfirmSave = async () => {
-    if (!pendingValues) return;
+  const saveServer = async (values: z.infer<typeof formSchema>) => {
+    if (!server?.id) return;
     try {
-      if (server?.id) {
-        const channelArray = pendingValues.channels
-          .map(c => c.value.trim().replace(/^#/, ""))
-          .filter(Boolean);
+      const channelArray = values.channels
+        .map(c => c.value.trim().replace(/^#/, ""))
+        .filter(Boolean);
 
-        const nickArray = pendingValues.nicknames
-          .map(n => n.value.trim())
-          .filter(Boolean);
+      const nickArray = values.nicknames
+        .map(n => n.value.trim())
+        .filter(Boolean);
 
-        updateServer(server.id, {
-          name: pendingValues.name,
-          host: pendingValues.host,
-          port: pendingValues.port,
-          nicknames: nickArray,
-          realname: pendingValues.realname || "",
-          password: pendingValues.password || "",
-          useTls: pendingValues.useTls,
-          autoJoinChannels: channelArray,
-        });
+      updateServer(server.id, {
+        name: values.name,
+        host: values.host,
+        port: values.port,
+        nicknames: nickArray,
+        realname: values.realname || "",
+        password: values.password || "",
+        useTls: values.useTls,
+        autoJoinChannels: channelArray,
+      });
 
-        // Join the channels on IRC in case new ones were added
-        for (const channel of channelArray) {
-          try {
-            await invoke("join_channel", {
-              serverId: server.id,
-              channel
-            });
-          } catch (e) {
-            console.error(`Failed to join channel ${channel} on IRC:`, e);
-          }
+      // Join the channels on IRC in case new ones were added
+      for (const channel of channelArray) {
+        try {
+          await invoke("join_channel", {
+            serverId: server.id,
+            channel
+          });
+        } catch (e) {
+          console.error(`Failed to join channel ${channel} on IRC:`, e);
         }
       }
-      setConfirmOpen(false);
-      setPendingValues(null);
+      setConfirmCloseOpen(false);
       form.reset();
       onClose();
     } catch (error) {
@@ -153,16 +142,27 @@ export const EditServerModal = () => {
     }
   };
 
-  const handleClose = () => {
-    setConfirmOpen(false);
-    setPendingValues(null);
+  const onFormSubmit = async (values: z.infer<typeof formSchema>) => {
+    await saveServer(values);
+  };
+
+  const handleAttemptClose = () => {
+    if (form.formState.isDirty) {
+      setConfirmCloseOpen(true);
+    } else {
+      handleForceClose();
+    }
+  };
+
+  const handleForceClose = () => {
+    setConfirmCloseOpen(false);
     form.reset();
     onClose();
   };
 
   return (
     <>
-      <Dialog open={isModalOpen} onOpenChange={handleClose}>
+      <Dialog open={isModalOpen} onOpenChange={handleAttemptClose}>
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
           className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden max-w-md max-h-[90vh] flex flex-col border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl"
@@ -412,7 +412,7 @@ export const EditServerModal = () => {
                 <Button
                   type="button"
                   variant="ghost"
-                  onClick={handleClose}
+                  onClick={handleAttemptClose}
                   disabled={isLoading}
                   className="text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white"
                 >
@@ -427,37 +427,51 @@ export const EditServerModal = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Confirmation Modal */}
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      {/* Unsaved Changes Confirmation Modal */}
+      <Dialog open={confirmCloseOpen} onOpenChange={setConfirmCloseOpen}>
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden max-w-sm border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl z-[60]"
+          className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden max-w-sm border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-2xl z-[60] animate-in fade-in-0 zoom-in-95 duration-200"
         >
-          <DialogHeader className="pt-6 px-6 space-y-2">
-            <DialogTitle className="text-xl text-center font-bold text-zinc-900 dark:text-zinc-100">
-              Are you sure you want to save changes?
-            </DialogTitle>
-            <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400 text-sm">
-              The changes made to server settings for <span className="font-semibold text-indigo-600 dark:text-indigo-400">{server?.name}</span> will be saved.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 px-6 py-4 flex items-center justify-between mt-4">
+          <div className="pt-6 px-6 flex flex-col items-center text-center space-y-3">
+            <div className="w-12 h-12 rounded-full bg-amber-500/10 dark:bg-amber-500/20 text-amber-500 flex items-center justify-center border border-amber-500/20 shadow-inner animate-pulse">
+              <Plus className="w-6 h-6 rotate-45" />
+            </div>
+            <DialogHeader className="space-y-1">
+              <DialogTitle className="text-xl font-bold text-zinc-900 dark:text-zinc-100 text-center">
+                Unsaved changes
+              </DialogTitle>
+              <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400 text-xs sm:text-sm leading-relaxed">
+                You have unsaved changes to server settings for <span className="font-semibold text-indigo-600 dark:text-indigo-400">{server?.name}</span>. Do you want to save them before exiting?
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <DialogFooter className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 px-6 py-4 flex items-center justify-end gap-x-2 mt-4">
             <Button
               type="button"
               variant="ghost"
-              onClick={() => setConfirmOpen(false)}
+              onClick={() => setConfirmCloseOpen(false)}
               disabled={isLoading}
-              className="text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white"
+              className="text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white text-xs font-medium transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
             >
               Cancel
             </Button>
             <Button
               type="button"
-              onClick={handleConfirmSave}
+              variant="outline"
+              onClick={handleForceClose}
               disabled={isLoading}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 shadow-sm"
+              className="border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-rose-50 dark:hover:bg-rose-950/30 hover:text-rose-600 dark:hover:text-rose-400 text-xs font-medium transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
             >
-              Yes, save
+              Discard changes
+            </Button>
+            <Button
+              type="button"
+              onClick={form.handleSubmit(saveServer)}
+              disabled={isLoading}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 shadow-sm text-xs transition-all duration-150 hover:scale-[1.02] active:scale-[0.98]"
+            >
+              Save changes
             </Button>
           </DialogFooter>
         </DialogContent>
