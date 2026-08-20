@@ -39,6 +39,7 @@ interface ModalStore {
   type: ModalType | null;
   data: ModalData;
   isOpen: boolean;
+  errorData: ModalData | null;
   onOpen: (type: ModalType, data?: ModalData) => void;
   onClose: (closingType?: ModalType | unknown) => void;
 }
@@ -47,13 +48,23 @@ export const useModal = create<ModalStore>((set) => ({
   type: null,
   data: {},
   isOpen: false,
-  onOpen: (type, data = {}) => set({ isOpen: true, type, data }),
+  errorData: null,
+  onOpen: (type, data = {}) => {
+    if (type === "ircError") {
+      set({ errorData: data });
+    } else {
+      set({ isOpen: true, type, data });
+    }
+  },
   onClose: (closingType?: ModalType | unknown) =>
     set((state) => {
+      if (closingType === "ircError") {
+        return { errorData: null };
+      }
       if (typeof closingType === "string" && state.type && state.type !== closingType) {
         return state;
       }
-      return { type: null, isOpen: false, data: {} };
+      return { type: null, isOpen: false, data: {}, errorData: null };
     }),
 }));
 

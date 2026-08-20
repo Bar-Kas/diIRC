@@ -125,7 +125,7 @@ export const ChannelOperatorSettingsModal = () => {
   };
 
   const handleToggleFlag = async (flag: string, enable: boolean) => {
-    if (!server?.id || !channel?.name) return;
+    if (!server?.id || !channel?.name || !channel?.id) return;
 
     try {
       setTogglingFlags((prev) => ({ ...prev, [flag]: true }));
@@ -141,10 +141,31 @@ export const ChannelOperatorSettingsModal = () => {
         params: null,
       });
 
-      updateChannelModes(server.id, channel.name, modeCmd);
+      // Wait briefly for server response (RPL_CHANNELMODEIS / MODE / error)
+      await new Promise((res) => setTimeout(res, 350));
+
+      const updatedModes = useMockStore.getState().channelModes[channel.id] || [];
+      const isNowActive = updatedModes.includes(flag);
+
+      if (enable && !isNowActive) {
+        useModal.getState().onOpen("ircError", {
+          title: "Channel mode not set",
+          description: `The IRC server did not set mode +${flag} on ${chanTarget}. This mode flag may require additional parameters or may not be supported by this server.`,
+        });
+      } else if (!enable && isNowActive) {
+        useModal.getState().onOpen("ircError", {
+          title: "Channel mode not removed",
+          description: `The IRC server did not remove mode -${flag} on ${chanTarget}.`,
+        });
+      }
     } catch (err: any) {
       console.error(`Failed to toggle flag ${flag}:`, err);
-      setErrorMessage(err?.toString() || "Failed to update channel mode. Make sure you are channel operator.");
+      const errText = err?.toString() || "Failed to update channel mode. Make sure you are channel operator.";
+      setErrorMessage(errText);
+      useModal.getState().onOpen("ircError", {
+        title: "Channel mode error",
+        description: `Failed to set flag ${enable ? "+" : "-"}${flag}: ${errText}`,
+      });
     } finally {
       setTogglingFlags((prev) => ({ ...prev, [flag]: false }));
     }
@@ -169,7 +190,12 @@ export const ChannelOperatorSettingsModal = () => {
       updateChannelKey(server.id, channel.id, trimmedKey);
     } catch (err: any) {
       console.error("Failed to set channel password:", err);
-      setErrorMessage(err?.toString() || "Failed to set password. Make sure you are channel operator.");
+      const errText = err?.toString() || "Failed to set password. Make sure you are channel operator.";
+      setErrorMessage(errText);
+      useModal.getState().onOpen("ircError", {
+        title: "Channel mode error",
+        description: errText,
+      });
     } finally {
       setIsPasswordLoading(false);
     }
@@ -192,7 +218,12 @@ export const ChannelOperatorSettingsModal = () => {
       setPassword("");
     } catch (err: any) {
       console.error("Failed to remove channel password:", err);
-      setErrorMessage(err?.toString() || "Failed to remove password. Make sure you are channel operator.");
+      const errText = err?.toString() || "Failed to remove password. Make sure you are channel operator.";
+      setErrorMessage(errText);
+      useModal.getState().onOpen("ircError", {
+        title: "Channel mode error",
+        description: errText,
+      });
     } finally {
       setIsPasswordLoading(false);
     }

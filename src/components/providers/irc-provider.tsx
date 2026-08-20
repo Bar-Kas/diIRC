@@ -513,11 +513,11 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     let unlistenModeFn: (() => void) | null = null;
     const setupModeListener = async () => {
       try {
-        const unlistenMode = await listen<{ server_id: string; channel: string; modes: string; set_by?: string }>(
+        const unlistenMode = await listen<{ server_id: string; channel: string; modes: string; set_by?: string; is_full_listing?: boolean }>(
           "irc_mode_event",
           (event) => {
-            const { server_id, channel, modes } = event.payload;
-            useMockStore.getState().updateChannelModes(server_id, channel, modes);
+            const { server_id, channel, modes, is_full_listing } = event.payload;
+            useMockStore.getState().updateChannelModes(server_id, channel, modes, is_full_listing);
           }
         );
 
@@ -532,6 +532,44 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     setupModeListener();
+
+    let unlistenModeErrorFn: (() => void) | null = null;
+    const setupModeErrorListener = async () => {
+      try {
+        const unlistenModeError = await listen<{ server_id: string; channel: string; error: string }>(
+          "irc_mode_error",
+          (event) => {
+            const { server_id, channel, error } = event.payload;
+            const chanName = channel ? (channel.startsWith("#") || channel.startsWith("&") ? channel : `#${channel}`) : "this channel";
+
+            if (server_id && channel) {
+              const chanTarget = channel.startsWith("#") || channel.startsWith("&") ? channel : `#${channel}`;
+              invoke("send_mode", {
+                serverId: server_id,
+                target: chanTarget,
+                mode: null,
+                params: null,
+              }).catch(() => {});
+            }
+
+            useModalStore.getState().onOpen("ircError", {
+              title: "Channel mode error",
+              description: `Cannot set mode on ${chanName}: ${error || "Server does not support this mode flag or permission was denied."}`,
+            });
+          }
+        );
+
+        if (isCancelled) {
+          unlistenModeError();
+        } else {
+          unlistenModeErrorFn = unlistenModeError;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC mode error listener:", error);
+      }
+    };
+
+    setupModeErrorListener();
 
     return () => {
       isCancelled = true;
@@ -564,6 +602,9 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
       }
       if (unlistenModeFn) {
         unlistenModeFn();
+      }
+      if (unlistenModeErrorFn) {
+        unlistenModeErrorFn();
       }
     };
   }, [addMessage, addServerMember, removeServerMember, setIrcConnected]);

@@ -56,6 +56,7 @@ struct IrcModeEvent {
     channel: String,
     modes: String,
     set_by: Option<String>,
+    is_full_listing: Option<bool>,
 }
 
 #[derive(Serialize, Clone)]
@@ -74,6 +75,13 @@ struct IrcBadChannelKeyEvent {
 
 #[derive(Serialize, Clone)]
 struct IrcInviteOnlyEvent {
+    server_id: String,
+    channel: String,
+    error: String,
+}
+
+#[derive(Serialize, Clone)]
+struct IrcModeErrorEvent {
     server_id: String,
     channel: String,
     error: String,
@@ -698,9 +706,16 @@ async fn connect_irc(
                             let err_payload = IrcTopicErrorEvent {
                                 server_id: stream_server_id.clone(),
                                 channel: channel.clone(),
-                                error: reason,
+                                error: reason.clone(),
                             };
                             let _ = app_clone.emit("irc_topic_error", err_payload);
+
+                            let mode_err_payload = IrcModeErrorEvent {
+                                server_id: stream_server_id.clone(),
+                                channel: channel.clone(),
+                                error: format!("Permission Denied: {}", reason),
+                            };
+                            let _ = app_clone.emit("irc_mode_error", mode_err_payload);
 
                             if !channel.is_empty() {
                                 if let Some(s) = senders_clone.lock().await.get(&stream_server_id) {
@@ -725,6 +740,50 @@ async fn connect_irc(
                                 is_system: true,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
+                        }
+                        Command::Response(Response::ERR_UNKNOWNMODE, ref args) => {
+                            let mode_flag = args.get(1).cloned().unwrap_or_default();
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| format!("Unknown mode flag '{}'", mode_flag));
+                            let err_msg = format!("Unknown mode flag '{}': {}", mode_flag, reason);
+
+                            let msg_payload = IrcMessage {
+                                server_id: stream_server_id.clone(),
+                                sender: "System".to_string(),
+                                content: format!("Mode error: {}", err_msg),
+                                channel: channel.clone(),
+                                is_system: true,
+                            };
+                            let _ = app_clone.emit("irc_message", msg_payload);
+
+                            let err_payload = IrcModeErrorEvent {
+                                server_id: stream_server_id.clone(),
+                                channel,
+                                error: err_msg,
+                            };
+                            let _ = app_clone.emit("irc_mode_error", err_payload);
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "472" => {
+                            let mode_flag = args.get(1).cloned().unwrap_or_default();
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| format!("Unknown mode flag '{}'", mode_flag));
+                            let err_msg = format!("Unknown mode flag '{}': {}", mode_flag, reason);
+
+                            let msg_payload = IrcMessage {
+                                server_id: stream_server_id.clone(),
+                                sender: "System".to_string(),
+                                content: format!("Mode error: {}", err_msg),
+                                channel: channel.clone(),
+                                is_system: true,
+                            };
+                            let _ = app_clone.emit("irc_message", msg_payload);
+
+                            let err_payload = IrcModeErrorEvent {
+                                server_id: stream_server_id.clone(),
+                                channel,
+                                error: err_msg,
+                            };
+                            let _ = app_clone.emit("irc_mode_error", err_payload);
                         }
                         Command::Response(Response::ERR_BADCHANNELKEY, ref args) => {
                             let channel = args
@@ -844,6 +903,13 @@ async fn connect_irc(
                                 is_system: true,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
+
+                            let mode_err_payload = IrcModeErrorEvent {
+                                server_id: stream_server_id.clone(),
+                                channel: "".to_string(),
+                                error: format!("Permission Denied: {}", reason),
+                            };
+                            let _ = app_clone.emit("irc_mode_error", mode_err_payload);
                         }
                         Command::Response(Response::ERR_NOCHANMODES, ref args) => {
                             let channel = args.get(1).cloned().unwrap_or_default();
@@ -851,11 +917,37 @@ async fn connect_irc(
                             let msg_payload = IrcMessage {
                                 server_id: stream_server_id.clone(),
                                 sender: "System".to_string(),
-                                content: format!("Cannot set topic on {}: {}", channel, reason),
-                                channel,
+                                content: format!("Cannot set mode on {}: {}", channel, reason),
+                                channel: channel.clone(),
                                 is_system: true,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
+
+                            let mode_err_payload = IrcModeErrorEvent {
+                                server_id: stream_server_id.clone(),
+                                channel,
+                                error: reason,
+                            };
+                            let _ = app_clone.emit("irc_mode_error", mode_err_payload);
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "477" => {
+                            let channel = args.get(1).cloned().unwrap_or_default();
+                            let reason = args.get(2).cloned().unwrap_or_else(|| "Channel doesn't support modes".to_string());
+                            let msg_payload = IrcMessage {
+                                server_id: stream_server_id.clone(),
+                                sender: "System".to_string(),
+                                content: format!("Cannot set mode on {}: {}", channel, reason),
+                                channel: channel.clone(),
+                                is_system: true,
+                            };
+                            let _ = app_clone.emit("irc_message", msg_payload);
+
+                            let mode_err_payload = IrcModeErrorEvent {
+                                server_id: stream_server_id.clone(),
+                                channel,
+                                error: reason,
+                            };
+                            let _ = app_clone.emit("irc_mode_error", mode_err_payload);
                         }
                         Command::Response(Response::RPL_TOPIC, ref args) => {
                             if args.len() >= 3 {
@@ -919,6 +1011,7 @@ async fn connect_irc(
                                     channel: channel.to_string(),
                                     modes: modes_str,
                                     set_by: None,
+                                    is_full_listing: Some(true),
                                 };
                                 let _ = app_clone.emit("irc_mode_event", mode_payload);
                             }
@@ -985,6 +1078,7 @@ async fn connect_irc(
                                 channel: channel.clone(),
                                 modes: modes_str,
                                 set_by: Some(sender_name),
+                                is_full_listing: Some(false),
                             };
                             let _ = app_clone.emit("irc_mode_event", mode_payload);
                         }
@@ -1015,6 +1109,7 @@ async fn connect_irc(
                                     channel: target.clone(),
                                     modes: modes_str,
                                     set_by: Some(sender_name),
+                                    is_full_listing: Some(false),
                                 };
                                 let _ = app_clone.emit("irc_mode_event", mode_payload);
                             }
@@ -1037,6 +1132,7 @@ async fn connect_irc(
                                     channel: channel.to_string(),
                                     modes: modes_str,
                                     set_by: None,
+                                    is_full_listing: Some(true),
                                 };
                                 let _ = app_clone.emit("irc_mode_event", mode_payload);
                             }

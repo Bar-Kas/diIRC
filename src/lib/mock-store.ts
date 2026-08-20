@@ -170,7 +170,7 @@ interface MockState {
   channelModes: Record<string, string[]>;
   updateChannelMembers: (serverId: string, channelName: string, users: string[], eventType: "NAMES" | "JOIN" | "PART" | "QUIT") => void;
   updateChannelOps: (serverId: string, channelName: string, ops: string[]) => void;
-  updateChannelModes: (serverId: string, channelName: string, modeString: string) => void;
+  updateChannelModes: (serverId: string, channelName: string, modeString: string, isFullListing?: boolean) => void;
 
   // Message Actions
   loadChatHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<void>;
@@ -790,7 +790,7 @@ export const useMockStore = create<MockState>()(
         });
       },
 
-      updateChannelModes: (serverId, channelName, modeString) => {
+      updateChannelModes: (serverId, channelName, modeString, isFullListing = false) => {
         const cleanChan = channelName ? channelName.trim().replace(/^#/, "").toLowerCase() : "";
         if (!cleanChan || !modeString) return;
 
@@ -805,7 +805,7 @@ export const useMockStore = create<MockState>()(
           if (!targetChannel) return state;
 
           const chId = targetChannel.id;
-          const currentFlags = new Set(state.channelModes[chId] || []);
+          const currentFlags = isFullListing ? new Set<string>() : new Set(state.channelModes[chId] || []);
           const existingOps = state.channelOps[chId] || [];
           const currentUserModes = { ...(state.channelUserModes[chId] || {}) };
 
@@ -874,7 +874,7 @@ export const useMockStore = create<MockState>()(
                     } else {
                       currentFlags.delete("l");
                     }
-                  } else if (!isUserStatusMode && !isParamAlwaysMode) {
+                  } else if (!isParamAlwaysMode) {
                     if (sign === "+") {
                       currentFlags.add(char);
                     } else {
