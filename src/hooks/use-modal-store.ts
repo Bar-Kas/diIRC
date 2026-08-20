@@ -33,6 +33,7 @@ interface ModalData {
   title?: string;
   description?: string;
   errorMessage?: string;
+  flag?: string;
 }
 
 interface ModalStore {

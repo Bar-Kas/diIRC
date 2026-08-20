@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useMockStore } from "@/lib/mock-store";
 import { useModalStore } from "@/hooks/use-modal-store";
 import { Server, ChannelType } from "@/types";
+import { extractFlag } from "@/lib/flag-tips";
 
 interface IrcMessagePayload {
   serverId?: string;
@@ -552,9 +553,11 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               }).catch(() => {});
             }
 
+            const extractedFlag = extractFlag(error);
             useModalStore.getState().onOpen("ircError", {
               title: "Channel mode error",
               description: `Cannot set mode on ${chanName}: ${error || "Server does not support this mode flag or permission was denied."}`,
+              flag: extractedFlag || undefined,
             });
           }
         );

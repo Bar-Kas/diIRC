@@ -15,13 +15,14 @@ import { Switch } from "@/components/ui/switch";
 import { useMockStore } from "@/lib/mock-store";
 import { inviteUserToChannel } from "@/lib/irc-actions";
 
-interface FlagConfig {
+export interface FlagConfig {
   flag: string;
   label: string;
   description: string;
+  tip?: string;
 }
 
-const CHANNEL_FLAGS: FlagConfig[] = [
+export const CHANNEL_FLAGS: FlagConfig[] = [
   {
     flag: "i",
     label: "Invite only (+i)",
@@ -46,6 +47,7 @@ const CHANNEL_FLAGS: FlagConfig[] = [
     flag: "p",
     label: "Private channel (+p)",
     description: "Hides channel from public channel listings",
+    tip: "Many IRC servers do not support private channel (+p). Try using secret channel (+s) instead.",
   },
   {
     flag: "s",
@@ -56,16 +58,7 @@ const CHANNEL_FLAGS: FlagConfig[] = [
     flag: "a",
     label: "Anonymous channel (+a)",
     description: "Hides user nicknames in channel messages",
-  },
-  {
-    flag: "q",
-    label: "Quiet channel (+q)",
-    description: "Suppresses join, part, and quit announcements",
-  },
-  {
-    flag: "r",
-    label: "Registered only (+r)",
-    description: "Only registered and authenticated users can join",
+    tip: "Anonymous channel (+a) is not supported by all IRC servers.",
   },
 ];
 
@@ -163,11 +156,13 @@ export const ChannelOperatorSettingsModal = () => {
         useModal.getState().onOpen("ircError", {
           title: "Channel mode not set",
           description: `The IRC server did not set mode +${flag} on ${chanTarget}. This mode flag may require additional parameters or may not be supported by this server.`,
+          flag,
         });
       } else if (!enable && isNowActive) {
         useModal.getState().onOpen("ircError", {
           title: "Channel mode not removed",
           description: `The IRC server did not remove mode -${flag} on ${chanTarget}.`,
+          flag,
         });
       }
     } catch (err: any) {
@@ -177,6 +172,7 @@ export const ChannelOperatorSettingsModal = () => {
       useModal.getState().onOpen("ircError", {
         title: "Channel mode error",
         description: `Failed to set flag ${enable ? "+" : "-"}${flag}: ${errText}`,
+        flag,
       });
     } finally {
       setTogglingFlags((prev) => ({ ...prev, [flag]: false }));

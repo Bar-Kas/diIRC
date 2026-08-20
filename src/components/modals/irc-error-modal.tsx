@@ -6,8 +6,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useModal } from "@/hooks/use-modal-store";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getFlagTip } from "@/lib/flag-tips";
 
 export const IrcErrorModal = () => {
   const { isOpen, onClose, type, data, errorData } = useModal();
@@ -20,6 +21,8 @@ export const IrcErrorModal = () => {
     activeData.description ||
     activeData.errorMessage ||
     "Cannot send message because you are disconnected from the IRC server. Please check your connection and try again.";
+
+  const flagTip = getFlagTip(activeData.flag, description);
 
   const handleClose = () => {
     onClose("ircError");
@@ -37,6 +40,19 @@ export const IrcErrorModal = () => {
             {description}
           </DialogDescription>
         </DialogHeader>
+
+        {flagTip && (
+          <div className="mx-6 mt-4 p-3.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-900 dark:text-blue-200 flex items-start gap-x-3 text-xs leading-relaxed">
+            <Lightbulb className="w-4 h-4 shrink-0 text-blue-500 dark:text-blue-400 mt-0.5" />
+            <div>
+              <span className="font-semibold block mb-0.5 text-blue-600 dark:text-blue-400">
+                Tip
+              </span>
+              {flagTip.tip}
+            </div>
+          </div>
+        )}
+
         <div className="p-6 flex justify-center mt-2">
           <Button onClick={handleClose} variant="primary" className="w-full">
             Got it
