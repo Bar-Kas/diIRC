@@ -94,6 +94,10 @@ export const UserContextMenu: React.FC<UserContextMenuProps> = ({
       });
     } catch (err) {
       console.error("Failed to toggle op via context menu:", err);
+      invoke("refresh_channel_names", {
+        serverId: activeServer.id,
+        channel: channelTarget,
+      }).catch(() => {});
     }
   };
 
@@ -115,6 +119,10 @@ export const UserContextMenu: React.FC<UserContextMenuProps> = ({
       });
     } catch (err) {
       console.error("Failed to toggle voice via context menu:", err);
+      invoke("refresh_channel_names", {
+        serverId: activeServer.id,
+        channel: channelTarget,
+      }).catch(() => {});
     }
   };
 

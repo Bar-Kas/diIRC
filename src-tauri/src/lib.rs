@@ -666,7 +666,7 @@ async fn connect_irc(
                             let msg_payload = IrcMessage {
                                 server_id: stream_server_id.clone(),
                                 sender: "System".to_string(),
-                                content: format!("Cannot change topic on {}: {}", channel, reason),
+                                content: format!("Permission Denied: {}", reason),
                                 channel: channel.clone(),
                                 is_system: true,
                             };
@@ -674,10 +674,21 @@ async fn connect_irc(
 
                             let err_payload = IrcTopicErrorEvent {
                                 server_id: stream_server_id.clone(),
-                                channel,
+                                channel: channel.clone(),
                                 error: reason,
                             };
                             let _ = app_clone.emit("irc_topic_error", err_payload);
+
+                            if !channel.is_empty() {
+                                if let Some(s) = senders_clone.lock().await.get(&stream_server_id) {
+                                    let formatted = if channel.starts_with('#') || channel.starts_with('&') {
+                                        channel
+                                    } else {
+                                        format!("#{}", channel)
+                                    };
+                                    let _ = s.send(Command::Raw("NAMES".to_string(), vec![formatted]));
+                                }
+                            }
                         }
                         Command::Response(Response::ERR_CANNOTSENDTOCHAN, ref args) => {
                             let channel = args.get(1).cloned().unwrap_or_default();
@@ -1293,6 +1304,27 @@ async fn disconnect_irc(
     Ok(())
 }
 
+#[tauri::command]
+async fn refresh_channel_names(
+    state: State<'_, IrcState>,
+    server_id: String,
+    channel: String,
+) -> Result<(), String> {
+    log::info!("refresh_channel_names called for server: {}, channel: {}", server_id, channel);
+    let senders = state.senders.lock().await;
+    if let Some(sender) = senders.get(&server_id) {
+        let formatted_channel = if channel.starts_with('#') || channel.starts_with('&') {
+            channel
+        } else {
+            format!("#{}", channel)
+        };
+        let _ = sender.send(Command::Raw("NAMES".to_string(), vec![formatted_channel]));
+        Ok(())
+    } else {
+        Err(format!("Not connected to server {}", server_id))
+    }
+}
+
 /// Fetches a remote image URL via the Rust backend and returns it as a base64 data URL.
 /// This bypasses Cross-Origin-Resource-Policy (CORP) and Referer-based hotlink restrictions
 /// that block image loading in the Tauri WebView.
@@ -1369,6 +1401,7 @@ pub fn run() {
             set_channel_topic,
             set_channel_key,
             send_mode,
+            refresh_channel_names,
             fetch_image_proxy
         ])
         .setup(|app| {

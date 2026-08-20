@@ -729,10 +729,36 @@ export const useMockStore = create<MockState>()(
 
           if (!targetChannel) return state;
 
+          const chId = targetChannel.id;
+          const currentUserModes = { ...(state.channelUserModes[chId] || {}) };
+          const opsSet = new Set(ops.map((o) => o.toLowerCase()));
+
+          // Sync channelUserModes 'o' mode with ops list
+          Object.keys(currentUserModes).forEach((lowerNick) => {
+            const userModes = new Set(currentUserModes[lowerNick] || []);
+            if (opsSet.has(lowerNick)) {
+              userModes.add("o");
+            } else {
+              userModes.delete("o");
+            }
+            currentUserModes[lowerNick] = Array.from(userModes);
+          });
+
+          ops.forEach((opNick) => {
+            const lower = opNick.toLowerCase();
+            const userModes = new Set(currentUserModes[lower] || []);
+            userModes.add("o");
+            currentUserModes[lower] = Array.from(userModes);
+          });
+
           return {
             channelOps: {
               ...state.channelOps,
-              [targetChannel.id]: ops,
+              [chId]: ops,
+            },
+            channelUserModes: {
+              ...state.channelUserModes,
+              [chId]: currentUserModes,
             },
           };
         });
@@ -761,71 +787,78 @@ export const useMockStore = create<MockState>()(
           const opsMap = new Map<string, string>();
           existingOps.forEach((op) => opsMap.set(op.toLowerCase(), op));
 
-          const tokens = modeString.trim().split(/\s+/);
-          const modeFlags = tokens[0] || "";
-          const modeArgs = tokens.slice(1);
+          const tokens = modeString.trim().split(/\s+/).filter(Boolean);
 
-          let argIdx = 0;
-          let sign: "+" | "-" = "+";
+          let tokenIdx = 0;
+          while (tokenIdx < tokens.length) {
+            const currentToken = tokens[tokenIdx];
 
-          for (let i = 0; i < modeFlags.length; i++) {
-            const char = modeFlags[i];
-            if (char === "+") {
-              sign = "+";
-            } else if (char === "-") {
-              sign = "-";
-            } else {
-              // User status modes: o = op, h = halfop, a = admin, q = owner, v = voice
-              if (["o", "h", "a", "q", "v"].includes(char)) {
-                const targetNick = modeArgs[argIdx++];
-                if (targetNick) {
-                  const lower = targetNick.toLowerCase();
-                  
-                  // Update channelOps (legacy)
-                  if (char !== "v") {
-                    if (sign === "+") {
-                      opsMap.set(lower, targetNick);
-                    } else {
-                      opsMap.delete(lower);
+            if (currentToken.startsWith("+") || currentToken.startsWith("-")) {
+              let sign: "+" | "-" = "+";
+              tokenIdx++;
+
+              for (let i = 0; i < currentToken.length; i++) {
+                const char = currentToken[i];
+                if (char === "+") {
+                  sign = "+";
+                } else if (char === "-") {
+                  sign = "-";
+                } else {
+                  const isUserStatusMode = ["o", "h", "a", "q", "v"].includes(char);
+                  const isParamAlwaysMode = ["k", "b", "e", "I"].includes(char);
+                  const isParamOnPlusMode = char === "l";
+
+                  const requiresArg =
+                    isUserStatusMode || isParamAlwaysMode || (isParamOnPlusMode && sign === "+");
+
+                  let targetArg: string | undefined = undefined;
+                  if (requiresArg && tokenIdx < tokens.length) {
+                    if (!tokens[tokenIdx].startsWith("+") && !tokens[tokenIdx].startsWith("-")) {
+                      targetArg = tokens[tokenIdx++];
                     }
                   }
-                  
-                  // Update channelUserModes
-                  const userModes = new Set(currentUserModes[lower] || []);
-                  if (sign === "+") {
-                    userModes.add(char);
-                  } else {
-                    userModes.delete(char);
+
+                  if (isUserStatusMode && targetArg) {
+                    const lower = targetArg.toLowerCase();
+
+                    if (["o", "h", "a", "q"].includes(char)) {
+                      if (sign === "+") {
+                        opsMap.set(lower, targetArg);
+                      } else {
+                        opsMap.delete(lower);
+                      }
+                    }
+
+                    const userModes = new Set(currentUserModes[lower] || []);
+                    if (sign === "+") {
+                      userModes.add(char);
+                    } else {
+                      userModes.delete(char);
+                    }
+                    currentUserModes[lower] = Array.from(userModes);
+                  } else if (char === "k") {
+                    if (sign === "+") {
+                      currentFlags.add("k");
+                    } else {
+                      currentFlags.delete("k");
+                    }
+                  } else if (char === "l") {
+                    if (sign === "+") {
+                      currentFlags.add("l");
+                    } else {
+                      currentFlags.delete("l");
+                    }
+                  } else if (!isUserStatusMode && !isParamAlwaysMode) {
+                    if (sign === "+") {
+                      currentFlags.add(char);
+                    } else {
+                      currentFlags.delete(char);
+                    }
                   }
-                  currentUserModes[lower] = Array.from(userModes);
-                }
-              } else if (char === "k") {
-                // Channel key / password
-                if (sign === "+") {
-                  if (argIdx < modeArgs.length) argIdx++;
-                  currentFlags.add("k");
-                } else {
-                  if (argIdx < modeArgs.length) argIdx++;
-                  currentFlags.delete("k");
-                }
-              } else if (char === "l") {
-                // Limit
-                if (sign === "+") {
-                  if (argIdx < modeArgs.length) argIdx++;
-                  currentFlags.add("l");
-                } else {
-                  currentFlags.delete("l");
-                }
-              } else if (["b", "e", "I"].includes(char)) {
-                if (argIdx < modeArgs.length) argIdx++;
-              } else {
-                // General channel flag (t, n, s, p, m, i, r, c, etc.)
-                if (sign === "+") {
-                  currentFlags.add(char);
-                } else {
-                  currentFlags.delete(char);
                 }
               }
+            } else {
+              tokenIdx++;
             }
           }
 
@@ -843,7 +876,7 @@ export const useMockStore = create<MockState>()(
             channelUserModes: {
               ...state.channelUserModes,
               [chId]: currentUserModes,
-            }
+            },
           };
         });
       },
@@ -878,26 +911,32 @@ export const useMockStore = create<MockState>()(
               const currentUserModes = { ...(updatedChannelUserModes[chId] || {}) };
 
               if (eventType === "NAMES") {
+                const newOps: string[] = [];
+                const newChannelUserModes: Record<string, string[]> = {};
+
                 const plainUsers = users.map((u) => {
                   const prefixMatch = u.match(/^([~&@%+]+)/);
                   const nick = prefixMatch ? u.substring(prefixMatch[1].length) : u;
                   const prefixes = prefixMatch ? prefixMatch[1] : "";
-                  
+
                   const modes: string[] = [];
                   if (prefixes.includes("~")) modes.push("q");
                   if (prefixes.includes("&")) modes.push("a");
                   if (prefixes.includes("@")) modes.push("o");
                   if (prefixes.includes("%")) modes.push("h");
                   if (prefixes.includes("+")) modes.push("v");
-                  
-                  if (modes.length > 0) {
-                    currentUserModes[nick.toLowerCase()] = modes;
+
+                  newChannelUserModes[nick.toLowerCase()] = modes;
+
+                  if (modes.some((m) => ["o", "h", "a", "q"].includes(m))) {
+                    newOps.push(nick);
                   }
-                  
+
                   return nick;
                 });
                 updatedChannelMembers[chId] = Array.from(new Set(plainUsers));
-                updatedChannelUserModes[chId] = currentUserModes;
+                updatedChannelUserModes[chId] = newChannelUserModes;
+                updatedChannelOps[chId] = newOps;
               } else if (eventType === "JOIN") {
                 const plainUsers = users.map((u) => u.trim().replace(/^[~&@%+]+/, ""));
                 updatedChannelMembers[chId] = Array.from(new Set([...currentUsers, ...plainUsers]));
@@ -907,7 +946,7 @@ export const useMockStore = create<MockState>()(
                 if (updatedChannelOps[chId]) {
                   updatedChannelOps[chId] = updatedChannelOps[chId].filter((u) => !toRemove.has(u.toLowerCase()));
                 }
-                users.forEach(u => delete currentUserModes[u.toLowerCase()]);
+                users.forEach((u) => delete currentUserModes[u.toLowerCase()]);
                 updatedChannelUserModes[chId] = currentUserModes;
               }
             }
@@ -928,7 +967,7 @@ export const useMockStore = create<MockState>()(
               }
               if (updatedChannelUserModes[c.id]) {
                 const newModes = { ...updatedChannelUserModes[c.id] };
-                users.forEach(u => delete newModes[u.toLowerCase()]);
+                users.forEach((u) => delete newModes[u.toLowerCase()]);
                 updatedChannelUserModes[c.id] = newModes;
               }
             });

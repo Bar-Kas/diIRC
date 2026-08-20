@@ -42,15 +42,17 @@ export const ServerChannel = ({
 
   const currentProfile = useMockStore((state) => state.currentProfile);
   const channelOpsMap = useMockStore((state) => state.channelOps);
+  const channelUserModesMap = useMockStore((state) => state.channelUserModes);
 
   const ourNick = server?.nicknames?.[0] || currentProfile.name;
   const isServerOwner = server?.profileId === currentProfile.id;
   const isChannelOwner = channel?.profileId === currentProfile.id;
 
   const channelOps = channelOpsMap[channel.id] || [];
-  const isChannelOp = channelOps.some(
-    (opNick) => opNick.toLowerCase() === ourNick.toLowerCase()
-  );
+  const ourModes = channelUserModesMap[channel.id]?.[ourNick.toLowerCase()] || [];
+  const isChannelOp =
+    channelOps.some((opNick) => opNick.toLowerCase() === ourNick.toLowerCase()) ||
+    ourModes.some((m) => ["o", "a", "q"].includes(m.toLowerCase()));
 
   const Icon = iconMap[channel.type];
 

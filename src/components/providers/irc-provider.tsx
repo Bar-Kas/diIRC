@@ -382,11 +382,16 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
         const unlistenTopicError = await listen<{ server_id: string; channel: string; error: string }>(
           "irc_topic_error",
           (event) => {
-            const { channel, error } = event.payload;
+            const { server_id, channel, error } = event.payload;
             const chanName = channel ? `#${channel.replace(/^#/, "")}` : "this channel";
+
+            if (server_id && channel) {
+              invoke("refresh_channel_names", { serverId: server_id, channel }).catch(() => {});
+            }
+
             useModalStore.getState().onOpen("ircError", {
               title: "Permission Denied",
-              description: `Cannot change topic on ${chanName}: ${error || "You do not have channel operator (@) permissions."}`,
+              description: `Cannot perform operation on ${chanName}: ${error || "You do not have channel operator (@) permissions."}`,
             });
           }
         );

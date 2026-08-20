@@ -172,6 +172,7 @@ async function sendMode(serverId: string, target: string, mode: string | null, p
     });
   } catch (err) {
     console.error("Failed to send /mode via Tauri IRC:", err);
+    invoke("refresh_channel_names", { serverId, channel: target }).catch(() => {});
   }
 }
 

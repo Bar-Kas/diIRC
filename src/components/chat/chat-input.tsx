@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useModal } from "@/hooks/use-modal-store";
 import { EmojiPicker } from "@/components/emoji-picker";
+import { Member } from "@/types";
 import { useMockStore } from "@/lib/mock-store";
 import { getHighestChannelRole } from "@/components/user-role-icon";
 import { uploadImage } from "@/lib/upload/services";
@@ -446,15 +447,23 @@ export const ChatInput = ({
         return;
       }
 
-      if (primaryNick && currentMember) {
-        currentMember = {
-          ...currentMember,
-          profile: {
-            ...currentMember.profile,
-            name: primaryNick,
-          },
-        };
-      }
+      const senderMember: Member = currentMember
+        ? {
+            ...currentMember,
+            profile: {
+              ...currentMember.profile,
+              name: primaryNick || currentMember.profile.name,
+            },
+          }
+        : {
+            id: `self-${activeServer.id}`,
+            profileId: currentProfile.id,
+            profile: {
+              ...currentProfile,
+              name: primaryNick || currentProfile.name,
+            },
+            serverId: activeServer.id,
+          };
 
       if (textContent.startsWith("/")) {
         const isHandled = await commandRegistry.execute(textContent, {
@@ -463,7 +472,7 @@ export const ChatInput = ({
           channelId: query?.channelId,
           conversationId: query?.conversationId,
           type,
-          currentMember,
+          currentMember: senderMember,
           activeServer,
           addMessage,
           addDirectMessage,
@@ -479,14 +488,14 @@ export const ChatInput = ({
                   channel: name.startsWith("#") ? name : `#${name}`,
                   message: img.url,
                 }).catch((e) => console.error(e));
-                addMessage(query.channelId, currentMember, img.url);
+                addMessage(query.channelId, senderMember, img.url);
               } else if (type === "conversation" && query?.conversationId) {
                 await invoke("send_message", {
                   serverId: activeServer.id,
                   channel: name,
                   message: img.url,
                 }).catch((e) => console.error(e));
-                addDirectMessage(query.conversationId, currentMember, img.url);
+                addDirectMessage(query.conversationId, senderMember, img.url);
               }
             }
           }
@@ -508,10 +517,10 @@ export const ChatInput = ({
               channel: name.startsWith("#") ? name : `#${name}`, 
               message: line 
             });
-            addMessage(query.channelId, currentMember, line);
+            addMessage(query.channelId, senderMember, line);
           } catch (err: any) {
             console.error("Failed to send channel message via Tauri IRC:", err);
-            addMessage(query.channelId, currentMember, line);
+            addMessage(query.channelId, senderMember, line);
           }
         } else if (type === "conversation" && query?.conversationId) {
           try {
@@ -520,10 +529,10 @@ export const ChatInput = ({
               channel: name, 
               message: line 
             });
-            addDirectMessage(query.conversationId, currentMember, line);
+            addDirectMessage(query.conversationId, senderMember, line);
           } catch (err: any) {
             console.error("Failed to send private message via Tauri IRC:", err);
-            addDirectMessage(query.conversationId, currentMember, line);
+            addDirectMessage(query.conversationId, senderMember, line);
           }
         }
       }
