@@ -126,7 +126,7 @@ export const UserContextMenu: React.FC<UserContextMenuProps> = ({
           <>
             <ContextMenuItem onClick={onOpenDM} className="gap-x-2">
               <MessageSquare className="w-4 h-4 text-zinc-500" />
-              <span>Direct message</span>
+              <span>Private message</span>
             </ContextMenuItem>
             {channel && <ContextMenuSeparator />}
           </>
