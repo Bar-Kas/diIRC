@@ -77,7 +77,7 @@ export const ChatMessages = ({
   const dateFormatPreset = useMockStore((state) => state.dateFormatPreset) || "d MMM yyyy, HH:mm";
   const customDateFormat = useMockStore((state) => state.customDateFormat) || "yyyy/MM/dd HH:mm";
   const [atBottom, setAtBottom] = useState(true);
-  const lastSeenCountRef = useRef(0);
+  const lastSeenBottomMessageIdRef = useRef<string | null>(null);
 
   const {
     data,
@@ -95,12 +95,19 @@ export const ChatMessages = ({
   const totalCount = items.length + (hasWelcome ? 1 : 0);
 
   useEffect(() => {
-    if (atBottom) {
-      lastSeenCountRef.current = items.length;
+    if (atBottom && items.length > 0) {
+      lastSeenBottomMessageIdRef.current = items[items.length - 1].id;
     }
-  }, [items.length, atBottom]);
+  }, [items, atBottom]);
 
-  const newMessagesCount = !atBottom ? Math.max(0, items.length - lastSeenCountRef.current) + pendingLiveCount : pendingLiveCount;
+  const newMessagesAtTail = useMemo(() => {
+    if (atBottom || !lastSeenBottomMessageIdRef.current || items.length === 0) return 0;
+    const lastSeenIndex = items.findIndex((m) => m.id === lastSeenBottomMessageIdRef.current);
+    if (lastSeenIndex === -1) return 0;
+    return Math.max(0, items.length - 1 - lastSeenIndex);
+  }, [items, atBottom]);
+
+  const newMessagesCount = newMessagesAtTail + pendingLiveCount;
   const showJumpToLatest = (items.length > 0 && !atBottom) || hasNewer || pendingLiveCount > 0;
 
   const virtualizer = useVirtualizer({
@@ -138,12 +145,7 @@ export const ChatMessages = ({
     useAnimationFrameWithResizeObserver: true,
   });
 
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
-    if (shouldStickToBottomRef.current) return false;
-    if (instance.scrollDirection === "backward") return false;
-    const scrollOffset = instance.scrollOffset ?? chatRef.current?.scrollTop ?? 0;
-    return item.end <= scrollOffset;
-  };
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false;
 
   const markProgrammaticScroll = useCallback((durationMs = 160) => {
     programmaticScrollUntilRef.current = Math.max(
@@ -163,10 +165,10 @@ export const ChatMessages = ({
   const registerRowElement = useCallback((element: HTMLDivElement | null, id: string) => {
     if (element) {
       rowElementsRef.current.set(id, element);
+      virtualizer.measureElement(element);
     } else {
       rowElementsRef.current.delete(id);
     }
-    virtualizer.measureElement(element);
   }, [virtualizer]);
 
   const captureAnchor = useCallback((reason = "manual") => {
@@ -304,7 +306,9 @@ export const ChatMessages = ({
 
     if (isAtBottom) {
       anchorRef.current = null;
-      lastSeenCountRef.current = items.length;
+      if (items.length > 0) {
+        lastSeenBottomMessageIdRef.current = items[items.length - 1].id;
+      }
     }
 
     const programmaticRemaining = Math.max(0, programmaticScrollUntilRef.current - performance.now());
@@ -317,7 +321,7 @@ export const ChatMessages = ({
         triggerLoadNewer();
       }
     }
-  }, [triggerLoadOlder, triggerLoadNewer, items.length]);
+  }, [triggerLoadOlder, triggerLoadNewer, items]);
 
   const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     const element = chatRef.current;
@@ -352,7 +356,7 @@ export const ChatMessages = ({
     isLoadingOlderRef.current = false;
     isLoadingNewerRef.current = false;
     anchorRef.current = null;
-    lastSeenCountRef.current = 0;
+    lastSeenBottomMessageIdRef.current = null;
     rowElementsRef.current.clear();
     remeasureCallbacksRef.current.clear();
     setAtBottom(true);
@@ -526,7 +530,9 @@ export const ChatMessages = ({
     shouldStickToBottomRef.current = true;
     anchorRef.current = null;
     setAtBottom(true);
-    lastSeenCountRef.current = items.length;
+    if (items.length > 0) {
+      lastSeenBottomMessageIdRef.current = items[items.length - 1].id;
+    }
     if (hasNewer || pendingLiveCount > 0) {
       void jumpToLatest(type, chatId, serverId, historyTarget).then(() => {
         shouldStickToBottomRef.current = true;
@@ -544,7 +550,7 @@ export const ChatMessages = ({
         programmaticScrollUntilRef.current = 0;
       }, 500);
     }
-  }, [hasNewer, pendingLiveCount, items.length, jumpToLatest, type, chatId, serverId, historyTarget, pinToBottom]);
+  }, [hasNewer, pendingLiveCount, items, jumpToLatest, type, chatId, serverId, historyTarget, pinToBottom]);
 
   if (status === "loading") {
     return (
