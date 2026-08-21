@@ -87,21 +87,26 @@ body,
 
 /* Webkit (Chromium, Safari, Edge, Tauri) default scrollbars */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
   background-color: transparent;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 ::-webkit-scrollbar-thumb {
   background-color: #c7c8ce;
-  border-radius: 4px;
+  border-radius: 6px;
   border: 2px solid transparent;
   background-clip: padding-box;
   transition: background-color 0.15s ease;
+  min-height: 44px;
+}
+
+::-webkit-scrollbar-thumb:vertical {
+  min-height: 44px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -155,19 +160,19 @@ body,
 }
 
 .discord-scrollbar-chat::-webkit-scrollbar {
-  width: 14px;
+  width: 16px;
 }
 
 .discord-scrollbar-chat::-webkit-scrollbar-track {
   background-color: #e3e5e8;
   border-radius: 8px;
-  margin: 6px 2px;
+  margin: 4px 2px;
 }
 
 .dark .discord-scrollbar-chat::-webkit-scrollbar-track {
   background-color: #2b2d31;
   border-radius: 8px;
-  margin: 6px 2px;
+  margin: 4px 2px;
 }
 
 .discord-scrollbar-chat::-webkit-scrollbar-thumb {
@@ -175,7 +180,11 @@ body,
   border-radius: 8px;
   border: 3px solid transparent;
   background-clip: padding-box;
-  min-height: 40px;
+  min-height: 56px;
+}
+
+.discord-scrollbar-chat::-webkit-scrollbar-thumb:vertical {
+  min-height: 56px;
 }
 
 .discord-scrollbar-chat::-webkit-scrollbar-thumb:hover {
@@ -187,7 +196,11 @@ body,
   border-radius: 8px;
   border: 3px solid transparent;
   background-clip: padding-box;
-  min-height: 40px;
+  min-height: 56px;
+}
+
+.dark .discord-scrollbar-chat::-webkit-scrollbar-thumb:vertical {
+  min-height: 56px;
 }
 
 .dark .discord-scrollbar-chat::-webkit-scrollbar-thumb:hover {

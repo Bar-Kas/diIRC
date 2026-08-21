@@ -36,31 +36,16 @@ export const LazyYouTubeEmbed: React.FC<LazyYouTubeEmbedProps> = ({
   const [thumbError, setThumbError] = useState(false);
   const [thumbLoaded, setThumbLoaded] = useState(false);
   const [thumbSrc, setThumbSrc] = useState(`https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`);
-  const hasNotifiedVisibleRef = useRef(false);
-  const onContentSizeChangeRef = useRef(onContentSizeChange);
-  onContentSizeChangeRef.current = onContentSizeChange;
 
   // Keep thumbSrc in sync if youtubeId changes
   useEffect(() => {
     setThumbSrc(`https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`);
     setThumbError(false);
     setThumbLoaded(false);
-    hasNotifiedVisibleRef.current = false;
   }, [youtubeId]);
-
-  // Notify virtualizer when placeholder becomes visible (only once)
-  useEffect(() => {
-    if (isVisible && !hasNotifiedVisibleRef.current) {
-      hasNotifiedVisibleRef.current = true;
-      onContentSizeChangeRef.current?.();
-    }
-  }, [isVisible]);
 
   const handleActivate = () => {
     setIsActivated(true);
-    // onContentSizeChange will be called again on iframe onLoad; trigger eagerly as well
-    // to handle cases where iframe loads from cache without onLoad firing synchronously
-    requestAnimationFrame(() => onContentSizeChange?.());
   };
 
   return (
@@ -94,7 +79,6 @@ export const LazyYouTubeEmbed: React.FC<LazyYouTubeEmbedProps> = ({
                 }`}
                 onLoad={() => {
                   setThumbLoaded(true);
-                  onContentSizeChange?.();
                 }}
                 onError={() => {
                   const fallbackUrl = `https://img.youtube.com/vi/${youtubeId}/mqdefault.jpg`;
@@ -103,7 +87,6 @@ export const LazyYouTubeEmbed: React.FC<LazyYouTubeEmbedProps> = ({
                   } else {
                     setThumbError(true);
                   }
-                  onContentSizeChange?.();
                 }}
               />
             ) : (
@@ -132,7 +115,6 @@ export const LazyYouTubeEmbed: React.FC<LazyYouTubeEmbedProps> = ({
             allowFullScreen
             loading="lazy"
             referrerPolicy="strict-origin-when-cross-origin"
-            onLoad={onContentSizeChange}
           />
         )}
       </div>

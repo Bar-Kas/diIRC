@@ -1,12 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
+import { useEffect, useLayoutEffect, useRef, useCallback, useMemo, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { format } from "date-fns";
+import { ArrowDownToLine, Loader2, ServerCrash } from "lucide-react";
 import { Member, Message } from "@/types";
-import { Loader2, ServerCrash } from "lucide-react";
 
 import { useChatQuery } from "@/hooks/use-chat-query";
 import { useChatSocket } from "@/hooks/use-chat-socket";
 import { useMockStore } from "@/lib/mock-store";
+import { scrollDebug } from "@/lib/scroll-debug";
 
 import { ChatWelcome } from "./chat-welcome";
 import { ChatItem } from "./chat-item";
@@ -14,6 +15,7 @@ import { clearProxyCache } from "./smart-image";
 
 const DATE_FORMAT = "d MMM yyyy, HH:mm";
 const TIME_FORMAT = "HH:mm";
+const HISTORY_EDGE_TRIGGER_PX = 400;
 
 interface ChatMessagesProps {
   name: string;
@@ -42,13 +44,35 @@ export const ChatMessages = ({
   const shouldStickToBottomRef = useRef(true);
   const hasInitializedRef = useRef(false);
   const isLoadingOlderRef = useRef(false);
-  const pendingPrependRef = useRef<{ prevScrollHeight: number; prevScrollTop: number } | null>(null);
+  const isLoadingNewerRef = useRef(false);
+  const programmaticScrollUntilRef = useRef(0);
+  const jumpingToLatestRef = useRef(false);
+  const anchorRef = useRef<{
+    id: string;
+    screenY: number;
+    scrollHeight: number;
+    scrollTop: number;
+    itemsCount: number;
+    firstItemId?: string;
+    lastItemId?: string;
+    reason: string;
+  } | null>(null);
   const remeasureCallbacksRef = useRef(new Map<string, () => void>());
   const layoutFrameRef = useRef<number | null>(null);
   const loadChatHistory = useMockStore((state) => state.loadChatHistory);
   const loadOlderHistory = useMockStore((state) => state.loadOlderHistory);
-  const historyCursor = useMockStore((state) => state.historyNextOffset);
-  const hasMoreHistory = useMockStore((state) => state.historyHasMore);
+  const loadNewerHistory = useMockStore((state) => state.loadNewerHistory);
+  const jumpToLatest = useMockStore((state) => state.jumpToLatest);
+  const clearHistoryLoading = useMockStore((state) => state.clearHistoryLoading);
+  const windowReady = useMockStore((state) => state.historyWindow.ready);
+  const hasOlder = useMockStore((state) => state.historyWindow.hasOlder);
+  const olderCursor = useMockStore((state) => state.historyWindow.olderCursor);
+  const hasNewer = useMockStore((state) => state.historyWindow.hasNewer);
+  const newerCursor = useMockStore((state) => state.historyWindow.newerCursor);
+  const loadingOlder = useMockStore((state) => state.historyWindow.loadingOlder);
+  const loadingNewer = useMockStore((state) => state.historyWindow.loadingNewer);
+  const pendingLiveCount = useMockStore((state) => state.historyWindow.pendingLive.length);
+  const [atBottom, setAtBottom] = useState(true);
 
   const {
     data,
@@ -60,10 +84,11 @@ export const ChatMessages = ({
   });
   useChatSocket({ queryKey, addKey, updateKey });
 
-  const items = useMemo(() => data?.pages.flatMap((page) => page.items as Message[]) || [], [data]);
+  const items = useMemo(() => data?.pages.flatMap((page) => page.items as Message[]) || [], [data?.pages]);
   const historyTarget = type === "channel" && !name.startsWith("#") ? `#${name}` : name;
-  const hasWelcome = !hasMoreHistory && historyCursor === null;
+  const hasWelcome = windowReady && !hasOlder && olderCursor === null;
   const totalCount = items.length + (hasWelcome ? 1 : 0);
+  const showJumpToLatest = hasNewer || pendingLiveCount > 0;
 
   const virtualizer = useVirtualizer({
     count: totalCount,
@@ -71,23 +96,57 @@ export const ChatMessages = ({
     getItemKey: (index) => {
       if (hasWelcome && index === 0) return "__welcome__";
       const msgIndex = hasWelcome ? index - 1 : index;
-      return items[msgIndex]?.id ?? index;
+      const msg = items[msgIndex];
+      return msg?.id ?? index;
     },
     estimateSize: (index) => {
       if (hasWelcome && index === 0) return 160;
       const msgIndex = hasWelcome ? index - 1 : index;
       const msg = items[msgIndex];
-      if (!msg) return 44;
-      if (msg.fileUrl) return 240;
+      if (!msg) return 48;
+      if (msg.fileUrl) return 260;
+      const content = msg.content || "";
+      if (/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=))/i.test(content)) return 280;
+      if (/(?:https?:\/\/[^\s]+\.(?:png|jpg|jpeg|gif|webp|mp4|webm|mov|ogg))/i.test(content)) return 260;
+      if (/https?:\/\/[^\s]+/i.test(content)) return 140;
+
       const prev = items[msgIndex - 1];
       const isSameAuthor = prev && prev.member?.id === msg.member?.id;
       const isWithin5Min = prev && (new Date(msg.createdAt).getTime() - new Date(prev.createdAt).getTime() < 300000);
-      const isCompact = isSameAuthor && isWithin5Min && !prev.deleted && !msg.fileUrl && !prev.isSystem && !msg.isSystem;
+      const isCompact = Boolean(isSameAuthor && isWithin5Min && !prev.deleted && !prev.isSystem && !msg.isSystem);
+
+      if (content.length > 200 || content.includes("\n")) {
+        const lineCount = (content.match(/\n/g) || []).length + 1;
+        return isCompact ? Math.min(24 + lineCount * 20, 200) : Math.min(48 + lineCount * 20, 240);
+      }
       return isCompact ? 24 : 48;
     },
     overscan: 10,
     useAnimationFrameWithResizeObserver: true,
   });
+
+  const markProgrammaticScroll = useCallback((durationMs = 160) => {
+    programmaticScrollUntilRef.current = Math.max(
+      programmaticScrollUntilRef.current,
+      performance.now() + durationMs,
+    );
+  }, []);
+
+  const pinToBottom = useCallback((behavior: "auto" | "smooth" = "auto", reason = "default") => {
+    const element = chatRef.current;
+    if (!element) return;
+    const oldScrollTop = element.scrollTop;
+    markProgrammaticScroll(180);
+    element.scrollTop = element.scrollHeight;
+    virtualizer.scrollToEnd({ behavior });
+    scrollDebug.logPinToBottom({
+      reason,
+      oldScrollTop,
+      newScrollTop: element.scrollTop,
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+    });
+  }, [markProgrammaticScroll, virtualizer]);
 
   const registerRowElement = useCallback((element: HTMLDivElement | null, id: string) => {
     if (element) {
@@ -98,13 +157,232 @@ export const ChatMessages = ({
     virtualizer.measureElement(element);
   }, [virtualizer]);
 
+  const captureAnchor = useCallback((reason = "manual") => {
+    const element = chatRef.current;
+    if (!element || shouldStickToBottomRef.current || items.length === 0) return;
+    const containerRect = element.getBoundingClientRect();
+    const paddingTop = parseFloat(getComputedStyle(element).paddingTop) || 0;
+    let found = false;
+    for (const msg of items) {
+      const rowEl = rowElementsRef.current.get(msg.id);
+      if (rowEl) {
+        const rect = rowEl.getBoundingClientRect();
+        if (rect.bottom > containerRect.top + paddingTop + 2) {
+          anchorRef.current = {
+            id: msg.id,
+            screenY: rect.top - containerRect.top - paddingTop,
+            scrollHeight: element.scrollHeight,
+            scrollTop: element.scrollTop,
+            itemsCount: items.length,
+            firstItemId: items[0]?.id,
+            lastItemId: items[items.length - 1]?.id,
+            reason,
+          };
+          scrollDebug.logAnchorCapture({
+            reason,
+            messageId: msg.id,
+            screenY: anchorRef.current.screenY,
+            scrollTop: element.scrollTop,
+            scrollHeight: element.scrollHeight,
+            totalItems: items.length,
+          });
+          found = true;
+          break;
+        }
+      }
+    }
+    if (!found && items.length > 0) {
+      const firstMsg = items[0];
+      anchorRef.current = {
+        id: firstMsg.id,
+        screenY: 0,
+        scrollHeight: element.scrollHeight,
+        scrollTop: element.scrollTop,
+        itemsCount: items.length,
+        firstItemId: items[0]?.id,
+        lastItemId: items[items.length - 1]?.id,
+        reason,
+      };
+      scrollDebug.logAnchorCapture({
+        reason,
+        messageId: firstMsg.id,
+        screenY: 0,
+        scrollTop: element.scrollTop,
+        scrollHeight: element.scrollHeight,
+        totalItems: items.length,
+      });
+    }
+  }, [items]);
+
+  const triggerLoadOlder = useCallback(() => {
+    const element = chatRef.current;
+    if (
+      !element
+      || hasOlder === false
+      || olderCursor === null
+      || isLoadingOlderRef.current
+      || items.length === 0
+    ) {
+      return;
+    }
+
+    isLoadingOlderRef.current = true;
+    captureAnchor("triggerLoadOlder");
+
+    const fallbackTimer = setTimeout(() => {
+      isLoadingOlderRef.current = false;
+      clearHistoryLoading();
+      scrollDebug.logWarn("triggerLoadOlder: fallback timeout fired (5s limit reached)");
+    }, 5000);
+
+    const startTime = performance.now();
+    void loadOlderHistory(type, chatId, serverId, historyTarget).then((loaded: boolean) => {
+      clearTimeout(fallbackTimer);
+      isLoadingOlderRef.current = false;
+      const elapsed = Math.round(performance.now() - startTime);
+      scrollDebug.logScroll({
+        scrollTop: element.scrollTop,
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+        distanceFromBottom: element.scrollHeight - element.scrollTop - element.clientHeight,
+        isAtBottom: false,
+        shouldStick: shouldStickToBottomRef.current,
+        programmaticRemainingMs: Math.max(0, programmaticScrollUntilRef.current - performance.now()),
+        reason: `triggerLoadOlder finished (loaded: ${loaded}, elapsed: ${elapsed}ms)`,
+      });
+      if (!loaded) {
+        anchorRef.current = null;
+      }
+    });
+  }, [hasOlder, olderCursor, items.length, loadOlderHistory, clearHistoryLoading, type, chatId, serverId, historyTarget, captureAnchor]);
+
+  const triggerLoadNewer = useCallback(() => {
+    const element = chatRef.current;
+    if (
+      !element
+      || hasNewer === false
+      || newerCursor === null
+      || isLoadingNewerRef.current
+    ) {
+      return;
+    }
+
+    isLoadingNewerRef.current = true;
+    if (!shouldStickToBottomRef.current) {
+      captureAnchor("triggerLoadNewer");
+    }
+
+    const fallbackTimer = setTimeout(() => {
+      isLoadingNewerRef.current = false;
+      clearHistoryLoading();
+      scrollDebug.logWarn("triggerLoadNewer: fallback timeout fired (5s limit reached)");
+    }, 5000);
+
+    const startTime = performance.now();
+    void loadNewerHistory(type, chatId, serverId, historyTarget).then((loaded: boolean) => {
+      clearTimeout(fallbackTimer);
+      isLoadingNewerRef.current = false;
+      const elapsed = Math.round(performance.now() - startTime);
+      scrollDebug.logScroll({
+        scrollTop: element.scrollTop,
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+        distanceFromBottom: element.scrollHeight - element.scrollTop - element.clientHeight,
+        isAtBottom: (element.scrollHeight - element.scrollTop - element.clientHeight) < 30,
+        shouldStick: shouldStickToBottomRef.current,
+        programmaticRemainingMs: Math.max(0, programmaticScrollUntilRef.current - performance.now()),
+        reason: `triggerLoadNewer finished (loaded: ${loaded}, elapsed: ${elapsed}ms)`,
+      });
+      if (!loaded) {
+        anchorRef.current = null;
+      }
+    });
+  }, [hasNewer, newerCursor, loadNewerHistory, clearHistoryLoading, type, chatId, serverId, historyTarget, captureAnchor]);
+
+  const handleChatScroll = useCallback(() => {
+    const element = chatRef.current;
+    if (!element) return;
+
+    if (jumpingToLatestRef.current) {
+      shouldStickToBottomRef.current = true;
+      setAtBottom(true);
+      return;
+    }
+
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    const isAtBottom = distanceFromBottom < 30;
+
+    const stickChanged = shouldStickToBottomRef.current !== isAtBottom;
+    shouldStickToBottomRef.current = isAtBottom;
+    setAtBottom((prev) => (prev === isAtBottom ? prev : isAtBottom));
+
+    if (isAtBottom) {
+      anchorRef.current = null;
+    }
+
+    const programmaticRemaining = Math.max(0, programmaticScrollUntilRef.current - performance.now());
+    const isProgrammatic = programmaticRemaining > 0;
+
+    scrollDebug.logScroll({
+      scrollTop: element.scrollTop,
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+      distanceFromBottom,
+      isAtBottom,
+      shouldStick: shouldStickToBottomRef.current,
+      programmaticRemainingMs: programmaticRemaining,
+      reason: stickChanged ? `stickToBottom changed to ${isAtBottom}` : undefined,
+    });
+
+    if (!isProgrammatic) {
+      if (element.scrollTop <= HISTORY_EDGE_TRIGGER_PX) {
+        triggerLoadOlder();
+      } else if (distanceFromBottom <= HISTORY_EDGE_TRIGGER_PX) {
+        triggerLoadNewer();
+      }
+    }
+  }, [triggerLoadOlder, triggerLoadNewer]);
+
+  const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    const element = chatRef.current;
+    if (!element) return;
+
+    programmaticScrollUntilRef.current = 0;
+    jumpingToLatestRef.current = false;
+
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    const wasSticking = shouldStickToBottomRef.current;
+
+    if (e.deltaY < 0) {
+      shouldStickToBottomRef.current = false;
+      setAtBottom(false);
+    }
+
+    scrollDebug.logWheel({
+      deltaY: e.deltaY,
+      scrollTop: element.scrollTop,
+      distanceFromBottom,
+      action: e.deltaY < 0 && wasSticking ? "Wheel UP -> released stickToBottom lock" : e.deltaY < 0 ? "Wheel UP" : "Wheel DOWN",
+    });
+
+    if (e.deltaY < 0 && element.scrollTop <= HISTORY_EDGE_TRIGGER_PX) {
+      triggerLoadOlder();
+    } else if (e.deltaY > 0) {
+      if (distanceFromBottom <= HISTORY_EDGE_TRIGGER_PX) {
+        triggerLoadNewer();
+      }
+    }
+  }, [triggerLoadOlder, triggerLoadNewer]);
+
   useEffect(() => {
     hasInitializedRef.current = false;
     shouldStickToBottomRef.current = true;
     isLoadingOlderRef.current = false;
-    pendingPrependRef.current = null;
+    isLoadingNewerRef.current = false;
+    anchorRef.current = null;
     rowElementsRef.current.clear();
     remeasureCallbacksRef.current.clear();
+    setAtBottom(true);
     clearProxyCache();
     void loadChatHistory(
       type,
@@ -114,152 +392,131 @@ export const ChatMessages = ({
     );
   }, [chatId, historyTarget, loadChatHistory, serverId, type]);
 
-  const triggerLoadOlder = useCallback(() => {
+  useLayoutEffect(() => {
     const element = chatRef.current;
+    if (!element) return;
+
+    if (shouldStickToBottomRef.current && totalCount > 0) {
+      pinToBottom("auto", "useLayoutEffect (stickToBottom)");
+      anchorRef.current = null;
+      return;
+    }
+
+    if (!anchorRef.current) return;
+
+    const anchor = anchorRef.current;
+    const currentFirstId = items[0]?.id;
+    const currentLastId = items[items.length - 1]?.id;
+    const currentScrollTop = element.scrollTop;
+    const currentScrollHeight = element.scrollHeight;
+    const scrollHeightDelta = currentScrollHeight - anchor.scrollHeight;
+
     if (
-      !element
-      || historyCursor === null
-      || !hasMoreHistory
-      || isLoadingOlderRef.current
-      || items.length === 0
+      anchor.firstItemId === currentFirstId &&
+      anchor.lastItemId === currentLastId &&
+      anchor.itemsCount === items.length &&
+      Math.abs(scrollHeightDelta) < 1
     ) {
       return;
     }
 
-    isLoadingOlderRef.current = true;
-    pendingPrependRef.current = {
-      prevScrollHeight: element.scrollHeight,
-      prevScrollTop: element.scrollTop,
-    };
+    anchorRef.current = null;
 
-    // Fallback: unblock after 5s if invoke hangs
-    const fallbackTimer = setTimeout(() => {
-      if (isLoadingOlderRef.current) {
-        isLoadingOlderRef.current = false;
-        pendingPrependRef.current = null;
-      }
-    }, 5000);
+    let appliedScrollTop = currentScrollTop;
 
-    void loadOlderHistory(type, chatId, serverId, historyTarget).then((loaded: boolean) => {
-      clearTimeout(fallbackTimer);
-      if (!loaded) {
-        pendingPrependRef.current = null;
-        isLoadingOlderRef.current = false;
+    const anchorIndex = items.findIndex((m) => m.id === anchor.id);
+    if (anchorIndex !== -1) {
+      const targetVirtualIndex = hasWelcome ? anchorIndex + 1 : anchorIndex;
+      const targetOffsetResult = virtualizer.getOffsetForIndex(targetVirtualIndex, "start");
+      const targetOffset = targetOffsetResult ? targetOffsetResult[0] : undefined;
+
+      if (typeof targetOffset === "number" && !isNaN(targetOffset)) {
+        appliedScrollTop = Math.max(0, targetOffset - anchor.screenY);
+        markProgrammaticScroll(200);
+        element.scrollTop = appliedScrollTop;
+      } else if (scrollHeightDelta > 0) {
+        appliedScrollTop = anchor.scrollTop + scrollHeightDelta;
+        markProgrammaticScroll(200);
+        element.scrollTop = appliedScrollTop;
       }
+    } else if (scrollHeightDelta > 0) {
+      appliedScrollTop = anchor.scrollTop + scrollHeightDelta;
+      markProgrammaticScroll(200);
+      element.scrollTop = appliedScrollTop;
+    }
+
+    const rowEl = rowElementsRef.current.get(anchor.id);
+    let fineDelta: number | undefined;
+    if (rowEl) {
+      const containerRect = element.getBoundingClientRect();
+      const paddingTop = parseFloat(getComputedStyle(element).paddingTop) || 0;
+      const currentScreenY = rowEl.getBoundingClientRect().top - containerRect.top - paddingTop;
+      fineDelta = currentScreenY - anchor.screenY;
+      if (Math.abs(fineDelta) > 0.5) {
+        markProgrammaticScroll(200);
+        element.scrollTop += fineDelta;
+      }
+    }
+
+    scrollDebug.logAnchorRestore({
+      anchorId: anchor.id,
+      savedScrollTop: anchor.scrollTop,
+      savedScrollHeight: anchor.scrollHeight,
+      savedScreenY: anchor.screenY,
+      currentScrollTop,
+      currentScrollHeight,
+      heightDelta: scrollHeightDelta,
+      appliedScrollTop,
+      fineDelta,
+      finalScrollTop: element.scrollTop,
+      rowFound: !!rowEl,
     });
-  }, [historyCursor, hasMoreHistory, items.length, loadOlderHistory, type, chatId, serverId, historyTarget]);
+  }, [items, totalCount, pinToBottom, markProgrammaticScroll, virtualizer, hasWelcome]);
 
-  const handleChatScroll = useCallback(() => {
-    const element = chatRef.current;
-    if (!element) return;
-
-    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
-    // User is stuck to bottom if within 30px of the bottom edge
-    shouldStickToBottomRef.current = distanceFromBottom < 30;
-
-    // Proactively load older history when user reaches upper 400px of chat
-    if (element.scrollTop <= 400) {
-      triggerLoadOlder();
-    }
-  }, [triggerLoadOlder]);
-
-  const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
-    const element = chatRef.current;
-    if (!element) return;
-
-    if (e.deltaY < 0) {
-      shouldStickToBottomRef.current = false;
-    }
-
-    // Capture upward wheel scroll even when scrollTop === 0 (where browser scroll events stop firing)
-    if (e.deltaY < 0 && element.scrollTop <= 400) {
-      triggerLoadOlder();
-    }
-  }, [triggerLoadOlder]);
-
-  // Synchronously restore scroll position before browser paint when messages are prepended
-  useLayoutEffect(() => {
-    const prependSnapshot = pendingPrependRef.current;
-    if (prependSnapshot && chatRef.current && items.length > 0) {
-      const newScrollHeight = chatRef.current.scrollHeight;
-      const heightDiff = newScrollHeight - prependSnapshot.prevScrollHeight;
-      if (heightDiff > 0) {
-        chatRef.current.scrollTop = prependSnapshot.prevScrollTop + heightDiff;
-      }
-
-      shouldStickToBottomRef.current = false;
-      pendingPrependRef.current = null;
-      isLoadingOlderRef.current = false;
-
-      // Fast-scroll continuous loading: if user is still near the top after prepending, seamlessly fetch next page
-      if (chatRef.current.scrollTop <= 400 && historyCursor !== null && hasMoreHistory) {
-        requestAnimationFrame(() => {
-          triggerLoadOlder();
-        });
-      }
-    }
-  }, [items, historyCursor, hasMoreHistory, triggerLoadOlder]);
-
-  // Keep scroll pinned to bottom whenever new messages arrive or elements resize, ONLY if user is at the bottom
-  useLayoutEffect(() => {
-    if (shouldStickToBottomRef.current && chatRef.current && totalCount > 0 && !pendingPrependRef.current) {
-      chatRef.current.scrollTop = chatRef.current.scrollHeight;
-    }
-  }, [virtualizer.getTotalSize(), totalCount, items]);
-
-  // Initial mount / channel change settle sequence
   useEffect(() => {
     if (totalCount === 0) return;
 
     if (!hasInitializedRef.current) {
-      const pinToBottom = () => {
+      const pinInitial = (step: string) => {
         if (chatRef.current && !hasInitializedRef.current) {
-          chatRef.current.scrollTop = chatRef.current.scrollHeight;
-          virtualizer.scrollToEnd({ behavior: "auto" });
+          pinToBottom("auto", `initialMountSequence (${step})`);
         }
       };
 
-      pinToBottom();
-      const raf1 = requestAnimationFrame(pinToBottom);
-      const raf2 = requestAnimationFrame(() => {
-        requestAnimationFrame(pinToBottom);
-      });
-      const t1 = setTimeout(pinToBottom, 60);
-      const t2 = setTimeout(pinToBottom, 180);
-      const t3 = setTimeout(() => {
-        pinToBottom();
+      pinInitial("immediate");
+      const raf1 = requestAnimationFrame(() => pinInitial("raf1"));
+      const raf2 = requestAnimationFrame(() =>
+        requestAnimationFrame(() => pinInitial("raf2"))
+      );
+      const timer1 = setTimeout(() => pinInitial("timer60ms"), 60);
+      const timer2 = setTimeout(() => pinInitial("timer180ms"), 180);
+      const timer3 = setTimeout(() => {
+        pinInitial("timer350ms");
         hasInitializedRef.current = true;
       }, 350);
 
       return () => {
         cancelAnimationFrame(raf1);
         cancelAnimationFrame(raf2);
-        clearTimeout(t1);
-        clearTimeout(t2);
-        clearTimeout(t3);
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+        clearTimeout(timer3);
       };
     }
-  }, [totalCount, virtualizer]);
+  }, [totalCount, pinToBottom]);
 
   useEffect(() => {
-    const refreshLayout = () => {
-      if (
-        document.visibilityState !== "visible"
-        || !shouldStickToBottomRef.current
-        || totalCount === 0
-      ) {
-        return;
-      }
+    if (totalCount === 0) return;
+
+    const refreshLayout = (e: Event) => {
+      if (!shouldStickToBottomRef.current) return;
 
       if (layoutFrameRef.current !== null) {
         cancelAnimationFrame(layoutFrameRef.current);
       }
       layoutFrameRef.current = requestAnimationFrame(() => {
         layoutFrameRef.current = null;
-        if (chatRef.current) {
-          chatRef.current.scrollTop = chatRef.current.scrollHeight;
-        }
-        virtualizer.scrollToEnd({ behavior: "auto" });
+        pinToBottom("auto", `windowEvent (${e.type})`);
       });
     };
 
@@ -276,24 +533,82 @@ export const ChatMessages = ({
         layoutFrameRef.current = null;
       }
     };
-  }, [totalCount, virtualizer]);
+  }, [totalCount, pinToBottom]);
 
   const getRemeasureCallback = useCallback((messageId: string) => {
     let cb = remeasureCallbacksRef.current.get(messageId);
     if (!cb) {
       cb = () => {
         const element = rowElementsRef.current.get(messageId);
-        if (element) {
+        if (!element) return;
+
+        if (shouldStickToBottomRef.current) {
           virtualizer.measureElement(element);
-          if (shouldStickToBottomRef.current && chatRef.current) {
-            chatRef.current.scrollTop = chatRef.current.scrollHeight;
+          pinToBottom("auto", `remeasure on ${messageId}`);
+          return;
+        }
+
+        const container = chatRef.current;
+        let topVisibleId: string | null = null;
+        let topVisibleOffset = 0;
+        if (container) {
+          const containerRect = container.getBoundingClientRect();
+          const paddingTop = parseFloat(getComputedStyle(container).paddingTop) || 0;
+          for (const msg of items) {
+            const rowEl = rowElementsRef.current.get(msg.id);
+            if (rowEl) {
+              const rect = rowEl.getBoundingClientRect();
+              if (rect.bottom > containerRect.top + paddingTop + 2) {
+                topVisibleId = msg.id;
+                topVisibleOffset = rect.top - containerRect.top - paddingTop;
+                break;
+              }
+            }
           }
+        }
+
+        virtualizer.measureElement(element);
+
+        const anchoredId = topVisibleId;
+        if (anchoredId && container) {
+          requestAnimationFrame(() => {
+            const containerNow = chatRef.current;
+            if (!containerNow || shouldStickToBottomRef.current) return;
+            const topRowEl = rowElementsRef.current.get(anchoredId);
+            if (topRowEl) {
+              const containerRect = containerNow.getBoundingClientRect();
+              const paddingTop = parseFloat(getComputedStyle(containerNow).paddingTop) || 0;
+              const newTop = topRowEl.getBoundingClientRect().top - containerRect.top - paddingTop;
+              const diff = newTop - topVisibleOffset;
+              if (Math.abs(diff) > 0.5) {
+                markProgrammaticScroll(180);
+                containerNow.scrollTop += diff;
+              }
+            }
+          });
         }
       };
       remeasureCallbacksRef.current.set(messageId, cb);
     }
     return cb;
-  }, [virtualizer]);
+  }, [items, pinToBottom, virtualizer, markProgrammaticScroll]);
+
+  const handleJumpToLatest = useCallback(() => {
+    jumpingToLatestRef.current = true;
+    programmaticScrollUntilRef.current = performance.now() + 10000;
+    shouldStickToBottomRef.current = true;
+    anchorRef.current = null;
+    setAtBottom(true);
+    void jumpToLatest(type, chatId, serverId, historyTarget).then(() => {
+      shouldStickToBottomRef.current = true;
+      anchorRef.current = null;
+      pinToBottom("auto", "handleJumpToLatest post-load");
+      setTimeout(() => {
+        jumpingToLatestRef.current = false;
+        programmaticScrollUntilRef.current = 0;
+      }, 500);
+    });
+  }, [jumpToLatest, type, chatId, serverId, historyTarget, pinToBottom]);
 
   if (status === "loading") {
     return (
@@ -314,75 +629,106 @@ export const ChatMessages = ({
   }
 
   return (
-    <div
-      ref={chatRef}
-      onScroll={handleChatScroll}
-      onWheel={handleWheel}
-      className="flex-1 min-h-0 flex flex-col py-4 overflow-y-auto overflow-x-hidden discord-scrollbar-chat"
-    >
+    <div className="relative flex-1 min-h-0 flex flex-col">
       <div
-        className="relative w-full shrink-0"
-        style={{ height: `${virtualizer.getTotalSize()}px` }}
+        ref={chatRef}
+        onScroll={handleChatScroll}
+        onWheel={handleWheel}
+        className="flex-1 min-h-0 flex flex-col py-4 overflow-y-auto overflow-x-hidden discord-scrollbar-chat"
       >
-        {virtualizer.getVirtualItems().map((virtualRow) => {
-          if (hasWelcome && virtualRow.index === 0) {
+        <div
+          className="relative w-full shrink-0"
+          style={{ height: `${virtualizer.getTotalSize()}px` }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            if (hasWelcome && virtualRow.index === 0) {
+              return (
+                <div
+                  key="__welcome__"
+                  data-index={virtualRow.index}
+                  ref={virtualizer.measureElement}
+                  className="absolute left-0 top-0 w-full"
+                  style={{ transform: `translateY(${virtualRow.start}px)` }}
+                >
+                  <ChatWelcome type={type} name={name} />
+                </div>
+              );
+            }
+
+            const messageIndex = hasWelcome ? virtualRow.index - 1 : virtualRow.index;
+            const message = items[messageIndex];
+            if (!message) return null;
+
+            const prevMessage = items[messageIndex - 1];
+            const isSameAuthor = prevMessage?.member?.id === message.member?.id;
+            const isWithinTimeLimit = prevMessage
+              && new Date(message.createdAt).getTime() - new Date(prevMessage.createdAt).getTime() < 300000;
+            const isCompact = Boolean(
+              isSameAuthor
+              && isWithinTimeLimit
+              && !prevMessage.deleted
+              && !message.fileUrl
+              && !prevMessage.isSystem
+              && !message.isSystem,
+            );
+
             return (
               <div
-                key="__welcome__"
+                key={message.id}
                 data-index={virtualRow.index}
-                ref={virtualizer.measureElement}
-                className="absolute left-0 top-0 w-full"
+                ref={(element) => registerRowElement(element, message.id)}
+                className="absolute left-0 top-0 w-full flow-root"
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
               >
-                <ChatWelcome type={type} name={name} />
+                <ChatItem
+                  id={message.id}
+                  currentMember={member}
+                  member={message.member}
+                  content={message.content}
+                  fileUrl={message.fileUrl || null}
+                  deleted={message.deleted}
+                  timestamp={format(new Date(message.createdAt), DATE_FORMAT)}
+                  compactTime={format(new Date(message.createdAt), TIME_FORMAT)}
+                  channelId={paramKey === "channelId" ? paramValue : undefined}
+                  conversationId={paramKey === "conversationId" ? paramValue : undefined}
+                  compact={isCompact}
+                  isSystem={message.isSystem}
+                  onContentSizeChange={getRemeasureCallback(message.id)}
+                />
               </div>
             );
-          }
-
-          const messageIndex = hasWelcome ? virtualRow.index - 1 : virtualRow.index;
-          const message = items[messageIndex];
-          if (!message) return null;
-
-          const prevMessage = items[messageIndex - 1];
-          const isSameAuthor = prevMessage?.member?.id === message.member?.id;
-          const isWithinTimeLimit = prevMessage
-            && new Date(message.createdAt).getTime() - new Date(prevMessage.createdAt).getTime() < 300000;
-          const isCompact = Boolean(
-            isSameAuthor
-            && isWithinTimeLimit
-            && !prevMessage.deleted
-            && !message.fileUrl
-            && !prevMessage.isSystem
-            && !message.isSystem,
-          );
-
-          return (
-            <div
-              key={message.id}
-              data-index={virtualRow.index}
-              ref={(element) => registerRowElement(element, message.id)}
-              className="absolute left-0 top-0 w-full flow-root"
-              style={{ transform: `translateY(${virtualRow.start}px)` }}
-            >
-              <ChatItem
-                id={message.id}
-                currentMember={member}
-                member={message.member}
-                content={message.content}
-                fileUrl={message.fileUrl || null}
-                deleted={message.deleted}
-                timestamp={format(new Date(message.createdAt), DATE_FORMAT)}
-                compactTime={format(new Date(message.createdAt), TIME_FORMAT)}
-                channelId={paramKey === "channelId" ? paramValue : undefined}
-                conversationId={paramKey === "conversationId" ? paramValue : undefined}
-                compact={isCompact}
-                isSystem={message.isSystem}
-                onContentSizeChange={getRemeasureCallback(message.id)}
-              />
-            </div>
-          );
-        })}
+          })}
+        </div>
       </div>
+
+      {loadingOlder && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-full bg-black/70 dark:bg-black/60 text-white text-xs px-3 py-1.5 pointer-events-none">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Loading older...
+        </div>
+      )}
+
+      {loadingNewer && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-full bg-black/70 dark:bg-black/60 text-white text-xs px-3 py-1.5 pointer-events-none">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Loading newer...
+        </div>
+      )}
+
+      {showJumpToLatest && (
+        <button
+          onClick={handleJumpToLatest}
+          className="absolute bottom-4 right-4 z-10 flex items-center gap-2 rounded-full bg-[#5865F2] hover:bg-[#4752C4] text-white text-xs font-semibold px-3 py-2 shadow-lg transition-colors"
+        >
+          <ArrowDownToLine className="h-4 w-4" />
+          Jump to latest
+          {pendingLiveCount > 0 && (
+            <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] leading-none">
+              {pendingLiveCount}
+            </span>
+          )}
+        </button>
+      )}
     </div>
   );
 };
