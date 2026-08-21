@@ -78,6 +78,7 @@ export const ChatMessages = ({
   const customDateFormat = useMockStore((state) => state.customDateFormat) || "yyyy/MM/dd HH:mm";
   const [atBottom, setAtBottom] = useState(true);
   const lastSeenBottomMessageIdRef = useRef<string | null>(null);
+  const unreadAccumulatorRef = useRef<number>(0);
 
   const {
     data,
@@ -95,17 +96,28 @@ export const ChatMessages = ({
   const totalCount = items.length + (hasWelcome ? 1 : 0);
 
   useEffect(() => {
-    if (atBottom && items.length > 0) {
-      lastSeenBottomMessageIdRef.current = items[items.length - 1].id;
+    if (atBottom && !hasNewer && items.length > 0) {
+      const newId = items[items.length - 1].id;
+      const prevId = lastSeenBottomMessageIdRef.current;
+      if (prevId !== newId) {
+        lastSeenBottomMessageIdRef.current = newId;
+        unreadAccumulatorRef.current = 0;
+      }
     }
-  }, [items, atBottom]);
+  }, [items, atBottom, hasNewer, chatId]);
 
   const newMessagesAtTail = useMemo(() => {
     if (atBottom || !lastSeenBottomMessageIdRef.current || items.length === 0) return 0;
     const lastSeenIndex = items.findIndex((m) => m.id === lastSeenBottomMessageIdRef.current);
-    if (lastSeenIndex === -1) return 0;
-    return Math.max(0, items.length - 1 - lastSeenIndex);
-  }, [items, atBottom]);
+    if (lastSeenIndex !== -1) {
+      const count = Math.max(0, items.length - 1 - lastSeenIndex);
+      unreadAccumulatorRef.current = count;
+      return count;
+    }
+    // If lastSeenId was trimmed because older chunks moved the window into the past (hasNewer === true),
+    // preserve the accumulated unread messages from the tail.
+    return unreadAccumulatorRef.current;
+  }, [items, atBottom, chatId, pendingLiveCount]);
 
   const newMessagesCount = newMessagesAtTail + pendingLiveCount;
   const showJumpToLatest = (items.length > 0 && !atBottom) || hasNewer || pendingLiveCount > 0;
@@ -299,7 +311,7 @@ export const ChatMessages = ({
 
     const canScroll = element.scrollHeight > element.clientHeight + 5;
     const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
-    const isAtBottom = !canScroll || distanceFromBottom < 30;
+    const isAtBottom = !hasNewer && (!canScroll || distanceFromBottom < 30);
 
     shouldStickToBottomRef.current = isAtBottom;
     setAtBottom((prev) => (prev === isAtBottom ? prev : isAtBottom));
@@ -308,6 +320,7 @@ export const ChatMessages = ({
       anchorRef.current = null;
       if (items.length > 0) {
         lastSeenBottomMessageIdRef.current = items[items.length - 1].id;
+        unreadAccumulatorRef.current = 0;
       }
     }
 
@@ -321,7 +334,7 @@ export const ChatMessages = ({
         triggerLoadNewer();
       }
     }
-  }, [triggerLoadOlder, triggerLoadNewer, items]);
+  }, [triggerLoadOlder, triggerLoadNewer, items, chatId, hasNewer]);
 
   const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     const element = chatRef.current;
@@ -348,7 +361,7 @@ export const ChatMessages = ({
         triggerLoadNewer();
       }
     }
-  }, [triggerLoadOlder, triggerLoadNewer]);
+  }, [triggerLoadOlder, triggerLoadNewer, items.length, chatId]);
 
   useEffect(() => {
     hasInitializedRef.current = false;
@@ -357,6 +370,7 @@ export const ChatMessages = ({
     isLoadingNewerRef.current = false;
     anchorRef.current = null;
     lastSeenBottomMessageIdRef.current = null;
+    unreadAccumulatorRef.current = 0;
     rowElementsRef.current.clear();
     remeasureCallbacksRef.current.clear();
     setAtBottom(true);
@@ -374,7 +388,7 @@ export const ChatMessages = ({
     if (!element) return;
 
     const canScroll = element.scrollHeight > element.clientHeight + 5;
-    if (!canScroll) {
+    if (!canScroll && !hasNewer) {
       shouldStickToBottomRef.current = true;
       setAtBottom(true);
     }

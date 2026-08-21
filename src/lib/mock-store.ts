@@ -43,6 +43,8 @@ const EMPTY_HISTORY_WINDOW: HistoryWindow = {
   ready: false,
 };
 
+const chatKey = (type: "channel" | "conversation", chatId: string) => `${type}:${chatId}`;
+
 const applyWindow = (
   set: (fn: (state: MockState) => Partial<MockState>) => void,
   type: "channel" | "conversation",
@@ -72,6 +74,14 @@ const dedupById = (items: (Message | DirectMessage)[]): (Message | DirectMessage
   const byId = new Map<string, Message | DirectMessage>();
   for (const item of items) byId.set(item.id, item);
   return [...byId.values()];
+};
+
+const firstLogOffset = (items: (Message | DirectMessage)[]): number | null => {
+  for (let i = 0; i < items.length; i += 1) {
+    const offset = items[i].offset;
+    if (offset !== undefined) return offset;
+  }
+  return null;
 };
 
 const lastLogOffset = (items: (Message | DirectMessage)[]): number | null => {
@@ -121,8 +131,6 @@ export const formatMessageDate = (
     }
   }
 };
-
-const chatKey = (type: "channel" | "conversation", id: string) => `${type}:${id}`;
 
 const parseLogTimestamp = (timestamp: string) => {
   const parsed = new Date(timestamp.replace(" ", "T"));
@@ -1153,10 +1161,17 @@ export const useMockStore = create<MockState>()(
 
         // Reset the sliding window: only the active chat is buffered in memory and the native
         // log is the source of truth. Offsetless (optimistic/local-only) messages are preserved.
+        // For same-chat reloads (e.g. jumping to latest), keep existing items until the new page arrives.
         set((state) => {
-          const preservedLive = (
+          const isSameChat = state.activeChatKey === requestedKey;
+          const currentMsgs = (
             ((type === "channel" ? state.messages[chatId] : state.directMessages[chatId]) || []) as (Message | DirectMessage)[]
-          ).filter((m) => m.offset === undefined);
+          );
+          const pending = (isSameChat && state.historyWindow.pendingLive) ? state.historyWindow.pendingLive : [];
+          const preservedLive = dedupById([
+            ...currentMsgs.filter((m) => m.offset === undefined),
+            ...pending,
+          ]);
           return {
             activeChatKey: requestedKey,
             historyLoadToken: requestToken,
@@ -1175,8 +1190,8 @@ export const useMockStore = create<MockState>()(
               pendingLive: [],
               ready: false,
             },
-            messages: type === "channel" ? { [chatId]: preservedLive as Message[] } : {},
-            directMessages: type === "conversation" ? { [chatId]: preservedLive as DirectMessage[] } : {},
+            messages: type === "channel" ? (isSameChat ? state.messages : { [chatId]: preservedLive as Message[] }) : {},
+            directMessages: type === "conversation" ? (isSameChat ? state.directMessages : { [chatId]: preservedLive as DirectMessage[] }) : {},
           };
         });
 
@@ -1221,21 +1236,18 @@ export const useMockStore = create<MockState>()(
       },
 
       loadOlderHistory: async (type, chatId, serverId, target) => {
-        const requestedKey = chatKey(type, chatId);
         const state = get();
-        const win = state.historyWindow;
+        const { historyWindow } = state;
+        const requestedKey = chatKey(type, chatId);
         if (
-          state.activeChatKey !== requestedKey
-          || win.key !== requestedKey
-          || win.loadingOlder
-          || !win.hasOlder
-          || win.olderCursor === null
+          state.activeChatKey !== requestedKey ||
+          historyWindow.key !== requestedKey ||
+          historyWindow.loadingOlder ||
+          !historyWindow.hasOlder ||
+          historyWindow.olderCursor === null
         ) {
           return false;
         }
-
-        const requestToken = state.historyLoadToken;
-        const cursor = win.olderCursor;
 
         set((s) => ({ historyWindow: { ...s.historyWindow, loadingOlder: true } }));
 
@@ -1243,66 +1255,65 @@ export const useMockStore = create<MockState>()(
           const page = await invoke<LogPage>("load_log_page", {
             serverId,
             channel: target,
-            before: cursor,
+            before: historyWindow.olderCursor,
           });
           const current = get();
-          if (current.activeChatKey !== requestedKey || current.historyLoadToken !== requestToken) {
+          if (
+            current.activeChatKey !== requestedKey ||
+            current.historyWindow.key !== requestedKey ||
+            current.historyWindow.olderCursor !== historyWindow.olderCursor
+          ) {
             return false;
           }
 
           const server = current.servers.find((item) => item.id === serverId);
           const older = mapLogEntries(page.entries, server, serverId, type, chatId);
-          const currentMessages = ((type === "channel"
+          const existing = ((type === "channel"
             ? current.messages[chatId]
             : current.directMessages[chatId]) || []) as (Message | DirectMessage)[];
 
-          const existingIds = new Set(currentMessages.map((m) => m.id));
-          const newOlder = older.filter((m) => !existingIds.has(m.id));
-          const merged = [...newOlder, ...currentMessages];
+          const merged = dedupById([...older, ...existing]);
           const wasTrimmed = merged.length > MAX_HISTORY_WINDOW;
           const trimmedCount = wasTrimmed ? merged.length - MAX_HISTORY_WINDOW : 0;
           // While reading older history, keep the OLDEST messages and drop the newest chunk
           // (the dropped tail can be re-fetched with loadNewerHistory when returning to the
           // bottom). trimWindow() slices from the end, so it must NOT be used here.
           const combined = wasTrimmed ? merged.slice(0, MAX_HISTORY_WINDOW) : merged;
-          const winBefore = current.historyWindow;
+          const newestOffset = lastLogOffset(combined);
+          const oldestOffset = firstLogOffset(combined);
 
           applyWindow(set, type, chatId, combined, {
-            olderCursor: page.nextOffset,
-            hasOlder: page.nextOffset !== null,
             loadingOlder: false,
-            // Trimming dropped the newest chunk: the window no longer reaches the log tail.
-            hasNewer: wasTrimmed ? true : winBefore.hasNewer,
-            newerCursor: wasTrimmed ? lastLogOffset(combined) : winBefore.newerCursor,
+            hasOlder: page.nextOffset !== null,
+            olderCursor: page.nextOffset ?? oldestOffset,
+            // If the buffer was trimmed, we definitely have newer messages in the transcript
+            hasNewer: wasTrimmed ? true : current.historyWindow.hasNewer,
+            newerCursor: wasTrimmed ? newestOffset : current.historyWindow.newerCursor,
+            ready: true,
           });
-
-          return newOlder.length > 0;
+          return true;
         } catch (error) {
           console.error(`Failed to load older IRC history for ${target}:`, error);
           const current = get();
-          if (current.activeChatKey === requestedKey && current.historyLoadToken === requestToken) {
-            set((s) => ({ historyWindow: { ...s.historyWindow, loadingOlder: false } }));
-          }
+          if (current.activeChatKey !== requestedKey || current.historyWindow.key !== requestedKey) return false;
+          set((s) => ({ historyWindow: { ...s.historyWindow, loadingOlder: false } }));
           return false;
         }
       },
 
       loadNewerHistory: async (type, chatId, serverId, target) => {
-        const requestedKey = chatKey(type, chatId);
         const state = get();
-        const win = state.historyWindow;
+        const { historyWindow } = state;
+        const requestedKey = chatKey(type, chatId);
         if (
-          state.activeChatKey !== requestedKey
-          || win.key !== requestedKey
-          || win.loadingNewer
-          || !win.hasNewer
-          || win.newerCursor === null
+          state.activeChatKey !== requestedKey ||
+          historyWindow.key !== requestedKey ||
+          historyWindow.loadingNewer ||
+          !historyWindow.hasNewer ||
+          historyWindow.newerCursor === null
         ) {
           return false;
         }
-
-        const requestToken = state.historyLoadToken;
-        const cursor = win.newerCursor;
 
         set((s) => ({ historyWindow: { ...s.historyWindow, loadingNewer: true } }));
 
@@ -1310,52 +1321,50 @@ export const useMockStore = create<MockState>()(
           const page = await invoke<LogPage>("load_log_page", {
             serverId,
             channel: target,
-            before: null,
-            after: cursor,
+            after: historyWindow.newerCursor,
           });
           const current = get();
-          if (current.activeChatKey !== requestedKey || current.historyLoadToken !== requestToken) {
+          if (
+            current.activeChatKey !== requestedKey ||
+            current.historyWindow.key !== requestedKey ||
+            current.historyWindow.newerCursor !== historyWindow.newerCursor
+          ) {
             return false;
           }
 
           const server = current.servers.find((item) => item.id === serverId);
           const fetched = mapLogEntries(page.entries, server, serverId, type, chatId);
-          const currentMessages = ((type === "channel"
+          const existing = ((type === "channel"
             ? current.messages[chatId]
             : current.directMessages[chatId]) || []) as (Message | DirectMessage)[];
-          const existingIds = new Set(currentMessages.map((m) => m.id));
-          const newOnes = fetched.filter((m) => !existingIds.has(m.id));
-          const deduped = dedupOffsetlessAgainstFetched(currentMessages, fetched);
-          const merged = [...deduped, ...newOnes];
+
+          const merged = dedupById([...existing, ...fetched]);
           const wasTrimmed = merged.length > MAX_HISTORY_WINDOW;
-          const droppedOldestCount = wasTrimmed ? merged.length - MAX_HISTORY_WINDOW : 0;
+          const trimmedCount = wasTrimmed ? merged.length - MAX_HISTORY_WINDOW : 0;
+          // While moving forward toward the tail, keep the NEWEST messages and drop the oldest
           const combined = trimWindow(merged);
-          const winBefore = current.historyWindow;
-          const reachedTail = page.nextAfter === null;
+          const oldestOffset = firstLogOffset(combined);
+          const newestOffset = lastLogOffset(combined);
+          const isAtLogTail = page.nextOffset === null;
 
           applyWindow(set, type, chatId, combined, {
-            newerCursor: page.nextAfter ?? null,
-            hasNewer: page.nextAfter !== null,
             loadingNewer: false,
-            // Trimming dropped the oldest chunk: the window no longer reaches the log start.
-            olderCursor: wasTrimmed ? combined[0]?.offset ?? winBefore.olderCursor : winBefore.olderCursor,
-            hasOlder: wasTrimmed ? true : winBefore.hasOlder,
+            hasOlder: wasTrimmed ? true : current.historyWindow.hasOlder,
+            olderCursor: wasTrimmed ? oldestOffset : current.historyWindow.olderCursor,
+            hasNewer: !isAtLogTail,
+            newerCursor: isAtLogTail ? newestOffset : page.nextOffset,
+            ready: true,
           });
 
-          // Window reached the true log tail: flush queued live messages (deduped against the log).
-          if (reachedTail) {
+          if (isAtLogTail) {
             const afterState = get();
-            if (afterState.historyWindow.key !== requestedKey || afterState.historyLoadToken !== requestToken) {
-              return newOnes.length > 0;
-            }
             const pending = afterState.historyWindow.pendingLive || [];
             if (pending.length > 0) {
               const items = ((type === "channel"
                 ? afterState.messages[chatId]
                 : afterState.directMessages[chatId]) || []) as (Message | DirectMessage)[];
-              const stillPending = pending.filter(
-                (m) => !items.some((item) => isSameLogLine(item, m) || item.id === m.id)
-              );
+              const fetchedIds = new Set(items.map((m) => m.id));
+              const stillPending = pending.filter((m) => !fetchedIds.has(m.id));
               if (stillPending.length > 0) {
                 applyWindow(set, type, chatId, trimWindow([...items, ...stillPending]), { pendingLive: [] });
               } else {
@@ -1364,13 +1373,12 @@ export const useMockStore = create<MockState>()(
             }
           }
 
-          return newOnes.length > 0;
+          return true;
         } catch (error) {
           console.error(`Failed to load newer IRC history for ${target}:`, error);
           const current = get();
-          if (current.activeChatKey === requestedKey && current.historyLoadToken === requestToken) {
-            set((s) => ({ historyWindow: { ...s.historyWindow, loadingNewer: false } }));
-          }
+          if (current.activeChatKey !== requestedKey || current.historyWindow.key !== requestedKey) return false;
+          set((s) => ({ historyWindow: { ...s.historyWindow, loadingNewer: false } }));
           return false;
         }
       },
@@ -1379,28 +1387,6 @@ export const useMockStore = create<MockState>()(
         const requestedKey = chatKey(type, chatId);
         const state = get();
         if (state.activeChatKey !== requestedKey || state.historyWindow.key !== requestedKey) return;
-
-        // Jumping to latest is a window reset, not a slow forward replay. Replaying every
-        // newer chunk causes repeated trim/remeasure cycles, large empty gaps and can leave
-        // the viewport on an intermediate chunk. Preserve queued live messages as
-        // offsetless entries so loadChatHistory can merge/deduplicate them with the tail.
-        const currentItems = ((type === "channel"
-          ? state.messages[chatId]
-          : state.directMessages[chatId]) || []) as (Message | DirectMessage)[];
-        const pending = state.historyWindow.pendingLive || [];
-        const optimistic = dedupById([
-          ...currentItems.filter((item) => item.offset === undefined),
-          ...pending,
-        ]);
-
-        if (optimistic.length > 0) {
-          set((current) => ({
-            ...(type === "channel"
-              ? { messages: { ...current.messages, [chatId]: optimistic as Message[] } }
-              : { directMessages: { ...current.directMessages, [chatId]: optimistic as DirectMessage[] } }),
-            historyWindow: { ...current.historyWindow, pendingLive: [] },
-          }));
-        }
 
         await get().loadChatHistory(type, chatId, serverId, target);
       },
