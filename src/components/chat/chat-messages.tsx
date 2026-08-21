@@ -7,7 +7,6 @@ import { Member, Message } from "@/types";
 import { useChatQuery } from "@/hooks/use-chat-query";
 import { useChatSocket } from "@/hooks/use-chat-socket";
 import { useMockStore } from "@/lib/mock-store";
-import { scrollDebug } from "@/lib/scroll-debug";
 
 import { ChatWelcome } from "./chat-welcome";
 import { ChatItem } from "./chat-item";
@@ -15,7 +14,8 @@ import { clearProxyCache } from "./smart-image";
 
 const DATE_FORMAT = "d MMM yyyy, HH:mm";
 const TIME_FORMAT = "HH:mm";
-const HISTORY_EDGE_TRIGGER_PX = 400;
+const HISTORY_EDGE_TRIGGER_PX = 150;
+const HISTORY_LOAD_COOLDOWN_MS = 600;
 
 interface ChatMessagesProps {
   name: string;
@@ -45,6 +45,8 @@ export const ChatMessages = ({
   const hasInitializedRef = useRef(false);
   const isLoadingOlderRef = useRef(false);
   const isLoadingNewerRef = useRef(false);
+  const lastOlderLoadTimeRef = useRef(0);
+  const lastNewerLoadTimeRef = useRef(0);
   const programmaticScrollUntilRef = useRef(0);
   const jumpingToLatestRef = useRef(false);
   const anchorRef = useRef<{
@@ -73,6 +75,7 @@ export const ChatMessages = ({
   const loadingNewer = useMockStore((state) => state.historyWindow.loadingNewer);
   const pendingLiveCount = useMockStore((state) => state.historyWindow.pendingLive.length);
   const [atBottom, setAtBottom] = useState(true);
+  const lastSeenCountRef = useRef(0);
 
   const {
     data,
@@ -88,7 +91,15 @@ export const ChatMessages = ({
   const historyTarget = type === "channel" && !name.startsWith("#") ? `#${name}` : name;
   const hasWelcome = windowReady && !hasOlder && olderCursor === null;
   const totalCount = items.length + (hasWelcome ? 1 : 0);
-  const showJumpToLatest = hasNewer || pendingLiveCount > 0;
+
+  useEffect(() => {
+    if (atBottom) {
+      lastSeenCountRef.current = items.length;
+    }
+  }, [items.length, atBottom]);
+
+  const newMessagesCount = !atBottom ? Math.max(0, items.length - lastSeenCountRef.current) + pendingLiveCount : pendingLiveCount;
+  const showJumpToLatest = !atBottom || hasNewer || pendingLiveCount > 0;
 
   const virtualizer = useVirtualizer({
     count: totalCount,
@@ -125,6 +136,13 @@ export const ChatMessages = ({
     useAnimationFrameWithResizeObserver: true,
   });
 
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
+    if (shouldStickToBottomRef.current) return false;
+    if (instance.scrollDirection === "backward") return false;
+    const scrollOffset = instance.scrollOffset ?? chatRef.current?.scrollTop ?? 0;
+    return item.end <= scrollOffset;
+  };
+
   const markProgrammaticScroll = useCallback((durationMs = 160) => {
     programmaticScrollUntilRef.current = Math.max(
       programmaticScrollUntilRef.current,
@@ -132,20 +150,12 @@ export const ChatMessages = ({
     );
   }, []);
 
-  const pinToBottom = useCallback((behavior: "auto" | "smooth" = "auto", reason = "default") => {
+  const pinToBottom = useCallback((behavior: "auto" | "smooth" = "auto", _reason = "default") => {
     const element = chatRef.current;
     if (!element) return;
-    const oldScrollTop = element.scrollTop;
     markProgrammaticScroll(180);
     element.scrollTop = element.scrollHeight;
     virtualizer.scrollToEnd({ behavior });
-    scrollDebug.logPinToBottom({
-      reason,
-      oldScrollTop,
-      newScrollTop: element.scrollTop,
-      scrollHeight: element.scrollHeight,
-      clientHeight: element.clientHeight,
-    });
   }, [markProgrammaticScroll, virtualizer]);
 
   const registerRowElement = useCallback((element: HTMLDivElement | null, id: string) => {
@@ -178,14 +188,6 @@ export const ChatMessages = ({
             lastItemId: items[items.length - 1]?.id,
             reason,
           };
-          scrollDebug.logAnchorCapture({
-            reason,
-            messageId: msg.id,
-            screenY: anchorRef.current.screenY,
-            scrollTop: element.scrollTop,
-            scrollHeight: element.scrollHeight,
-            totalItems: items.length,
-          });
           found = true;
           break;
         }
@@ -203,14 +205,6 @@ export const ChatMessages = ({
         lastItemId: items[items.length - 1]?.id,
         reason,
       };
-      scrollDebug.logAnchorCapture({
-        reason,
-        messageId: firstMsg.id,
-        screenY: 0,
-        scrollTop: element.scrollTop,
-        scrollHeight: element.scrollHeight,
-        totalItems: items.length,
-      });
     }
   }, [items]);
 
@@ -226,30 +220,25 @@ export const ChatMessages = ({
       return;
     }
 
+    const now = performance.now();
+    if (now - lastOlderLoadTimeRef.current < HISTORY_LOAD_COOLDOWN_MS) {
+      return;
+    }
+
     isLoadingOlderRef.current = true;
+    lastOlderLoadTimeRef.current = now;
     captureAnchor("triggerLoadOlder");
 
     const fallbackTimer = setTimeout(() => {
       isLoadingOlderRef.current = false;
+      lastOlderLoadTimeRef.current = performance.now();
       clearHistoryLoading();
-      scrollDebug.logWarn("triggerLoadOlder: fallback timeout fired (5s limit reached)");
     }, 5000);
 
-    const startTime = performance.now();
     void loadOlderHistory(type, chatId, serverId, historyTarget).then((loaded: boolean) => {
       clearTimeout(fallbackTimer);
       isLoadingOlderRef.current = false;
-      const elapsed = Math.round(performance.now() - startTime);
-      scrollDebug.logScroll({
-        scrollTop: element.scrollTop,
-        scrollHeight: element.scrollHeight,
-        clientHeight: element.clientHeight,
-        distanceFromBottom: element.scrollHeight - element.scrollTop - element.clientHeight,
-        isAtBottom: false,
-        shouldStick: shouldStickToBottomRef.current,
-        programmaticRemainingMs: Math.max(0, programmaticScrollUntilRef.current - performance.now()),
-        reason: `triggerLoadOlder finished (loaded: ${loaded}, elapsed: ${elapsed}ms)`,
-      });
+      lastOlderLoadTimeRef.current = performance.now();
       if (!loaded) {
         anchorRef.current = null;
       }
@@ -267,32 +256,27 @@ export const ChatMessages = ({
       return;
     }
 
+    const now = performance.now();
+    if (now - lastNewerLoadTimeRef.current < HISTORY_LOAD_COOLDOWN_MS) {
+      return;
+    }
+
     isLoadingNewerRef.current = true;
+    lastNewerLoadTimeRef.current = now;
     if (!shouldStickToBottomRef.current) {
       captureAnchor("triggerLoadNewer");
     }
 
     const fallbackTimer = setTimeout(() => {
       isLoadingNewerRef.current = false;
+      lastNewerLoadTimeRef.current = performance.now();
       clearHistoryLoading();
-      scrollDebug.logWarn("triggerLoadNewer: fallback timeout fired (5s limit reached)");
     }, 5000);
 
-    const startTime = performance.now();
     void loadNewerHistory(type, chatId, serverId, historyTarget).then((loaded: boolean) => {
       clearTimeout(fallbackTimer);
       isLoadingNewerRef.current = false;
-      const elapsed = Math.round(performance.now() - startTime);
-      scrollDebug.logScroll({
-        scrollTop: element.scrollTop,
-        scrollHeight: element.scrollHeight,
-        clientHeight: element.clientHeight,
-        distanceFromBottom: element.scrollHeight - element.scrollTop - element.clientHeight,
-        isAtBottom: (element.scrollHeight - element.scrollTop - element.clientHeight) < 30,
-        shouldStick: shouldStickToBottomRef.current,
-        programmaticRemainingMs: Math.max(0, programmaticScrollUntilRef.current - performance.now()),
-        reason: `triggerLoadNewer finished (loaded: ${loaded}, elapsed: ${elapsed}ms)`,
-      });
+      lastNewerLoadTimeRef.current = performance.now();
       if (!loaded) {
         anchorRef.current = null;
       }
@@ -318,21 +302,11 @@ export const ChatMessages = ({
 
     if (isAtBottom) {
       anchorRef.current = null;
+      lastSeenCountRef.current = items.length;
     }
 
     const programmaticRemaining = Math.max(0, programmaticScrollUntilRef.current - performance.now());
     const isProgrammatic = programmaticRemaining > 0;
-
-    scrollDebug.logScroll({
-      scrollTop: element.scrollTop,
-      scrollHeight: element.scrollHeight,
-      clientHeight: element.clientHeight,
-      distanceFromBottom,
-      isAtBottom,
-      shouldStick: shouldStickToBottomRef.current,
-      programmaticRemainingMs: programmaticRemaining,
-      reason: stickChanged ? `stickToBottom changed to ${isAtBottom}` : undefined,
-    });
 
     if (!isProgrammatic) {
       if (element.scrollTop <= HISTORY_EDGE_TRIGGER_PX) {
@@ -341,34 +315,29 @@ export const ChatMessages = ({
         triggerLoadNewer();
       }
     }
-  }, [triggerLoadOlder, triggerLoadNewer]);
+  }, [triggerLoadOlder, triggerLoadNewer, items.length]);
 
   const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     const element = chatRef.current;
     if (!element) return;
 
-    programmaticScrollUntilRef.current = 0;
-    jumpingToLatestRef.current = false;
-
-    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
     const wasSticking = shouldStickToBottomRef.current;
-
-    if (e.deltaY < 0) {
+    if (e.deltaY < 0 && wasSticking) {
       shouldStickToBottomRef.current = false;
       setAtBottom(false);
+      jumpingToLatestRef.current = false;
+      programmaticScrollUntilRef.current = 0;
     }
 
-    scrollDebug.logWheel({
-      deltaY: e.deltaY,
-      scrollTop: element.scrollTop,
-      distanceFromBottom,
-      action: e.deltaY < 0 && wasSticking ? "Wheel UP -> released stickToBottom lock" : e.deltaY < 0 ? "Wheel UP" : "Wheel DOWN",
-    });
+    const programmaticRemaining = Math.max(0, programmaticScrollUntilRef.current - performance.now());
+    const isProgrammatic = programmaticRemaining > 0;
 
-    if (e.deltaY < 0 && element.scrollTop <= HISTORY_EDGE_TRIGGER_PX) {
-      triggerLoadOlder();
-    } else if (e.deltaY > 0) {
-      if (distanceFromBottom <= HISTORY_EDGE_TRIGGER_PX) {
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+
+    if (!isProgrammatic) {
+      if (e.deltaY < 0 && element.scrollTop <= HISTORY_EDGE_TRIGGER_PX) {
+        triggerLoadOlder();
+      } else if (e.deltaY > 0 && distanceFromBottom <= HISTORY_EDGE_TRIGGER_PX) {
         triggerLoadNewer();
       }
     }
@@ -380,6 +349,7 @@ export const ChatMessages = ({
     isLoadingOlderRef.current = false;
     isLoadingNewerRef.current = false;
     anchorRef.current = null;
+    lastSeenCountRef.current = 0;
     rowElementsRef.current.clear();
     remeasureCallbacksRef.current.clear();
     setAtBottom(true);
@@ -457,20 +427,6 @@ export const ChatMessages = ({
         element.scrollTop += fineDelta;
       }
     }
-
-    scrollDebug.logAnchorRestore({
-      anchorId: anchor.id,
-      savedScrollTop: anchor.scrollTop,
-      savedScrollHeight: anchor.scrollHeight,
-      savedScreenY: anchor.screenY,
-      currentScrollTop,
-      currentScrollHeight,
-      heightDelta: scrollHeightDelta,
-      appliedScrollTop,
-      fineDelta,
-      finalScrollTop: element.scrollTop,
-      rowFound: !!rowEl,
-    });
   }, [items, totalCount, pinToBottom, markProgrammaticScroll, virtualizer, hasWelcome]);
 
   useEffect(() => {
@@ -548,50 +504,12 @@ export const ChatMessages = ({
           return;
         }
 
-        const container = chatRef.current;
-        let topVisibleId: string | null = null;
-        let topVisibleOffset = 0;
-        if (container) {
-          const containerRect = container.getBoundingClientRect();
-          const paddingTop = parseFloat(getComputedStyle(container).paddingTop) || 0;
-          for (const msg of items) {
-            const rowEl = rowElementsRef.current.get(msg.id);
-            if (rowEl) {
-              const rect = rowEl.getBoundingClientRect();
-              if (rect.bottom > containerRect.top + paddingTop + 2) {
-                topVisibleId = msg.id;
-                topVisibleOffset = rect.top - containerRect.top - paddingTop;
-                break;
-              }
-            }
-          }
-        }
-
         virtualizer.measureElement(element);
-
-        const anchoredId = topVisibleId;
-        if (anchoredId && container) {
-          requestAnimationFrame(() => {
-            const containerNow = chatRef.current;
-            if (!containerNow || shouldStickToBottomRef.current) return;
-            const topRowEl = rowElementsRef.current.get(anchoredId);
-            if (topRowEl) {
-              const containerRect = containerNow.getBoundingClientRect();
-              const paddingTop = parseFloat(getComputedStyle(containerNow).paddingTop) || 0;
-              const newTop = topRowEl.getBoundingClientRect().top - containerRect.top - paddingTop;
-              const diff = newTop - topVisibleOffset;
-              if (Math.abs(diff) > 0.5) {
-                markProgrammaticScroll(180);
-                containerNow.scrollTop += diff;
-              }
-            }
-          });
-        }
       };
       remeasureCallbacksRef.current.set(messageId, cb);
     }
     return cb;
-  }, [items, pinToBottom, virtualizer, markProgrammaticScroll]);
+  }, [pinToBottom, virtualizer]);
 
   const handleJumpToLatest = useCallback(() => {
     jumpingToLatestRef.current = true;
@@ -599,16 +517,25 @@ export const ChatMessages = ({
     shouldStickToBottomRef.current = true;
     anchorRef.current = null;
     setAtBottom(true);
-    void jumpToLatest(type, chatId, serverId, historyTarget).then(() => {
-      shouldStickToBottomRef.current = true;
-      anchorRef.current = null;
-      pinToBottom("auto", "handleJumpToLatest post-load");
+    lastSeenCountRef.current = items.length;
+    if (hasNewer || pendingLiveCount > 0) {
+      void jumpToLatest(type, chatId, serverId, historyTarget).then(() => {
+        shouldStickToBottomRef.current = true;
+        anchorRef.current = null;
+        pinToBottom("auto", "handleJumpToLatest post-load");
+        setTimeout(() => {
+          jumpingToLatestRef.current = false;
+          programmaticScrollUntilRef.current = 0;
+        }, 500);
+      });
+    } else {
+      pinToBottom("auto", "handleJumpToLatest direct-scroll");
       setTimeout(() => {
         jumpingToLatestRef.current = false;
         programmaticScrollUntilRef.current = 0;
       }, 500);
-    });
-  }, [jumpToLatest, type, chatId, serverId, historyTarget, pinToBottom]);
+    }
+  }, [hasNewer, pendingLiveCount, items.length, jumpToLatest, type, chatId, serverId, historyTarget, pinToBottom]);
 
   if (status === "loading") {
     return (
@@ -718,13 +645,13 @@ export const ChatMessages = ({
       {showJumpToLatest && (
         <button
           onClick={handleJumpToLatest}
-          className="absolute bottom-4 right-4 z-10 flex items-center gap-2 rounded-full bg-[#5865F2] hover:bg-[#4752C4] text-white text-xs font-semibold px-3 py-2 shadow-lg transition-colors"
+          className="absolute bottom-4 right-4 z-10 flex items-center gap-2 rounded-full bg-[#5865F2] hover:bg-[#4752C4] text-white text-xs font-semibold px-3 py-2 shadow-lg transition-all transform active:scale-95 cursor-pointer animate-in fade-in slide-in-from-bottom-2 duration-150"
         >
           <ArrowDownToLine className="h-4 w-4" />
-          Jump to latest
-          {pendingLiveCount > 0 && (
-            <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] leading-none">
-              {pendingLiveCount}
+          <span>Jump to latest</span>
+          {newMessagesCount > 0 && (
+            <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold leading-none">
+              {newMessagesCount}
             </span>
           )}
         </button>

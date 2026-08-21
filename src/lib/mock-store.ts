@@ -21,7 +21,6 @@ import {
 } from "./mock-data";
 import { v4 as uuidv4 } from "uuid";
 import { ImageUploadConfig, UrlAuthRule } from "./upload/types";
-import { scrollDebug } from "./scroll-debug";
 
 export const MAX_HISTORY_WINDOW = 600;
 export const MAX_PENDING_LIVE = 100;
@@ -895,14 +894,6 @@ export const useMockStore = create<MockState>()(
         const requestedKey = chatKey(type, chatId);
         const requestToken = get().historyLoadToken + 1;
 
-        scrollDebug.logStoreHistory("loadChatHistory: starting", {
-          type,
-          chatId,
-          serverId,
-          target,
-          requestToken,
-        });
-
         // Reset the sliding window: only the active chat is buffered in memory and the native
         // log is the source of truth. Offsetless (optimistic/local-only) messages are preserved.
         set((state) => {
@@ -940,10 +931,6 @@ export const useMockStore = create<MockState>()(
           });
           const current = get();
           if (current.activeChatKey !== requestedKey || current.historyLoadToken !== requestToken) {
-            scrollDebug.logStoreHistory("loadChatHistory: ignored stale response", {
-              currentActive: current.activeChatKey,
-              requestedKey,
-            });
             return;
           }
 
@@ -957,15 +944,6 @@ export const useMockStore = create<MockState>()(
           const combined = trimWindow([...fetched, ...keptLive]);
           const newestOffset = lastLogOffset(combined);
 
-          scrollDebug.logStoreHistory("loadChatHistory: loaded tail page", {
-            fetchedEntries: page.entries.length,
-            keptLiveCount: keptLive.length,
-            combinedCount: combined.length,
-            nextOffset: page.nextOffset,
-            hasOlder: page.nextOffset !== null,
-            newerCursor: newestOffset,
-          });
-
           applyWindow(set, type, chatId, combined, {
             hasOlder: page.nextOffset !== null,
             olderCursor: page.nextOffset,
@@ -975,7 +953,6 @@ export const useMockStore = create<MockState>()(
           });
         } catch (error) {
           console.error(`Failed to load IRC history for ${target}:`, error);
-          scrollDebug.logWarn(`loadChatHistory: failed for ${target}`, error);
           const current = get();
           if (current.activeChatKey !== requestedKey || current.historyLoadToken !== requestToken) return;
           applyWindow(set, type, chatId,
@@ -997,23 +974,11 @@ export const useMockStore = create<MockState>()(
           || !win.hasOlder
           || win.olderCursor === null
         ) {
-          scrollDebug.logStoreHistory("loadOlderHistory: skipped (preconditions not met)", {
-            activeKey: state.activeChatKey,
-            winKey: win.key,
-            loadingOlder: win.loadingOlder,
-            hasOlder: win.hasOlder,
-            olderCursor: win.olderCursor,
-          });
           return false;
         }
 
         const requestToken = state.historyLoadToken;
         const cursor = win.olderCursor;
-        scrollDebug.logStoreHistory("loadOlderHistory: requesting older chunk", {
-          target,
-          cursor,
-          currentWindowLength: (type === "channel" ? state.messages[chatId] : state.directMessages[chatId])?.length ?? 0,
-        });
 
         set((s) => ({ historyWindow: { ...s.historyWindow, loadingOlder: true } }));
 
@@ -1025,10 +990,6 @@ export const useMockStore = create<MockState>()(
           });
           const current = get();
           if (current.activeChatKey !== requestedKey || current.historyLoadToken !== requestToken) {
-            scrollDebug.logStoreHistory("loadOlderHistory: ignored stale response", {
-              currentActive: current.activeChatKey,
-              requestedKey,
-            });
             return false;
           }
 
@@ -1049,18 +1010,6 @@ export const useMockStore = create<MockState>()(
           const combined = wasTrimmed ? merged.slice(0, MAX_HISTORY_WINDOW) : merged;
           const winBefore = current.historyWindow;
 
-          scrollDebug.logStoreHistory("loadOlderHistory: chunk received", {
-            fetchedCount: page.entries.length,
-            newOlderCount: newOlder.length,
-            windowSizeBefore: currentMessages.length,
-            windowSizeAfter: combined.length,
-            wasTrimmed,
-            droppedNewestItemsCount: trimmedCount,
-            newOlderCursor: page.nextOffset,
-            hasOlder: page.nextOffset !== null,
-            hasNewer: wasTrimmed ? true : winBefore.hasNewer,
-          });
-
           applyWindow(set, type, chatId, combined, {
             olderCursor: page.nextOffset,
             hasOlder: page.nextOffset !== null,
@@ -1073,7 +1022,6 @@ export const useMockStore = create<MockState>()(
           return newOlder.length > 0;
         } catch (error) {
           console.error(`Failed to load older IRC history for ${target}:`, error);
-          scrollDebug.logWarn(`loadOlderHistory: error loading for ${target}`, error);
           const current = get();
           if (current.activeChatKey === requestedKey && current.historyLoadToken === requestToken) {
             set((s) => ({ historyWindow: { ...s.historyWindow, loadingOlder: false } }));
@@ -1093,23 +1041,11 @@ export const useMockStore = create<MockState>()(
           || !win.hasNewer
           || win.newerCursor === null
         ) {
-          scrollDebug.logStoreHistory("loadNewerHistory: skipped (preconditions not met)", {
-            activeKey: state.activeChatKey,
-            winKey: win.key,
-            loadingNewer: win.loadingNewer,
-            hasNewer: win.hasNewer,
-            newerCursor: win.newerCursor,
-          });
           return false;
         }
 
         const requestToken = state.historyLoadToken;
         const cursor = win.newerCursor;
-        scrollDebug.logStoreHistory("loadNewerHistory: requesting newer chunk", {
-          target,
-          cursor,
-          currentWindowLength: (type === "channel" ? state.messages[chatId] : state.directMessages[chatId])?.length ?? 0,
-        });
 
         set((s) => ({ historyWindow: { ...s.historyWindow, loadingNewer: true } }));
 
@@ -1122,10 +1058,6 @@ export const useMockStore = create<MockState>()(
           });
           const current = get();
           if (current.activeChatKey !== requestedKey || current.historyLoadToken !== requestToken) {
-            scrollDebug.logStoreHistory("loadNewerHistory: ignored stale response", {
-              currentActive: current.activeChatKey,
-              requestedKey,
-            });
             return false;
           }
 
@@ -1143,18 +1075,6 @@ export const useMockStore = create<MockState>()(
           const combined = trimWindow(merged);
           const winBefore = current.historyWindow;
           const reachedTail = page.nextAfter === null;
-
-          scrollDebug.logStoreHistory("loadNewerHistory: chunk received", {
-            fetchedCount: page.entries.length,
-            newOnesCount: newOnes.length,
-            windowSizeBefore: currentMessages.length,
-            windowSizeAfter: combined.length,
-            wasTrimmed,
-            droppedOldestItemsCount: droppedOldestCount,
-            newNewerCursor: page.nextAfter ?? null,
-            hasNewer: page.nextAfter !== null,
-            reachedTail,
-          });
 
           applyWindow(set, type, chatId, combined, {
             newerCursor: page.nextAfter ?? null,
@@ -1179,10 +1099,6 @@ export const useMockStore = create<MockState>()(
               const stillPending = pending.filter(
                 (m) => !items.some((item) => isSameLogLine(item, m) || item.id === m.id)
               );
-              scrollDebug.logStoreHistory("loadNewerHistory: reached tail -> flushing pendingLive", {
-                pendingTotal: pending.length,
-                stillPendingToAppend: stillPending.length,
-              });
               if (stillPending.length > 0) {
                 applyWindow(set, type, chatId, trimWindow([...items, ...stillPending]), { pendingLive: [] });
               } else {
@@ -1194,7 +1110,6 @@ export const useMockStore = create<MockState>()(
           return newOnes.length > 0;
         } catch (error) {
           console.error(`Failed to load newer IRC history for ${target}:`, error);
-          scrollDebug.logWarn(`loadNewerHistory: error loading for ${target}`, error);
           const current = get();
           if (current.activeChatKey === requestedKey && current.historyLoadToken === requestToken) {
             set((s) => ({ historyWindow: { ...s.historyWindow, loadingNewer: false } }));
@@ -1220,12 +1135,6 @@ export const useMockStore = create<MockState>()(
           ...currentItems.filter((item) => item.offset === undefined),
           ...pending,
         ]);
-
-        scrollDebug.logStoreHistory("jumpToLatest: resetting window directly to tail", {
-          target,
-          optimisticCount: optimistic.length,
-          pendingCount: pending.length,
-        });
 
         if (optimistic.length > 0) {
           set((current) => ({
@@ -1273,15 +1182,6 @@ export const useMockStore = create<MockState>()(
 
         // Bounded memory: only the active chat window is buffered; inactive chats stay in the native log.
         if (state.activeChatKey !== key) {
-          scrollDebug.logStoreLive({
-            sender: member?.profile?.name || member.id,
-            action: "ignored_inactive_chat",
-            channelOrChatId: channelId,
-            hasNewer: false,
-            windowSize: 0,
-            pendingCount: 0,
-            contentSnippet: content.slice(0, 40),
-          });
           return newMessage;
         }
 
@@ -1291,15 +1191,6 @@ export const useMockStore = create<MockState>()(
           set((s) => {
             if (s.activeChatKey !== key) return {};
             const nextPending = [...s.historyWindow.pendingLive, newMessage].slice(-MAX_PENDING_LIVE);
-            scrollDebug.logStoreLive({
-              sender: member?.profile?.name || member.id,
-              action: "queued_in_pending_live",
-              channelOrChatId: channelId,
-              hasNewer: true,
-              windowSize: (s.messages[channelId] || []).length,
-              pendingCount: nextPending.length,
-              contentSnippet: content.slice(0, 40),
-            });
             return {
               historyWindow: {
                 ...s.historyWindow,
@@ -1311,15 +1202,6 @@ export const useMockStore = create<MockState>()(
           set((state2) => {
             if (state2.activeChatKey !== key) return {};
             const nextMsgs = trimWindow([...(state2.messages[channelId] || []), newMessage]) as Message[];
-            scrollDebug.logStoreLive({
-              sender: member?.profile?.name || member.id,
-              action: "appended_to_active_window",
-              channelOrChatId: channelId,
-              hasNewer: false,
-              windowSize: nextMsgs.length,
-              pendingCount: (state2.historyWindow.pendingLive || []).length,
-              contentSnippet: content.slice(0, 40),
-            });
             return {
               messages: {
                 ...state2.messages,
@@ -1401,15 +1283,6 @@ export const useMockStore = create<MockState>()(
 
         // Bounded memory: only the active conversation window is buffered.
         if (state.activeChatKey !== key) {
-          scrollDebug.logStoreLive({
-            sender: member?.profile?.name || member.id,
-            action: "ignored_inactive_chat",
-            channelOrChatId: conversationId,
-            hasNewer: false,
-            windowSize: 0,
-            pendingCount: 0,
-            contentSnippet: content.slice(0, 40),
-          });
           return newDm;
         }
 
@@ -1419,15 +1292,6 @@ export const useMockStore = create<MockState>()(
           set((s) => {
             if (s.activeChatKey !== key) return {};
             const nextPending = [...s.historyWindow.pendingLive, newDm].slice(-MAX_PENDING_LIVE);
-            scrollDebug.logStoreLive({
-              sender: member?.profile?.name || member.id,
-              action: "queued_in_pending_live",
-              channelOrChatId: conversationId,
-              hasNewer: true,
-              windowSize: (s.directMessages[conversationId] || []).length,
-              pendingCount: nextPending.length,
-              contentSnippet: content.slice(0, 40),
-            });
             return {
               historyWindow: {
                 ...s.historyWindow,
@@ -1439,15 +1303,6 @@ export const useMockStore = create<MockState>()(
           set((state2) => {
             if (state2.activeChatKey !== key) return {};
             const nextDms = trimWindow([...(state2.directMessages[conversationId] || []), newDm]) as DirectMessage[];
-            scrollDebug.logStoreLive({
-              sender: member?.profile?.name || member.id,
-              action: "appended_to_active_window",
-              channelOrChatId: conversationId,
-              hasNewer: false,
-              windowSize: nextDms.length,
-              pendingCount: (state2.historyWindow.pendingLive || []).length,
-              contentSnippet: content.slice(0, 40),
-            });
             return {
               directMessages: {
                 ...state2.directMessages,
