@@ -471,6 +471,7 @@ export const ChatInput = ({
           channelName: name,
           channelId: query?.channelId,
           conversationId: query?.conversationId,
+          targetMemberId: query?.targetMemberId,
           type,
           currentMember: senderMember,
           activeServer,
@@ -496,6 +497,9 @@ export const ChatInput = ({
                   message: img.url,
                 }).catch((e) => console.error(e));
                 addDirectMessage(query.conversationId, senderMember, img.url);
+                if (query.targetMemberId) {
+                  useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
+                }
               }
             }
           }
@@ -530,9 +534,15 @@ export const ChatInput = ({
               message: line 
             });
             addDirectMessage(query.conversationId, senderMember, line);
+            if (query.targetMemberId) {
+              useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
+            }
           } catch (err: any) {
             console.error("Failed to send private message via Tauri IRC:", err);
             addDirectMessage(query.conversationId, senderMember, line);
+            if (query.targetMemberId) {
+              useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
+            }
           }
         }
       }

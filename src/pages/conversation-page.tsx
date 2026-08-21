@@ -14,6 +14,7 @@ export const ConversationPage = () => {
   const servers = useMockStore((state) => state.servers);
   const currentProfile = useMockStore((state) => state.currentProfile);
   const showMembersSidebar = useUIStore((state) => state.showMembersSidebar);
+  const setMembersSidebar = useUIStore((state) => state.setMembersSidebar);
 
   const server = servers.find((s) => s.id === serverId);
   const targetMember = server?.members.find((m) => m.id === memberId);
@@ -21,8 +22,9 @@ export const ConversationPage = () => {
   useEffect(() => {
     if (serverId && memberId) {
       useMockStore.getState().openConversation(serverId, memberId);
+      setMembersSidebar(false);
     }
-  }, [serverId, memberId]);
+  }, [serverId, memberId, setMembersSidebar]);
 
   useEffect(() => {
     if (!server && servers.length > 0) {
@@ -72,10 +74,11 @@ export const ConversationPage = () => {
             query={{
               conversationId,
               serverId: server.id,
+              targetMemberId: targetMember.id,
             }}
           />
         </div>
-        {showMembersSidebar && <ChatMembersSidebar server={server} />}
+        <ChatMembersSidebar server={server} />
       </div>
     </div>
   );

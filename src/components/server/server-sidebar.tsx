@@ -12,6 +12,7 @@ import { ServerSearch } from "./server-search";
 import { ServerSection } from "./server-section";
 import { ServerChannel } from "./server-channel";
 import { ServerConversation } from "./server-conversation";
+import { useUIStore } from "@/hooks/use-ui-store";
 
 interface ServerSidebarProps {
   serverId: string;
@@ -32,6 +33,8 @@ export const ServerSidebar = ({
   const pendingInvites = useMockStore((state) => state.pendingInvites);
   const acceptPendingInvite = useMockStore((state) => state.acceptPendingInvite);
   const ignorePendingInvite = useMockStore((state) => state.ignorePendingInvite);
+
+  const setMembersSidebar = useUIStore((state) => state.setMembersSidebar);
 
   const [splitPercent, setSplitPercent] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -79,9 +82,11 @@ export const ServerSidebar = ({
     (m) =>
       m.profileId === currentProfile?.id ||
       m.profile?.id === currentProfile?.id ||
-      (server.nicknames && server.nicknames.includes(m.profile?.name)) ||
+      (server.nicknames && server.nicknames.length > 0 && 
+       server.nicknames.some(nick => nick.toLowerCase() === m.profile?.name?.toLowerCase())) ||
       m.id.startsWith("member-")
-  );
+  ) || server.members[0]; // fallback to first member so it's never undefined
+
 
   const otherMembers = (server.members || []).filter(
     (m) =>
@@ -91,12 +96,25 @@ export const ServerSidebar = ({
       !m.id.startsWith("self-")
   );
 
+  const directMessagesMap = useMockStore((state) => state.directMessages);
+
   const activeMemberIds = (activeConversations[server.id] || []).filter(
     (memberId) => memberId !== currentMember?.id
   );
   const pmMembers = activeMemberIds
     .map((memberId) => server.members.find((m) => m.id === memberId))
-    .filter((m): m is NonNullable<typeof m> => !!m);
+    .filter((m): m is NonNullable<typeof m> => {
+      if (!m) return false;
+      const isSelected = location.pathname.includes(`/conversations/${m.id}`);
+      if (isSelected) return true;
+      if (!currentMember) return false;
+      const convId = [currentMember.id, m.id].sort().join("-");
+      const msgs = directMessagesMap[convId];
+      if (msgs !== undefined && msgs.length === 0) return false;
+      return true;
+    });
+
+  const isConversationPage = location.pathname.includes("/conversations/");
 
   return (
     <div className="flex flex-col h-full text-primary w-full dark:bg-[#2B2D31] bg-[#F2F3F5] overflow-hidden select-none">
@@ -245,7 +263,14 @@ export const ServerSidebar = ({
         <div style={{ height: `${100 - splitPercent}%` }} className="flex flex-col min-h-0">
           <div className="px-3 pt-2">
             <div className="flex items-center justify-between py-1">
-              <p className="text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400">
+              <p
+                onClick={isConversationPage ? () => setMembersSidebar(true) : undefined}
+                className={cn(
+                  "text-xs font-semibold uppercase text-zinc-500 dark:text-zinc-400 flex items-center gap-x-1 select-none transition",
+                  isConversationPage && "cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-200"
+                )}
+                title={isConversationPage ? "Expand side panel" : undefined}
+              >
                 Private messages ({pmMembers.length})
               </p>
             </div>

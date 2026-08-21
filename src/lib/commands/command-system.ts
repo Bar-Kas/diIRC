@@ -7,6 +7,7 @@ export interface CommandContext {
   channelName: string;
   channelId?: string;
   conversationId?: string;
+  targetMemberId?: string;
   type: "channel" | "conversation";
   currentMember: Member;
   activeServer: Server;
@@ -88,9 +89,17 @@ commandRegistry.register({
           message: ctcpAction,
         });
         ctx.addDirectMessage(ctx.conversationId, ctx.currentMember, ctcpAction);
+        if (ctx.targetMemberId) {
+          const { useMockStore } = await import("@/lib/mock-store");
+          useMockStore.getState().addToHistoricalConversations(ctx.serverId, ctx.targetMemberId);
+        }
       } catch (err) {
         console.error("Failed to send /me direct action via Tauri IRC:", err);
         ctx.addDirectMessage(ctx.conversationId, ctx.currentMember, ctcpAction);
+        if (ctx.targetMemberId) {
+          const { useMockStore } = await import("@/lib/mock-store");
+          useMockStore.getState().addToHistoricalConversations(ctx.serverId, ctx.targetMemberId);
+        }
       }
     }
   },

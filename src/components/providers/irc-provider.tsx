@@ -129,6 +129,28 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     });
   }, [servers, attemptConnect, setIrcConnected]);
 
+  // Track which servers have been synced
+  const syncedServersRef = useRef<Set<string>>(new Set());
+
+  // Sync active Conversations with non-empty log files on disk
+  useEffect(() => {
+    servers.forEach(async (server) => {
+      if (syncedServersRef.current.has(server.id)) return;
+      syncedServersRef.current.add(server.id);
+      
+      try {
+        const loggedNicks = await invoke<string[]>("list_logged_conversations", {
+          serverId: server.id,
+        });
+        useMockStore.getState().syncActiveConversationsWithDisk(server.id, loggedNicks);
+      } catch (err) {
+        console.error(`Failed to sync conversations with disk for ${server.name}:`, err);
+        // If it fails, allow it to retry later by removing from the set
+        syncedServersRef.current.delete(server.id);
+      }
+    });
+  }, [servers]);
+
   // Auto-reconnect loop with exponential backoff & error throttling for disconnected servers
   useEffect(() => {
     const interval = setInterval(() => {
@@ -195,6 +217,38 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
           if (!isChannelMsg) {
             // Private Message (PM)
             const store = useMockStore.getState();
+            if (isSystem || sender === "System") {
+              const targetNick = channel;
+              const targetMember = store.addServerMember(targetServer.id, targetNick);
+              const currentMember = targetServer.members.find(
+                (m) => m.profileId === store.currentProfile.id
+              ) || targetServer.members[0];
+
+              if (targetMember && currentMember) {
+                const conversationId = [currentMember.id, targetMember.id].sort().join("-");
+                const systemMember = {
+                  id: "system",
+                  profileId: "system",
+                  profile: {
+                    id: "system",
+                    userId: "system",
+                    name: "System",
+                    imageUrl: "",
+                    email: "system@irc.local",
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  },
+                  serverId: targetServer.id,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                };
+                store.addDirectMessage(conversationId, systemMember as any, content, null);
+                store.openConversation(targetServer.id, targetMember.id);
+                store.addToHistoricalConversations(targetServer.id, targetMember.id);
+              }
+              return;
+            }
+
             let senderMember = store.addServerMember(targetServer.id, sender);
 
             const currentMember = targetServer.members.find(
@@ -205,6 +259,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               const conversationId = [currentMember.id, senderMember.id].sort().join("-");
               store.addDirectMessage(conversationId, senderMember, content, null);
               store.openConversation(targetServer.id, senderMember.id);
+              store.addToHistoricalConversations(targetServer.id, senderMember.id);
             }
             return;
           }

@@ -16,6 +16,8 @@ import { JoinChannelPasswordModal } from "@/components/modals/join-channel-passw
 import { ChannelSettingsModal } from "@/components/modals/channel-settings-modal";
 import { ChannelOperatorSettingsModal } from "@/components/modals/channel-operator-settings-modal";
 import { ConnectionDetailsModal } from "@/components/modals/connection-details-modal";
+import { RoleIconsModal } from "@/components/modals/role-icons-modal";
+import { PrivateMessagesModal } from "@/components/modals/private-messages-modal";
 
 export const ModalProvider = () => {
   const [isMounted, setIsMounted] = useState(false);
@@ -46,6 +48,8 @@ export const ModalProvider = () => {
       <ChannelSettingsModal />
       <ChannelOperatorSettingsModal />
       <ConnectionDetailsModal />
+      <RoleIconsModal />
+      <PrivateMessagesModal />
     </>
   );
 };

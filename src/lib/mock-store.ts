@@ -207,10 +207,13 @@ interface MockState {
   addMessage: (channelId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean) => Message;
   deleteMessage: (channelId: string, messageId: string) => void;
 
-  // Direct Message Actions
   activeConversations: Record<string, string[]>;
+  historicalConversations: Record<string, string[]>;
   openConversation: (serverId: string, memberId: string) => void;
+  addToHistoricalConversations: (serverId: string, memberId: string) => void;
   closeConversation: (serverId: string, memberId: string) => void;
+  syncActiveConversationsWithDisk: (serverId: string, loggedNicks: string[]) => void;
+
   addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null) => DirectMessage;
   deleteDirectMessage: (conversationId: string, messageId: string) => void;
 }
@@ -236,6 +239,7 @@ export const useMockStore = create<MockState>()(
         }
       },
       activeConversations: {},
+      historicalConversations: {},
       compactMode: false,
       confirmLeaveChannel: true,
       enableCommandSuggestions: true,
@@ -1070,8 +1074,8 @@ export const useMockStore = create<MockState>()(
           historyLoadToken: requestToken,
           historyNextOffset: null,
           historyHasMore: false,
-          messages: {},
-          directMessages: {},
+          // We intentionally DO NOT clear messages and directMessages here, 
+          // so we can cache previously loaded history and know if a chat was empty.
         });
 
         try {
@@ -1087,17 +1091,17 @@ export const useMockStore = create<MockState>()(
           const messages = mapLogEntries(page.entries, server, serverId, type, chatId);
 
           if (type === "channel") {
-            set({
-              messages: { [chatId]: messages as Message[] },
+            set((currentState) => ({
+              messages: { ...currentState.messages, [chatId]: messages as Message[] },
               historyNextOffset: page.nextOffset,
               historyHasMore: page.nextOffset !== null,
-            });
+            }));
           } else {
-            set({
-              directMessages: { [chatId]: messages as DirectMessage[] },
+            set((currentState) => ({
+              directMessages: { ...currentState.directMessages, [chatId]: messages as DirectMessage[] },
               historyNextOffset: page.nextOffset,
               historyHasMore: page.nextOffset !== null,
-            });
+            }));
           }
         } catch (error) {
           console.error(`Failed to load IRC history for ${target}:`, error);
@@ -1137,17 +1141,17 @@ export const useMockStore = create<MockState>()(
           const hasMore = page.nextOffset !== null && combinedMessages.length < MAX_MESSAGES_IN_MEMORY;
 
           if (type === "channel") {
-            set({
-              messages: { [chatId]: combinedMessages as Message[] },
+            set((currentState) => ({
+              messages: { ...currentState.messages, [chatId]: combinedMessages as Message[] },
               historyNextOffset: page.nextOffset,
               historyHasMore: hasMore,
-            });
+            }));
           } else {
-            set({
-              directMessages: { [chatId]: combinedMessages as DirectMessage[] },
+            set((currentState) => ({
+              directMessages: { ...currentState.directMessages, [chatId]: combinedMessages as DirectMessage[] },
               historyNextOffset: page.nextOffset,
               historyHasMore: hasMore,
-            });
+            }));
           }
 
           return olderMessages.length > 0;
@@ -1282,13 +1286,30 @@ export const useMockStore = create<MockState>()(
               return state;
             }
           }
+          const currentActive = state.activeConversations[serverId] || [];
+          
+          const newActive = currentActive.includes(memberId) ? currentActive : [...currentActive, memberId];
 
-          const current = state.activeConversations[serverId] || [];
-          if (current.includes(memberId)) return state;
+          if (currentActive.length === newActive.length) return state;
+
           return {
             activeConversations: {
               ...state.activeConversations,
-              [serverId]: [...current, memberId],
+              [serverId]: newActive,
+            },
+          };
+        });
+      },
+
+      addToHistoricalConversations: (serverId, memberId) => {
+        set((state) => {
+          const currentHistorical = state.historicalConversations[serverId] || [];
+          if (currentHistorical.includes(memberId)) return state;
+          
+          return {
+            historicalConversations: {
+              ...state.historicalConversations,
+              [serverId]: [...currentHistorical, memberId],
             },
           };
         });
@@ -1302,6 +1323,83 @@ export const useMockStore = create<MockState>()(
               ...state.activeConversations,
               [serverId]: current.filter((id) => id !== memberId),
             },
+          };
+        });
+      },
+
+      syncActiveConversationsWithDisk: (serverId, loggedNicks) => {
+        set((state) => {
+          const server = state.servers.find((s) => s.id === serverId);
+          if (!server) return state;
+
+          const loggedSet = new Set(loggedNicks.map((n) => n.toLowerCase()));
+
+          // Ensure members exist for all logged nicks
+          const updatedMembers = [...server.members];
+          loggedNicks.forEach((nick) => {
+            if (nick && nick.trim()) {
+              const cleanNick = nick.trim().replace(/^[~&@%+]+/, "");
+              const exists = updatedMembers.find((m) => m.profile.name.toLowerCase() === cleanNick.toLowerCase());
+              if (!exists) {
+                const mockMember: Member = {
+                  id: `irc-${cleanNick}`,
+                  profileId: `profile-${cleanNick}`,
+                  profile: {
+                    id: `profile-${cleanNick}`,
+                    userId: `user-${cleanNick}`,
+                    name: cleanNick,
+                    imageUrl: "",
+                    email: `${cleanNick}@irc.local`,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  },
+                  serverId,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                };
+                updatedMembers.push(mockMember);
+              }
+            }
+          });
+
+          const currentMember = updatedMembers.find(
+            (m) =>
+              m.profileId === state.currentProfile.id ||
+              m.profile?.id === state.currentProfile.id ||
+              (server.nicknames && server.nicknames.includes(m.profile?.name)) ||
+              m.id.startsWith("member-")
+          ) || updatedMembers[0];
+
+          const validMemberIds = new Set<string>();
+
+          // Include members whose log file is non-empty on disk
+          updatedMembers.forEach((m) => {
+            if (loggedSet.has(m.profile.name.toLowerCase()) && m.id !== currentMember?.id) {
+              validMemberIds.add(m.id);
+            }
+          });
+
+          // Include members with in-memory messages
+          if (currentMember) {
+            updatedMembers.forEach((m) => {
+              if (m.id !== currentMember.id) {
+                const convId = [currentMember.id, m.id].sort().join("-");
+                const dms = state.directMessages[convId];
+                if (dms && dms.length > 0) {
+                  validMemberIds.add(m.id);
+                }
+              }
+            });
+          }
+
+          return {
+            servers: state.servers.map((s) => (s.id === serverId ? { ...s, members: updatedMembers } : s)),
+            historicalConversations: {
+              ...state.historicalConversations,
+              [serverId]: Array.from(validMemberIds),
+            },
+            // Note: we intentionally do NOT overwrite activeConversations here, 
+            // so closed PM tabs stay closed.
           };
         });
       },
