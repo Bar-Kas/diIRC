@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Member, Server } from "@/types";
+import { inviteUserToChannel } from "@/lib/irc-actions";
 
 export interface CommandContext {
   serverId: string;
@@ -121,6 +122,28 @@ commandRegistry.register({
 });
 
 commandRegistry.register({
+  name: "invite",
+  description: "Invites a user to a channel: /invite <nickname> [#channel]",
+  execute: async (args: string, ctx: CommandContext) => {
+    const parts = args.trim().split(/\s+/).filter(Boolean);
+    if (!parts[0]) return;
+
+    const nickname = parts[0];
+    let channelTarget = parts[1] || "";
+
+    if (!channelTarget) {
+      if (ctx.type === "channel" && ctx.channelName) {
+        channelTarget = ctx.channelName;
+      } else {
+        return;
+      }
+    }
+
+    await inviteUserToChannel(ctx.serverId, nickname, channelTarget);
+  },
+});
+
+commandRegistry.register({
   name: "mode",
   description: "Sets or queries channel modes: /mode [#channel] [flags] [params]",
   execute: async (args: string, ctx: CommandContext) => {
@@ -158,15 +181,74 @@ commandRegistry.register({
       }
     }
 
-    try {
-      await invoke("send_mode", {
-        serverId: ctx.serverId,
-        target,
-        mode: modeStr,
-        params,
-      });
-    } catch (err) {
-      console.error("Failed to send /mode via Tauri IRC:", err);
-    }
+    await sendMode(ctx.serverId, target, modeStr, params);
   },
 });
+
+async function sendMode(serverId: string, target: string, mode: string | null, params: string[] | null) {
+  try {
+    await invoke("send_mode", {
+      serverId,
+      target,
+      mode,
+      params,
+    });
+  } catch (err) {
+    console.error("Failed to send /mode via Tauri IRC:", err);
+    invoke("refresh_channel_names", { serverId, channel: target }).catch(() => {});
+  }
+}
+
+async function handleRoleMode(flag: string, args: string, ctx: CommandContext) {
+  const trimmed = args.trim();
+  if (!trimmed) return;
+
+  const parts = trimmed.split(/\s+/);
+  let target = "";
+  let nicks: string[] = [];
+
+  if (parts[0].startsWith("#") || parts[0].startsWith("&")) {
+    target = parts[0];
+    nicks = parts.slice(1);
+  } else {
+    if (ctx.type === "channel" && ctx.channelName) {
+      target = ctx.channelName.startsWith("#") ? ctx.channelName : `#${ctx.channelName}`;
+      nicks = parts;
+    } else {
+      return;
+    }
+  }
+
+  if (nicks.length === 0) return;
+
+  const sign = flag[0];
+  const modeChar = flag.slice(1);
+  const modeStr = sign + modeChar.repeat(nicks.length);
+
+  await sendMode(ctx.serverId, target, modeStr, nicks);
+}
+
+commandRegistry.register({
+  name: "op",
+  description: "Gives channel operator status to a user: /op [#channel] <nick...>",
+  execute: (args: string, ctx: CommandContext) => handleRoleMode("+o", args, ctx),
+});
+
+commandRegistry.register({
+  name: "deop",
+  description: "Removes channel operator status from a user: /deop [#channel] <nick...>",
+  execute: (args: string, ctx: CommandContext) => handleRoleMode("-o", args, ctx),
+});
+
+commandRegistry.register({
+  name: "voice",
+  description: "Gives voice status to a user: /voice [#channel] <nick...>",
+  execute: (args: string, ctx: CommandContext) => handleRoleMode("+v", args, ctx),
+});
+
+commandRegistry.register({
+  name: "devoice",
+  description: "Removes voice status from a user: /devoice [#channel] <nick...>",
+  execute: (args: string, ctx: CommandContext) => handleRoleMode("-v", args, ctx),
+});
+

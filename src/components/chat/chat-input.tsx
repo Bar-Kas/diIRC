@@ -17,7 +17,9 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useModal } from "@/hooks/use-modal-store";
 import { EmojiPicker } from "@/components/emoji-picker";
+import { Member } from "@/types";
 import { useMockStore } from "@/lib/mock-store";
+import { getHighestChannelRole } from "@/components/user-role-icon";
 import { uploadImage } from "@/lib/upload/services";
 import { ImageContextMenu } from "@/components/image-context-menu";
 import { isMediaUrl } from "@/lib/image-utils";
@@ -65,6 +67,38 @@ export const ChatInput = ({
   const [showCommands, setShowCommands] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [isFocused, setIsFocused] = useState(true);
+
+  const channelModesMap = useMockStore((state) => state.channelModes);
+  const channelUserModesMap = useMockStore((state) => state.channelUserModes);
+  
+  const currentChannelModes = (type === "channel" && activeId) ? (channelModesMap[activeId] || []) : [];
+  const isModerated = currentChannelModes.includes("m");
+
+  const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : (servers[0] || null);
+
+  let currentMember = activeServer?.members.find(
+    (m) =>
+      m.profileId === currentProfile.id ||
+      m.profile?.id === currentProfile.id ||
+      (activeServer.nicknames && activeServer.nicknames.includes(m.profile?.name)) ||
+      m.id.startsWith("member-")
+  ) || activeServer?.members[0];
+
+  const primaryNick = activeServer?.nicknames?.[0];
+  if (primaryNick && currentMember) {
+    currentMember = {
+      ...currentMember,
+      profile: {
+        ...currentMember.profile,
+        name: primaryNick,
+      },
+    };
+  }
+
+  const currentUserModes = (type === "channel" && activeId && currentMember) ? (channelUserModesMap[activeId]?.[currentMember.profile.name.toLowerCase()] || []) : [];
+  const hasVoiceOrHigher = getHighestChannelRole(currentUserModes) !== null;
+
+  const isMuted = type === "channel" && isModerated && !hasVoiceOrHigher;
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -156,8 +190,9 @@ export const ChatInput = ({
     });
   }, []);
 
+  const isIrcConnected = activeServer ? !!ircConnectedServers[activeServer.id] : true;
   const isUploading = attachedImages.some((img) => img.isUploading);
-  const isLoading = form.formState.isSubmitting || isUploading;
+  const isLoading = form.formState.isSubmitting || isUploading || !isIrcConnected || isMuted;
 
   const processFileUpload = useCallback(async (file: File) => {
     if (uploadConfig.provider === "disabled") {
@@ -441,24 +476,23 @@ export const ChatInput = ({
         return;
       }
 
-      let currentMember =
-        activeServer.members.find(
-          (m) =>
-            m.profileId === currentProfile.id ||
-            m.profile?.id === currentProfile.id ||
-            (activeServer.nicknames && activeServer.nicknames.includes(m.profile?.name)) ||
-            m.id.startsWith("member-")
-        ) || activeServer.members[0];
-      const primaryNick = activeServer.nicknames?.[0];
-      if (primaryNick && currentMember) {
-        currentMember = {
-          ...currentMember,
-          profile: {
-            ...currentMember.profile,
-            name: primaryNick,
-          },
-        };
-      }
+      const senderMember: Member = currentMember
+        ? {
+            ...currentMember,
+            profile: {
+              ...currentMember.profile,
+              name: primaryNick || currentMember.profile.name,
+            },
+          }
+        : {
+            id: `self-${activeServer.id}`,
+            profileId: currentProfile.id,
+            profile: {
+              ...currentProfile,
+              name: primaryNick || currentProfile.name,
+            },
+            serverId: activeServer.id,
+          };
 
       if (textContent.startsWith("/")) {
         const isHandled = await commandRegistry.execute(textContent, {
@@ -467,7 +501,7 @@ export const ChatInput = ({
           channelId: query?.channelId,
           conversationId: query?.conversationId,
           type,
-          currentMember,
+          currentMember: senderMember,
           activeServer,
           addMessage,
           addDirectMessage,
@@ -482,14 +516,14 @@ export const ChatInput = ({
                   channel: name.startsWith("#") ? name : `#${name}`,
                   message: img.url,
                 }).catch((e) => console.error(e));
-                addMessage(query.channelId, currentMember, img.url);
+                addMessage(query.channelId, senderMember, img.url);
               } else if (type === "conversation" && query?.conversationId) {
                 await invoke("send_message", {
                   serverId: activeServer.id,
                   channel: name,
                   message: img.url,
                 }).catch((e) => console.error(e));
-                addDirectMessage(query.conversationId, currentMember, img.url);
+                addDirectMessage(query.conversationId, senderMember, img.url);
               }
             }
           }
@@ -511,10 +545,10 @@ export const ChatInput = ({
               channel: name.startsWith("#") ? name : `#${name}`, 
               message: line 
             });
-            addMessage(query.channelId, currentMember, line);
+            addMessage(query.channelId, senderMember, line);
           } catch (err: any) {
             console.error("Failed to send channel message via Tauri IRC:", err);
-            addMessage(query.channelId, currentMember, line);
+            addMessage(query.channelId, senderMember, line);
           }
         } else if (type === "conversation" && query?.conversationId) {
           try {
@@ -523,10 +557,10 @@ export const ChatInput = ({
               channel: name, 
               message: line 
             });
-            addDirectMessage(query.conversationId, currentMember, line);
+            addDirectMessage(query.conversationId, senderMember, line);
           } catch (err: any) {
             console.error("Failed to send private message via Tauri IRC:", err);
-            addDirectMessage(query.conversationId, currentMember, line);
+            addDirectMessage(query.conversationId, senderMember, line);
           }
         }
       }
@@ -648,11 +682,15 @@ export const ChatInput = ({
 
                   <div className="relative flex flex-col">
                     <Textarea
-                      disabled={isLoading && attachedImages.length === 0}
+                      disabled={(isLoading && attachedImages.length === 0) || !isIrcConnected || isMuted}
                       autoFocus
-                      className="min-h-[44px] max-h-[120px] w-full bg-zinc-200/90 dark:bg-zinc-700/75 border-none focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200 placeholder:text-zinc-500 dark:placeholder:text-zinc-400 py-3 pr-24 resize-none overflow-y-auto"
+                      className="min-h-[44px] max-h-[120px] w-full bg-zinc-200/90 dark:bg-zinc-700/75 border-none focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200 placeholder:text-zinc-500 dark:placeholder:text-zinc-400 py-3 pr-24 resize-none overflow-y-auto disabled:opacity-60 disabled:cursor-not-allowed"
                       placeholder={
-                        isUploading
+                        !isIrcConnected
+                          ? "Disconnected from IRC server"
+                          : isMuted
+                          ? "You do not have permission to send messages in this moderated channel"
+                          : isUploading
                           ? "Uploading files..."
                           : `Message ${type === "conversation" ? name : "#" + name}`
                       }
@@ -674,7 +712,7 @@ export const ChatInput = ({
                         type="button"
                         disabled={isLoading}
                         onClick={() => fileInputRef.current?.click()}
-                        className="h-7 w-7 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition flex items-center justify-center rounded-md hover:bg-zinc-300/50 dark:hover:bg-zinc-600/50"
+                        className="h-7 w-7 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition flex items-center justify-center rounded-md hover:bg-zinc-300/50 dark:hover:bg-zinc-600/50 disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Attach files (System dialog)"
                       >
                         {isUploading ? (
@@ -685,6 +723,7 @@ export const ChatInput = ({
                       </button>
 
                       <EmojiPicker
+                        disabled={isLoading}
                         onChange={(emoji: string) => {
                           field.onChange(`${field.value ? field.value + " " : ""}${emoji}`);
                           form.setFocus("content");

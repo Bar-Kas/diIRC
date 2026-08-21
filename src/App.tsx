@@ -12,14 +12,21 @@ import { ChannelPage } from "@/pages/channel-page";
 import { ConversationPage } from "@/pages/conversation-page";
 import { InvitePage } from "@/pages/invite-page";
 
+import { InvitePreviewPage } from "@/pages/invite-preview-page";
+
 export function App() {
   useEffect(() => {
-    // Prevent default native webview right-click context menu on images
+    // Prevent default native webview right-click context menu globally except in text input fields
     const handleContextMenu = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target && target.tagName === "IMG") {
-        // If not handled by Radix ContextMenu, prevent native browser context menu from breaking app window
-        e.preventDefault();
+      if (target) {
+        const isInput =
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable;
+        if (!isInput) {
+          e.preventDefault();
+        }
       }
     };
 
@@ -45,6 +52,7 @@ export function App() {
               <Route index element={<ServerPage />} />
               <Route path="channels/:channelId" element={<ChannelPage />} />
               <Route path="conversations/:memberId" element={<ConversationPage />} />
+              <Route path="invites/:channelName" element={<InvitePreviewPage />} />
             </Route>
             <Route path="*" element={<SetupPage />} />
             </Routes>

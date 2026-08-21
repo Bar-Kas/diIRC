@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { invoke } from "@tauri-apps/api/core";
+import { format } from "date-fns";
 import { 
   Server, 
   Channel, 
@@ -11,7 +12,8 @@ import {
   ChannelType,
   LogPage,
   StatusDisplayMode,
-  HistoryWindow
+  HistoryWindow,
+  PendingInvite
 } from "@/types";
 import { 
   INITIAL_SERVERS, 
@@ -98,6 +100,28 @@ const dedupOffsetlessAgainstFetched = (
   return [...logged, ...kept];
 };
 
+export const formatMessageDate = (
+  date: Date | string | number,
+  dateFormatPreset: string = "d MMM yyyy, HH:mm",
+  customDateFormat: string = "yyyy/MM/dd HH:mm"
+): string => {
+  const pattern = dateFormatPreset === "custom" 
+    ? (customDateFormat.trim() || "d MMM yyyy, HH:mm") 
+    : dateFormatPreset;
+  try {
+    const d = typeof date === "string" || typeof date === "number" ? new Date(date) : date;
+    if (isNaN(d.getTime())) return String(date);
+    return format(d, pattern);
+  } catch {
+    try {
+      const d = typeof date === "string" || typeof date === "number" ? new Date(date) : date;
+      return format(d, "d MMM yyyy, HH:mm");
+    } catch {
+      return String(date);
+    }
+  }
+};
+
 const chatKey = (type: "channel" | "conversation", id: string) => `${type}:${id}`;
 
 const parseLogTimestamp = (timestamp: string) => {
@@ -162,6 +186,8 @@ export interface AddServerOptions {
   useTls: boolean;
   autoJoinChannels?: string[];
   imageUrl?: string;
+  autoConnect?: boolean;
+  autoReconnect?: boolean;
 }
 
 export interface UpdateServerOptions {
@@ -174,6 +200,8 @@ export interface UpdateServerOptions {
   useTls: boolean;
   autoJoinChannels?: string[];
   imageUrl?: string;
+  autoConnect?: boolean;
+  autoReconnect?: boolean;
 }
 
 export type { StatusDisplayMode };
@@ -188,6 +216,7 @@ interface MockState {
   historyWindow: HistoryWindow;
   compactMode: boolean;
   enableMarkdown: boolean;
+  confirmLeaveChannel: boolean;
   enableCommandSuggestions: boolean;
   enableLinkPreviews: boolean;
   enableWebPagePreviews: boolean;
@@ -195,15 +224,19 @@ interface MockState {
   uploadConfig: ImageUploadConfig;
   urlAuthRules: UrlAuthRule[];
   ircConnectedServers: Record<string, boolean>;
+  ircConnectionErrors: Record<string, string | null>;
   statusDisplayMode: StatusDisplayMode;
+  dateFormatPreset: string;
+  customDateFormat: string;
 
   // Connection Actions
-  setIrcConnected: (serverId: string, isConnected: boolean) => void;
+  setIrcConnected: (serverId: string, isConnected: boolean, error?: string | null) => void;
   setStatusDisplayMode: (mode: StatusDisplayMode) => void;
 
   // Settings Actions
   setCompactMode: (enabled: boolean) => void;
   setEnableMarkdown: (enabled: boolean) => void;
+  setConfirmLeaveChannel: (enabled: boolean) => void;
   setEnableCommandSuggestions: (enabled: boolean) => void;
   setEnableLinkPreviews: (enabled: boolean) => void;
   setEnableWebPagePreviews: (enabled: boolean) => void;
@@ -211,6 +244,8 @@ interface MockState {
   setUploadConfig: (config: ImageUploadConfig) => void;
   addUrlAuthRule: (rule: Omit<UrlAuthRule, "id">) => void;
   removeUrlAuthRule: (id: string) => void;
+  setDateFormatPreset: (preset: string) => void;
+  setCustomDateFormat: (format: string) => void;
 
   // Server Actions
   addServer: (optionsOrName: string | AddServerOptions, imageUrl?: string) => Server;
@@ -228,6 +263,12 @@ interface MockState {
   updateChannelTopicByName: (serverId: string, channelName: string, topic: string) => void;
   updateChannelKey: (serverId: string, channelId: string, key?: string) => void;
   deleteChannel: (serverId: string, channelId: string) => void;
+  setChannelTemporary: (serverId: string, channelName: string, isTemporary: boolean) => void;
+  pendingInvites: Record<string, PendingInvite[]>;
+  addPendingInvite: (serverId: string, channelName: string, inviter: string) => void;
+  removePendingInvite: (serverId: string, channelName: string) => void;
+  acceptPendingInvite: (serverId: string, channelName: string) => Promise<void>;
+  ignorePendingInvite: (serverId: string, channelName: string) => void;
 
   // Member Actions
   removeMember: (serverId: string, memberId: string) => void;
@@ -235,10 +276,11 @@ interface MockState {
   removeServerMember: (serverId: string, name: string) => void;
   channelMembers: Record<string, string[]>;
   channelOps: Record<string, string[]>;
+  channelUserModes: Record<string, Record<string, string[]>>;
   channelModes: Record<string, string[]>;
   updateChannelMembers: (serverId: string, channelName: string, users: string[], eventType: "NAMES" | "JOIN" | "PART" | "QUIT") => void;
   updateChannelOps: (serverId: string, channelName: string, ops: string[]) => void;
-  updateChannelModes: (serverId: string, channelName: string, modeString: string) => void;
+  updateChannelModes: (serverId: string, channelName: string, modeString: string, isFullListing?: boolean) => void;
 
   // Message Actions
   loadChatHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<void>;
@@ -268,6 +310,7 @@ export const useMockStore = create<MockState>()(
       historyLoadToken: 0,
       historyWindow: EMPTY_HISTORY_WINDOW,
       pendingJoin: null,
+      pendingInvites: {},
       setPendingJoin: (serverId, channelName, password) => {
         if (!serverId || !channelName) {
           set({ pendingJoin: null });
@@ -278,6 +321,7 @@ export const useMockStore = create<MockState>()(
       activeConversations: {},
       compactMode: false,
       enableMarkdown: true,
+      confirmLeaveChannel: true,
       enableCommandSuggestions: true,
       enableLinkPreviews: true,
       enableWebPagePreviews: true,
@@ -288,20 +332,30 @@ export const useMockStore = create<MockState>()(
       },
       urlAuthRules: [],
       ircConnectedServers: {},
+      ircConnectionErrors: {},
       statusDisplayMode: "always",
+      dateFormatPreset: "d MMM yyyy, HH:mm",
+      customDateFormat: "yyyy/MM/dd HH:mm",
 
-      setIrcConnected: (serverId: string, isConnected: boolean) =>
+      setIrcConnected: (serverId: string, isConnected: boolean, error: string | null = null) =>
         set((state) => ({
           ircConnectedServers: {
             ...state.ircConnectedServers,
             [serverId]: isConnected,
           },
+          ircConnectionErrors: {
+            ...state.ircConnectionErrors,
+            [serverId]: isConnected ? null : (error ?? state.ircConnectionErrors[serverId] ?? null),
+          },
         })),
 
       setStatusDisplayMode: (mode: StatusDisplayMode) => set({ statusDisplayMode: mode }),
+      setDateFormatPreset: (preset: string) => set({ dateFormatPreset: preset }),
+      setCustomDateFormat: (format: string) => set({ customDateFormat: format }),
 
       setCompactMode: (enabled: boolean) => set({ compactMode: enabled }),
       setEnableMarkdown: (enabled: boolean) => set({ enableMarkdown: enabled }),
+      setConfirmLeaveChannel: (enabled: boolean) => set({ confirmLeaveChannel: enabled }),
       setEnableCommandSuggestions: (enabled: boolean) => set({ enableCommandSuggestions: enabled }),
       setEnableLinkPreviews: (enabled: boolean) => set({ enableLinkPreviews: enabled }),
       setEnableWebPagePreviews: (enabled: boolean) => set({ enableWebPagePreviews: enabled }),
@@ -330,6 +384,8 @@ export const useMockStore = create<MockState>()(
         let realname = "";
         let password = "";
         let useTls = false;
+        let autoConnect = true;
+        let autoReconnect = true;
         let autoJoinChannels: string[] = ["general", "test"];
         let imageUrl = imageUrlParam || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80";
 
@@ -341,6 +397,8 @@ export const useMockStore = create<MockState>()(
           realname = optionsOrName.realname || "";
           password = optionsOrName.password || "";
           useTls = optionsOrName.useTls ?? false;
+          autoConnect = optionsOrName.autoConnect ?? true;
+          autoReconnect = optionsOrName.autoReconnect ?? true;
           if (optionsOrName.autoJoinChannels && optionsOrName.autoJoinChannels.length > 0) {
             autoJoinChannels = optionsOrName.autoJoinChannels;
           }
@@ -383,6 +441,8 @@ export const useMockStore = create<MockState>()(
           realname,
           password,
           useTls,
+          autoConnect,
+          autoReconnect,
           autoJoinChannels,
           imageUrl,
           inviteCode: `invite-${uuidv4().slice(0, 8)}`,
@@ -434,6 +494,7 @@ export const useMockStore = create<MockState>()(
                   })
                 : s.channels;
 
+              const updatedRealname = optionsOrName.realname ?? s.realname;
               const updatedMembers = s.members.map((m) => {
                 if (m.profileId === get().currentProfile.id || m.id.startsWith("member-")) {
                   return {
@@ -441,6 +502,7 @@ export const useMockStore = create<MockState>()(
                     profile: {
                       ...m.profile,
                       name: primaryNick,
+                      realname: updatedRealname,
                     },
                   };
                 }
@@ -459,6 +521,7 @@ export const useMockStore = create<MockState>()(
                           profile: {
                             ...msg.member.profile,
                             name: primaryNick,
+                            realname: updatedRealname,
                           },
                         },
                       };
@@ -474,9 +537,11 @@ export const useMockStore = create<MockState>()(
                 host: optionsOrName.host || s.host,
                 port: optionsOrName.port || s.port,
                 nicknames: newNicknames,
-                realname: optionsOrName.realname ?? s.realname,
+                realname: updatedRealname,
                 password: optionsOrName.password ?? s.password,
                 useTls: optionsOrName.useTls ?? s.useTls,
+                autoConnect: optionsOrName.autoConnect ?? s.autoConnect ?? true,
+                autoReconnect: optionsOrName.autoReconnect ?? s.autoReconnect ?? true,
                 autoJoinChannels: optionsOrName.autoJoinChannels || s.autoJoinChannels,
                 imageUrl: optionsOrName.imageUrl || s.imageUrl,
                 channels: updatedChannels,
@@ -680,6 +745,24 @@ export const useMockStore = create<MockState>()(
         });
       },
 
+      setChannelTemporary: (serverId, channelName, isTemporary) => {
+        const cleanChan = channelName.trim().replace(/^#/, "").toLowerCase();
+        set((state) => ({
+          servers: state.servers.map((s) =>
+            s.id === serverId
+              ? {
+                  ...s,
+                  channels: s.channels.map((c) =>
+                    c.name.toLowerCase().replace(/^#/, "") === cleanChan
+                      ? { ...c, isTemporary }
+                      : c
+                  ),
+                }
+              : s
+          ),
+        }));
+      },
+
       removeMember: (serverId, memberId) => {
         set((state) => ({
           servers: state.servers.map((s) =>
@@ -777,6 +860,7 @@ export const useMockStore = create<MockState>()(
 
       channelMembers: {},
       channelOps: {},
+      channelUserModes: {},
       channelModes: {},
 
       updateChannelOps: (serverId, channelName, ops) => {
@@ -791,20 +875,48 @@ export const useMockStore = create<MockState>()(
 
           if (!targetChannel) return state;
 
+          const chId = targetChannel.id;
+          const currentUserModes = { ...(state.channelUserModes[chId] || {}) };
+          const opsSet = new Set(ops.map((o) => o.toLowerCase()));
+
+          // Sync channelUserModes 'o' mode with ops list
+          Object.keys(currentUserModes).forEach((lowerNick) => {
+            const userModes = new Set(currentUserModes[lowerNick] || []);
+            if (opsSet.has(lowerNick)) {
+              userModes.add("o");
+            } else {
+              userModes.delete("o");
+            }
+            currentUserModes[lowerNick] = Array.from(userModes);
+          });
+
+          ops.forEach((opNick) => {
+            const lower = opNick.toLowerCase();
+            const userModes = new Set(currentUserModes[lower] || []);
+            userModes.add("o");
+            currentUserModes[lower] = Array.from(userModes);
+          });
+
           return {
             channelOps: {
               ...state.channelOps,
-              [targetChannel.id]: ops,
+              [chId]: ops,
+            },
+            channelUserModes: {
+              ...state.channelUserModes,
+              [chId]: currentUserModes,
             },
           };
         });
       },
 
-      updateChannelModes: (serverId, channelName, modeString) => {
+      updateChannelModes: (serverId, channelName, modeString, isFullListing = false) => {
         const cleanChan = channelName ? channelName.trim().replace(/^#/, "").toLowerCase() : "";
+        if (!cleanChan || !modeString) return;
+
         set((state) => {
           const targetServer = state.servers.find((s) => s.id === serverId);
-          if (!targetServer || !cleanChan) return state;
+          if (!targetServer) return state;
 
           const targetChannel = targetServer.channels.find(
             (c) => c.name.toLowerCase().replace(/^#/, "") === cleanChan
@@ -813,37 +925,134 @@ export const useMockStore = create<MockState>()(
           if (!targetChannel) return state;
 
           const chId = targetChannel.id;
-          const currentFlags = new Set(state.channelModes[chId] || []);
+          const currentFlags = isFullListing ? new Set<string>() : new Set(state.channelModes[chId] || []);
+          const existingOps = state.channelOps[chId] || [];
+          const currentUserModes = { ...(state.channelUserModes[chId] || {}) };
 
-          let action: "+" | "-" = "+";
-          for (const char of modeString) {
-            if (char === "+") {
-              action = "+";
-            } else if (char === "-") {
-              action = "-";
-            } else {
-              if (action === "+") {
-                currentFlags.add(char);
-              } else if (action === "-") {
-                currentFlags.delete(char);
+          // Map lower-cased nick -> original nick casing for ops
+          const opsMap = new Map<string, string>();
+          existingOps.forEach((op) => opsMap.set(op.toLowerCase(), op));
+
+          const tokens = modeString.trim().split(/\s+/).filter(Boolean);
+
+          let tokenIdx = 0;
+          while (tokenIdx < tokens.length) {
+            const currentToken = tokens[tokenIdx];
+
+            if (currentToken.startsWith("+") || currentToken.startsWith("-")) {
+              let sign: "+" | "-" = "+";
+              tokenIdx++;
+
+              for (let i = 0; i < currentToken.length; i++) {
+                const char = currentToken[i];
+                if (char === "+") {
+                  sign = "+";
+                } else if (char === "-") {
+                  sign = "-";
+                } else {
+                  const isUserStatusMode = ["o", "h", "a", "q", "v"].includes(char);
+                  const isParamAlwaysMode = ["k", "b", "e", "I"].includes(char);
+                  const isParamOnPlusMode = char === "l";
+
+                  const requiresArg =
+                    isUserStatusMode || isParamAlwaysMode || (isParamOnPlusMode && sign === "+");
+
+                  let targetArg: string | undefined = undefined;
+                  if (requiresArg && tokenIdx < tokens.length) {
+                    if (!tokens[tokenIdx].startsWith("+") && !tokens[tokenIdx].startsWith("-")) {
+                      targetArg = tokens[tokenIdx++];
+                    }
+                  }
+
+                  if (isUserStatusMode && targetArg) {
+                    const lower = targetArg.toLowerCase();
+
+                    if (["o", "h", "a", "q"].includes(char)) {
+                      if (sign === "+") {
+                        opsMap.set(lower, targetArg);
+                      } else {
+                        opsMap.delete(lower);
+                      }
+                    }
+
+                    const userModes = new Set(currentUserModes[lower] || []);
+                    if (sign === "+") {
+                      userModes.add(char);
+                    } else {
+                      userModes.delete(char);
+                    }
+                    currentUserModes[lower] = Array.from(userModes);
+                  } else if (char === "k") {
+                    if (sign === "+") {
+                      currentFlags.add("k");
+                    } else {
+                      currentFlags.delete("k");
+                    }
+                  } else if (char === "l") {
+                    if (sign === "+") {
+                      currentFlags.add("l");
+                    } else {
+                      currentFlags.delete("l");
+                    }
+                  } else if (!isParamAlwaysMode) {
+                    if (sign === "+") {
+                      currentFlags.add(char);
+                    } else {
+                      currentFlags.delete(char);
+                    }
+                  }
+                }
               }
+            } else {
+              tokenIdx++;
             }
           }
 
+          const newOps = Array.from(opsMap.values());
+          const updatedFlags = Array.from(currentFlags);
+          const isInviteOnly = currentFlags.has("i");
+
+          const updatedServers = state.servers.map((s) =>
+            s.id === serverId
+              ? {
+                  ...s,
+                  channels: s.channels.map((c) =>
+                    c.id === chId
+                      ? {
+                          ...c,
+                          isTemporary: isInviteOnly,
+                          modes: updatedFlags,
+                        }
+                      : c
+                  ),
+                }
+              : s
+          );
+
           return {
+            servers: updatedServers,
             channelModes: {
               ...state.channelModes,
-              [chId]: Array.from(currentFlags),
+              [chId]: updatedFlags,
+            },
+            channelOps: {
+              ...state.channelOps,
+              [chId]: newOps,
+            },
+            channelUserModes: {
+              ...state.channelUserModes,
+              [chId]: currentUserModes,
             },
           };
         });
       },
 
       updateChannelMembers: (serverId, channelName, users, eventType) => {
-        // Ensure all users exist as server members
+        // Ensure all users exist as server members (stripping prefixes like @, +, etc.)
         users.forEach((u) => {
           if (u && u.trim()) {
-            get().addServerMember(serverId, u.trim());
+            const cleanNick = u.trim().replace(/^[~&@%+]+/, "");
+            get().addServerMember(serverId, cleanNick);
           }
         });
 
@@ -854,6 +1063,8 @@ export const useMockStore = create<MockState>()(
           if (!targetServer) return state;
 
           const updatedChannelMembers = { ...state.channelMembers };
+          const updatedChannelOps = { ...state.channelOps };
+          const updatedChannelUserModes = { ...state.channelUserModes };
 
           if (cleanChan) {
             const targetChannel = targetServer.channels.find(
@@ -863,14 +1074,46 @@ export const useMockStore = create<MockState>()(
             if (targetChannel) {
               const chId = targetChannel.id;
               const currentUsers = updatedChannelMembers[chId] || [];
+              const currentUserModes = { ...(updatedChannelUserModes[chId] || {}) };
 
               if (eventType === "NAMES") {
-                updatedChannelMembers[chId] = Array.from(new Set(users));
+                const newOps: string[] = [];
+                const newChannelUserModes: Record<string, string[]> = {};
+
+                const plainUsers = users.map((u) => {
+                  const prefixMatch = u.match(/^([~&@%+]+)/);
+                  const nick = prefixMatch ? u.substring(prefixMatch[1].length) : u;
+                  const prefixes = prefixMatch ? prefixMatch[1] : "";
+
+                  const modes: string[] = [];
+                  if (prefixes.includes("~")) modes.push("q");
+                  if (prefixes.includes("&")) modes.push("a");
+                  if (prefixes.includes("@")) modes.push("o");
+                  if (prefixes.includes("%")) modes.push("h");
+                  if (prefixes.includes("+")) modes.push("v");
+
+                  newChannelUserModes[nick.toLowerCase()] = modes;
+
+                  if (modes.some((m) => ["o", "h", "a", "q"].includes(m))) {
+                    newOps.push(nick);
+                  }
+
+                  return nick;
+                });
+                updatedChannelMembers[chId] = Array.from(new Set(plainUsers));
+                updatedChannelUserModes[chId] = newChannelUserModes;
+                updatedChannelOps[chId] = newOps;
               } else if (eventType === "JOIN") {
-                updatedChannelMembers[chId] = Array.from(new Set([...currentUsers, ...users]));
+                const plainUsers = users.map((u) => u.trim().replace(/^[~&@%+]+/, ""));
+                updatedChannelMembers[chId] = Array.from(new Set([...currentUsers, ...plainUsers]));
               } else if (eventType === "PART") {
                 const toRemove = new Set(users.map((u) => u.toLowerCase()));
                 updatedChannelMembers[chId] = currentUsers.filter((u) => !toRemove.has(u.toLowerCase()));
+                if (updatedChannelOps[chId]) {
+                  updatedChannelOps[chId] = updatedChannelOps[chId].filter((u) => !toRemove.has(u.toLowerCase()));
+                }
+                users.forEach((u) => delete currentUserModes[u.toLowerCase()]);
+                updatedChannelUserModes[chId] = currentUserModes;
               }
             }
           }
@@ -883,10 +1126,24 @@ export const useMockStore = create<MockState>()(
                   (u) => !toRemove.has(u.toLowerCase())
                 );
               }
+              if (updatedChannelOps[c.id]) {
+                updatedChannelOps[c.id] = updatedChannelOps[c.id].filter(
+                  (u) => !toRemove.has(u.toLowerCase())
+                );
+              }
+              if (updatedChannelUserModes[c.id]) {
+                const newModes = { ...updatedChannelUserModes[c.id] };
+                users.forEach((u) => delete newModes[u.toLowerCase()]);
+                updatedChannelUserModes[c.id] = newModes;
+              }
             });
           }
 
-          return { channelMembers: updatedChannelMembers };
+          return {
+            channelMembers: updatedChannelMembers,
+            channelOps: updatedChannelOps,
+            channelUserModes: updatedChannelUserModes,
+          };
         });
       },
 
@@ -1212,6 +1469,67 @@ export const useMockStore = create<MockState>()(
         }
 
         return newMessage;
+      },
+
+      addPendingInvite: (serverId, channelName, inviter) => {
+        const cleanChan = channelName.trim().replace(/^#/, "");
+        set((state) => {
+          const current = state.pendingInvites[serverId] || [];
+          const exists = current.some(
+            (i) => i.channelName.toLowerCase() === cleanChan.toLowerCase()
+          );
+          if (exists) return state;
+
+          const newInvite: PendingInvite = {
+            id: `invite-${uuidv4().slice(0, 8)}`,
+            serverId,
+            channelName: cleanChan,
+            inviter,
+            createdAt: new Date().toISOString(),
+          };
+
+          return {
+            pendingInvites: {
+              ...state.pendingInvites,
+              [serverId]: [...current, newInvite],
+            },
+          };
+        });
+      },
+
+      removePendingInvite: (serverId, channelName) => {
+        const cleanChan = channelName.trim().replace(/^#/, "");
+        set((state) => {
+          const current = state.pendingInvites[serverId] || [];
+          return {
+            pendingInvites: {
+              ...state.pendingInvites,
+              [serverId]: current.filter(
+                (i) => i.channelName.toLowerCase() !== cleanChan.toLowerCase()
+              ),
+            },
+          };
+        });
+      },
+
+      acceptPendingInvite: async (serverId, channelName) => {
+        const cleanChan = channelName.trim().replace(/^#/, "");
+        get().removePendingInvite(serverId, cleanChan);
+        get().setPendingJoin(serverId, cleanChan, undefined);
+
+        try {
+          await invoke("join_channel", {
+            serverId,
+            channel: cleanChan,
+            password: null,
+          });
+        } catch (err) {
+          console.error("Failed to join channel from invite:", err);
+        }
+      },
+
+      ignorePendingInvite: (serverId, channelName) => {
+        get().removePendingInvite(serverId, channelName);
       },
 
       deleteMessage: (channelId, messageId) => {

@@ -30,11 +30,15 @@ const formSchema = z.object({
   name: z.string().min(1, { message: "Server name is required." }),
   host: z.string().min(1, { message: "Server address is required." }),
   port: z.coerce.number().min(1).max(65535),
-  nickname: z.string().min(1, { message: "Nickname is required." }),
+  nickname: z.string()
+    .min(1, { message: "Nickname is required." })
+    .refine((val) => !/\s/.test(val), { message: "Nickname cannot contain spaces." }),
   realname: z.string().optional(),
   password: z.string().optional(),
   channels: z.string().optional(),
   useTls: z.boolean().default(false),
+  autoConnect: z.boolean().default(true),
+  autoReconnect: z.boolean().default(true),
   imageUrl: z.string().optional()
 });
 
@@ -59,6 +63,8 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
       password: "",
       channels: "#test, #general",
       useTls: false,
+      autoConnect: true,
+      autoReconnect: true,
       imageUrl: "",
     }
   });
@@ -79,6 +85,8 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
         realname: values.realname || "",
         password: values.password || "",
         useTls: values.useTls,
+        autoConnect: values.autoConnect,
+        autoReconnect: values.autoReconnect,
         autoJoinChannels: channelArray,
         imageUrl: values.imageUrl || "",
       });

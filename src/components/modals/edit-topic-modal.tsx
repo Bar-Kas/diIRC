@@ -20,6 +20,7 @@ export const EditTopicModal = () => {
   const ircConnectedServers = useMockStore((state) => state.ircConnectedServers);
   const currentProfile = useMockStore((state) => state.currentProfile);
   const channelOpsMap = useMockStore((state) => state.channelOps);
+  const channelUserModesMap = useMockStore((state) => state.channelUserModes);
 
   const isModalOpen = isOpen && type === "editTopic";
   const { server, channel } = data;
@@ -36,9 +37,10 @@ export const EditTopicModal = () => {
   const isChannelOwner = channel?.profileId === currentProfile.id;
 
   const channelOps = channel?.id ? channelOpsMap[channel.id] || [] : [];
-  const isChannelOp = channelOps.some(
-    (opNick) => opNick.toLowerCase() === ourNick.toLowerCase()
-  );
+  const ourModes = channel?.id ? channelUserModesMap[channel.id]?.[ourNick.toLowerCase()] || [] : [];
+  const isChannelOp =
+    channelOps.some((opNick) => opNick.toLowerCase() === ourNick.toLowerCase()) ||
+    ourModes.some((m) => ["o", "a", "q"].includes(m.toLowerCase()));
 
   // User is considered to have permission if they are op in channel, or if ops list hasn't loaded (standalone/mock fallback)
   const hasPermission = isChannelOp || channelOps.length === 0;

@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useMockStore } from "@/lib/mock-store";
 import { useModalStore } from "@/hooks/use-modal-store";
 import { Server, ChannelType } from "@/types";
+import { extractFlag } from "@/lib/flag-tips";
 
 interface IrcMessagePayload {
   serverId?: string;
@@ -34,6 +35,8 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
   const connectedConfigsRef = useRef<Map<string, string>>(new Map());
   const connectingRef = useRef<Set<string>>(new Set());
+  const attemptsRef = useRef<Map<string, number>>(new Map());
+  const nextReconnectTimeRef = useRef<Map<string, number>>(new Map());
 
   const attemptConnect = useCallback(async (server: Server) => {
     if (connectingRef.current.has(server.id)) return;
@@ -60,11 +63,11 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
           useTls: server.useTls || false,
         }
       });
-      setIrcConnected(server.id, true);
-      console.log(`Connected IRC server ${server.name} (${server.id}) with nicks:`, nicks);
+      console.log(`Initiated IRC connection for server ${server.name} (${server.id}) with nicks:`, nicks);
     } catch (error) {
       console.error(`Failed to connect IRC for server ${server.name}:`, error);
-      setIrcConnected(server.id, false);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      setIrcConnected(server.id, false, errMsg);
     } finally {
       connectingRef.current.delete(server.id);
     }
@@ -88,10 +91,12 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     servers.forEach(async (server) => {
+      // Respect autoConnect setting on startup/config load
+      if (server.autoConnect === false) return;
+
       const nicks = server.nicknames && server.nicknames.length > 0 
         ? server.nicknames 
         : [server.nicknames?.[0] || currentProfile.name.replace(/\s+/g, "") || "ReactUser"];
-      // Channels are now joined manually after connection in the irc_status listener
 
       const configHash = JSON.stringify({
         host: server.host || "127.0.0.1",
@@ -124,15 +129,42 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     });
   }, [servers, attemptConnect, setIrcConnected]);
 
-  // Auto-reconnect loop every 5 seconds for disconnected servers
+  // Auto-reconnect loop with exponential backoff & error throttling for disconnected servers
   useEffect(() => {
     const interval = setInterval(() => {
-      const { ircConnectedServers, servers: currentServers } = useMockStore.getState();
+      const { ircConnectedServers, ircConnectionErrors, servers: currentServers } = useMockStore.getState();
+      const now = Date.now();
+
       currentServers.forEach((server) => {
-        if (!ircConnectedServers[server.id] && !connectingRef.current.has(server.id)) {
-          console.log(`Auto-reconnecting to IRC server ${server.name}...`);
-          attemptConnect(server);
+        // Skip if server auto-reconnect is disabled
+        if (server.autoReconnect === false) return;
+
+        // Skip if already connected or currently connecting
+        if (ircConnectedServers[server.id] || connectingRef.current.has(server.id)) {
+          attemptsRef.current.delete(server.id);
+          nextReconnectTimeRef.current.delete(server.id);
+          return;
         }
+
+        // Check if server is blocked by rate-limiting
+        const activeErr = ircConnectionErrors[server.id];
+        if (activeErr && (activeErr.toLowerCase().includes("too many times") || activeErr.toLowerCase().includes("rate limit"))) {
+          return;
+        }
+
+        // Backoff cooldown check
+        const nextTime = nextReconnectTimeRef.current.get(server.id) || 0;
+        if (now < nextTime) return;
+
+        const currentAttempts = attemptsRef.current.get(server.id) || 0;
+        // Exponential backoff: 15s, 30s, 60s, 120s, max 300s (5 min)
+        const backoffMs = Math.min(15000 * Math.pow(2, currentAttempts), 300000);
+
+        attemptsRef.current.set(server.id, currentAttempts + 1);
+        nextReconnectTimeRef.current.set(server.id, now + backoffMs);
+
+        console.log(`Auto-reconnecting to IRC server ${server.name} (attempt ${currentAttempts + 1}, backoff ${backoffMs / 1000}s)...`);
+        attemptConnect(server);
       });
     }, 5000);
 
@@ -273,12 +305,15 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     let unlistenStatusFn: (() => void) | null = null;
     const setupStatusListener = async () => {
       try {
-        const unlistenStatus = await listen<{ server_id: string; connected: boolean }>(
+        const unlistenStatus = await listen<{ server_id: string; connected: boolean; error?: string }>(
           "irc_status",
           (event) => {
-            const { server_id, connected } = event.payload;
-            setIrcConnected(server_id, connected);
-            if (!connected) {
+            const { server_id, connected, error } = event.payload;
+            setIrcConnected(server_id, connected, error || null);
+            if (connected) {
+              attemptsRef.current.delete(server_id);
+              nextReconnectTimeRef.current.delete(server_id);
+            } else {
               connectedConfigsRef.current.delete(server_id);
             }
           }
@@ -348,11 +383,16 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
         const unlistenTopicError = await listen<{ server_id: string; channel: string; error: string }>(
           "irc_topic_error",
           (event) => {
-            const { channel, error } = event.payload;
+            const { server_id, channel, error } = event.payload;
             const chanName = channel ? `#${channel.replace(/^#/, "")}` : "this channel";
+
+            if (server_id && channel) {
+              invoke("refresh_channel_names", { serverId: server_id, channel }).catch(() => {});
+            }
+
             useModalStore.getState().onOpen("ircError", {
               title: "Permission Denied",
-              description: `Cannot change topic on ${chanName}: ${error || "You do not have channel operator (@) permissions."}`,
+              description: `Cannot perform operation on ${chanName}: ${error || "You do not have channel operator (@) permissions."}`,
             });
           }
         );
@@ -409,14 +449,76 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
     setupBadKeyListener();
 
+    let unlistenInviteOnlyFn: (() => void) | null = null;
+    const setupInviteOnlyListener = async () => {
+      try {
+        const unlistenInviteOnly = await listen<{ server_id: string; channel: string; error: string }>(
+          "irc_invite_only",
+          (event) => {
+            const { server_id, channel, error } = event.payload;
+            const cleanChan = channel.replace(/^#/, "");
+            const formattedChan = channel.startsWith("#") || channel.startsWith("&") ? channel : `#${channel}`;
+
+            const store = useMockStore.getState();
+            store.setChannelTemporary(server_id, cleanChan, true);
+
+            const pending = store.pendingJoin;
+            if (
+              pending &&
+              pending.serverId === server_id &&
+              pending.channelName.toLowerCase() === cleanChan.toLowerCase()
+            ) {
+              store.setPendingJoin(null, null);
+            }
+
+            useModalStore.getState().onOpen("ircError", {
+              title: "Cannot join channel",
+              description: `Cannot join ${formattedChan}: ${error || "Cannot join channel (+i)"}.`,
+            });
+          }
+        );
+
+        if (isCancelled) {
+          unlistenInviteOnly();
+        } else {
+          unlistenInviteOnlyFn = unlistenInviteOnly;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC invite-only listener:", error);
+      }
+    };
+
+    let unlistenInvitedFn: (() => void) | null = null;
+    const setupInvitedListener = async () => {
+      try {
+        const unlistenInvited = await listen<{ server_id: string; channel: string; inviter: string }>(
+          "irc_invited",
+          (event) => {
+            const { server_id, channel, inviter } = event.payload;
+            useMockStore.getState().addPendingInvite(server_id, channel, inviter);
+          }
+        );
+
+        if (isCancelled) {
+          unlistenInvited();
+        } else {
+          unlistenInvitedFn = unlistenInvited;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC invited listener:", error);
+      }
+    };
+
+    setupInvitedListener();
+
     let unlistenModeFn: (() => void) | null = null;
     const setupModeListener = async () => {
       try {
-        const unlistenMode = await listen<{ server_id: string; channel: string; modes: string; set_by?: string }>(
+        const unlistenMode = await listen<{ server_id: string; channel: string; modes: string; set_by?: string; is_full_listing?: boolean }>(
           "irc_mode_event",
           (event) => {
-            const { server_id, channel, modes } = event.payload;
-            useMockStore.getState().updateChannelModes(server_id, channel, modes);
+            const { server_id, channel, modes, is_full_listing } = event.payload;
+            useMockStore.getState().updateChannelModes(server_id, channel, modes, is_full_listing);
           }
         );
 
@@ -431,6 +533,46 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     setupModeListener();
+
+    let unlistenModeErrorFn: (() => void) | null = null;
+    const setupModeErrorListener = async () => {
+      try {
+        const unlistenModeError = await listen<{ server_id: string; channel: string; error: string }>(
+          "irc_mode_error",
+          (event) => {
+            const { server_id, channel, error } = event.payload;
+            const chanName = channel ? (channel.startsWith("#") || channel.startsWith("&") ? channel : `#${channel}`) : "this channel";
+
+            if (server_id && channel) {
+              const chanTarget = channel.startsWith("#") || channel.startsWith("&") ? channel : `#${channel}`;
+              invoke("send_mode", {
+                serverId: server_id,
+                target: chanTarget,
+                mode: null,
+                params: null,
+              }).catch(() => {});
+            }
+
+            const extractedFlag = extractFlag(error);
+            useModalStore.getState().onOpen("ircError", {
+              title: "Channel mode error",
+              description: `Cannot set mode on ${chanName}: ${error || "Server does not support this mode flag or permission was denied."}`,
+              flag: extractedFlag || undefined,
+            });
+          }
+        );
+
+        if (isCancelled) {
+          unlistenModeError();
+        } else {
+          unlistenModeErrorFn = unlistenModeError;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC mode error listener:", error);
+      }
+    };
+
+    setupModeErrorListener();
 
     return () => {
       isCancelled = true;
@@ -455,8 +597,17 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
       if (unlistenBadKeyFn) {
         unlistenBadKeyFn();
       }
+      if (unlistenInviteOnlyFn) {
+        unlistenInviteOnlyFn();
+      }
+      if (unlistenInvitedFn) {
+        unlistenInvitedFn();
+      }
       if (unlistenModeFn) {
         unlistenModeFn();
+      }
+      if (unlistenModeErrorFn) {
+        unlistenModeErrorFn();
       }
     };
   }, [addMessage, addServerMember, removeServerMember, setIrcConnected]);

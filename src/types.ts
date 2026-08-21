@@ -37,6 +37,14 @@ export interface Channel {
   updatedAt?: string;
 }
 
+export interface PendingInvite {
+  id: string;
+  serverId: string;
+  channelName: string;
+  inviter: string;
+  createdAt: string;
+}
+
 export interface Message {
   id: string;
   content: string;
@@ -136,6 +144,8 @@ export interface Server {
   password?: string;
   useTls?: boolean;
   autoJoinChannels?: string[];
+  autoConnect?: boolean;
+  autoReconnect?: boolean;
 }
 
 export type ServerWithMembersWithProfiles = Server;

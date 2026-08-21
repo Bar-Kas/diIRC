@@ -4,8 +4,7 @@ import { UserHoverCard, getMemberDisplayName } from "@/components/user-hover-car
 import { useNavigate } from "react-router-dom";
 import { useMockStore } from "@/lib/mock-store";
 import { cn } from "@/lib/utils";
-import { Crown } from "lucide-react";
-import { ActionTooltip } from "@/components/action-tooltip";
+import { UserRoleIcon, getHighestChannelRole } from "@/components/user-role-icon";
 
 interface ChatMembersSidebarProps {
   server: Server;
@@ -20,7 +19,7 @@ export const ChatMembersSidebar = ({
   const openConversation = useMockStore((state) => state.openConversation);
   const currentProfile = useMockStore((state) => state.currentProfile);
   const channelMembersMap = useMockStore((state) => state.channelMembers);
-  const channelOpsMap = useMockStore((state) => state.channelOps);
+  const channelUserModesMap = useMockStore((state) => state.channelUserModes);
   const ircConnectedServers = useMockStore((state) => state.ircConnectedServers);
 
   const isConnected = !!ircConnectedServers[server.id];
@@ -85,15 +84,11 @@ export const ChatMembersSidebar = ({
 
   const renderMember = (member: Member, isSelf: boolean = false) => {
     const displayName = getMemberDisplayName(member, server);
-    const channelOps = channel ? channelOpsMap[channel.id] || [] : [];
-    const isOp = channel
-      ? channelOps.some(
-          (opNick) => opNick.toLowerCase() === member.profile.name.toLowerCase()
-        )
-      : false;
+    const userModes = channel ? channelUserModesMap[channel.id]?.[member.profile.name.toLowerCase()] || [] : [];
+    const highestRole = getHighestChannelRole(userModes);
 
     return (
-      <UserHoverCard member={member} server={server} side="left">
+      <UserHoverCard member={member} server={server} channel={channel} side="left">
         <div
           onClick={() => onMemberClick(member.id)}
           className="group px-2 py-1 flex items-center gap-x-2 w-full hover:bg-zinc-700/10 dark:hover:bg-zinc-700/50 transition cursor-pointer rounded-md"
@@ -108,10 +103,8 @@ export const ChatMembersSidebar = ({
               {displayName}
             </p>
           </div>
-          {isOp && (
-            <ActionTooltip label="Channel operator">
-              <Crown className="w-4 h-4 ml-auto text-amber-500 fill-amber-500/20 shrink-0" />
-            </ActionTooltip>
+          {highestRole && (
+            <UserRoleIcon role={highestRole} showTooltip={false} className="ml-auto" />
           )}
         </div>
       </UserHoverCard>

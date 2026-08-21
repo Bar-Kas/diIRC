@@ -1,10 +1,12 @@
 import { ChannelType } from "@/types";
-import { Hash, User } from "lucide-react";
+import { Hash, User, Check, X, Sparkles } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useMockStore } from "@/lib/mock-store";
 import { getMemberDisplayName } from "@/components/user-hover-card";
+import { cn } from "@/lib/utils";
 import { ServerHeader } from "./server-header";
 import { ServerSearch } from "./server-search";
 import { ServerSection } from "./server-section";
@@ -22,15 +24,21 @@ const iconMap = {
 export const ServerSidebar = ({
   serverId
 }: ServerSidebarProps) => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const currentProfile = useMockStore((state) => state.currentProfile);
   const servers = useMockStore((state) => state.servers);
   const activeConversations = useMockStore((state) => state.activeConversations);
+  const pendingInvites = useMockStore((state) => state.pendingInvites);
+  const acceptPendingInvite = useMockStore((state) => state.acceptPendingInvite);
+  const ignorePendingInvite = useMockStore((state) => state.ignorePendingInvite);
 
   const [splitPercent, setSplitPercent] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
 
   const server = servers.find((s) => s.id === serverId) || servers[0];
+  const serverInvites = (server ? pendingInvites[server.id] : []) || [];
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -133,6 +141,73 @@ export const ServerSidebar = ({
               />
             </div>
             <Separator className="bg-zinc-200 dark:bg-zinc-700 rounded-md my-2" />
+            
+            {serverInvites.length > 0 && (
+              <div className="mb-3 space-y-1">
+                <div className="flex items-center justify-between px-1 py-1">
+                  <p className="text-xs font-bold uppercase tracking-wider text-indigo-500 dark:text-indigo-400 flex items-center gap-x-1.5">
+                    <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+                    Invites ({serverInvites.length})
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  {serverInvites.map((invite) => {
+                    const isSelected = location.pathname.includes(`/invites/${encodeURIComponent(invite.channelName)}`);
+                    return (
+                      <div
+                        key={invite.id}
+                        onClick={() => navigate(`/servers/${server.id}/invites/${encodeURIComponent(invite.channelName)}`)}
+                        className={cn(
+                          "group px-2.5 py-2 rounded-md flex items-center justify-between gap-x-2 transition cursor-pointer border",
+                          isSelected
+                            ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-900 dark:text-indigo-100 shadow-sm"
+                            : "bg-indigo-500/10 dark:bg-indigo-500/15 border-indigo-500/25 text-zinc-800 dark:text-zinc-200 hover:bg-indigo-500/20 dark:hover:bg-indigo-500/25"
+                        )}
+                      >
+                        <div className="flex items-center gap-x-2 min-w-0 flex-1">
+                          <Hash className="w-4 h-4 text-indigo-500 shrink-0" />
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-xs font-semibold truncate">
+                              #{invite.channelName}
+                            </span>
+                            <span className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate">
+                              Invited by {invite.inviter}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-x-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              await acceptPendingInvite(server.id, invite.channelName);
+                            }}
+                            title="Join channel"
+                            className="p-1 rounded hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 transition"
+                          >
+                            <Check className="w-4 h-4 stroke-[2.5]" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              ignorePendingInvite(server.id, invite.channelName);
+                            }}
+                            title="Ignore invite"
+                            className="p-1 rounded hover:bg-rose-500/20 text-zinc-400 hover:text-rose-500 transition"
+                          >
+                            <X className="w-4 h-4 stroke-[2.5]" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <Separator className="bg-zinc-200 dark:bg-zinc-700/80 rounded-md my-2" />
+              </div>
+            )}
+
             {[
               { label: "Text channels", type: ChannelType.TEXT, channels: textChannels, alwaysShow: true },
             ].map((section) => (section.alwaysShow || !!section.channels?.length) && (

@@ -3,7 +3,7 @@ import {
   ChannelType, 
   Server
 } from "@/types";
-import { Hash, X, KeyRound, Lock, Sliders } from "lucide-react";
+import { Hash, X, Lock, Sliders, Settings } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
@@ -14,6 +14,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
@@ -42,15 +43,17 @@ export const ServerChannel = ({
 
   const currentProfile = useMockStore((state) => state.currentProfile);
   const channelOpsMap = useMockStore((state) => state.channelOps);
+  const channelUserModesMap = useMockStore((state) => state.channelUserModes);
+  const deleteChannel = useMockStore((state) => state.deleteChannel);
+  const confirmLeaveChannel = useMockStore((state) => state.confirmLeaveChannel ?? true);
 
   const ourNick = server?.nicknames?.[0] || currentProfile.name;
-  const isServerOwner = server?.profileId === currentProfile.id;
-  const isChannelOwner = channel?.profileId === currentProfile.id;
 
   const channelOps = channelOpsMap[channel.id] || [];
-  const isChannelOp = channelOps.some(
-    (opNick) => opNick.toLowerCase() === ourNick.toLowerCase()
-  );
+  const ourModes = channelUserModesMap[channel.id]?.[ourNick.toLowerCase()] || [];
+  const isChannelOp =
+    channelOps.some((opNick) => opNick.toLowerCase() === ourNick.toLowerCase()) ||
+    ourModes.some((m) => ["o", "a", "q"].includes(m.toLowerCase()));
 
   const Icon = iconMap[channel.type];
 
@@ -65,11 +68,40 @@ export const ServerChannel = ({
 
   const isSelected = params?.channelId === channel.id;
 
+  const handleLeaveChannel = (e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    if (confirmLeaveChannel) {
+      onOpen("deleteChannel", { channel, server });
+    } else {
+      deleteChannel(server.id, channel.id);
+      if (isSelected) {
+        navigate(`/servers/${server.id}`);
+      }
+    }
+  };
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (e.button === 1) {
+      e.preventDefault();
+    }
+  };
+
+  const onAuxClick = (e: React.MouseEvent) => {
+    if (e.button === 1) {
+      e.preventDefault();
+      handleLeaveChannel(e);
+    }
+  };
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <button
           onClick={onClick}
+          onMouseDown={onMouseDown}
+          onAuxClick={onAuxClick}
           className={cn(
             "group px-2 py-2 rounded-md flex items-center gap-x-2 w-full hover:bg-zinc-700/10 dark:hover:bg-zinc-700/50 transition mb-1",
             isSelected && "bg-zinc-700/20 dark:bg-zinc-700"
@@ -89,16 +121,16 @@ export const ServerChannel = ({
           )}
           <div className="ml-auto flex items-center gap-x-2">
             {isChannelOp && (
-              <ActionTooltip label="Channel settings">
+              <ActionTooltip label="Channel settings (operator)">
                 <Sliders
-                  onClick={(e) => onAction(e, "channelSettings")}
+                  onClick={(e) => onAction(e, "channelOperatorSettings")}
                   className="hidden group-hover:block w-4 h-4 text-zinc-500 hover:text-indigo-500 dark:text-zinc-400 dark:hover:text-indigo-400 transition cursor-pointer"
                 />
               </ActionTooltip>
             )}
             <ActionTooltip label="Leave">
               <X
-                onClick={(e) => onAction(e, "deleteChannel")}
+                onClick={handleLeaveChannel}
                 className="hidden group-hover:block w-4 h-4 text-zinc-500 hover:text-red-500 dark:text-zinc-400 dark:hover:text-red-400 transition"
               />
             </ActionTooltip>
@@ -109,41 +141,54 @@ export const ServerChannel = ({
         {isChannelOp ? (
           <>
             <ContextMenuItem
-              onSelect={() => setTimeout(() => onOpen("channelSettings", { server, channel }), 0)}
+              onSelect={() => setTimeout(() => onOpen("channelOperatorSettings", { server, channel }), 0)}
               className="cursor-pointer flex items-center gap-x-2"
             >
               <Sliders className="w-4 h-4" />
-              Channel settings
+              Channel settings (operator)
             </ContextMenuItem>
             <ContextMenuItem
-              onSelect={() => setTimeout(() => onOpen("setChannelPassword", { server, channel }), 0)}
+              onSelect={() => setTimeout(() => onOpen("channelSettings", { server, channel }), 0)}
               className="cursor-pointer flex items-center gap-x-2"
             >
-              <KeyRound className="w-4 h-4" />
-              Set / remove password
+              <Settings className="w-4 h-4" />
+              Channel settings
             </ContextMenuItem>
           </>
         ) : (
-          <TooltipProvider>
-            <Tooltip delayDuration={0}>
-              <TooltipTrigger asChild>
-                <div className="w-full space-y-1">
-                  <ContextMenuItem disabled className="opacity-50 cursor-not-allowed flex items-center gap-x-2">
-                    <Sliders className="w-4 h-4" />
-                    Channel settings
-                  </ContextMenuItem>
-                  <ContextMenuItem disabled className="opacity-50 cursor-not-allowed flex items-center gap-x-2">
-                    <KeyRound className="w-4 h-4" />
-                    Set / remove password
-                  </ContextMenuItem>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                <p className="text-xs font-medium">You must be a channel operator</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <>
+            <TooltipProvider>
+              <Tooltip delayDuration={0}>
+                <TooltipTrigger asChild>
+                  <div className="w-full">
+                    <ContextMenuItem disabled className="opacity-50 cursor-not-allowed flex items-center gap-x-2">
+                      <Sliders className="w-4 h-4" />
+                      Channel settings (operator)
+                    </ContextMenuItem>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  <p className="text-xs font-medium">You must be a channel operator</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <ContextMenuItem
+              onSelect={() => setTimeout(() => onOpen("channelSettings", { server, channel }), 0)}
+              className="cursor-pointer flex items-center gap-x-2"
+            >
+              <Settings className="w-4 h-4" />
+              Channel settings
+            </ContextMenuItem>
+          </>
         )}
+        <ContextMenuSeparator className="bg-zinc-200 dark:bg-zinc-800" />
+        <ContextMenuItem
+          onSelect={() => setTimeout(() => handleLeaveChannel(), 0)}
+          className="cursor-pointer flex items-center gap-x-2 text-rose-600 dark:text-rose-400 focus:text-rose-600 dark:focus:text-rose-400"
+        >
+          <X className="w-4 h-4" />
+          Leave channel
+        </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
   );

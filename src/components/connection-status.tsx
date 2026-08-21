@@ -1,10 +1,13 @@
 import { useConnectionStatus } from "@/hooks/use-connection-status";
 import { useMockStore } from "@/lib/mock-store";
+import { useModal } from "@/hooks/use-modal-store";
+import { ActionTooltip } from "@/components/action-tooltip";
 import { cn } from "@/lib/utils";
 
 export const ConnectionStatus = () => {
-  const { irc, resourceServer, internet } = useConnectionStatus();
+  const { irc, ircError, resourceServer, internet } = useConnectionStatus();
   const statusDisplayMode = useMockStore((state) => state.statusDisplayMode) || "always";
+  const { onOpen } = useModal();
 
   const hasError = !irc || !resourceServer || !internet;
 
@@ -16,61 +19,71 @@ export const ConnectionStatus = () => {
     return null;
   }
 
+  const ircTooltipLabel = irc
+    ? "IRC server: Connected (Click for details & logs)"
+    : `IRC server: Disconnected${ircError ? ` (${ircError})` : ""} - Click for details & logs`;
+
   const statuses = [
     {
       id: "irc",
       name: "IRC server",
       status: irc,
+      tooltip: ircTooltipLabel,
     },
     {
       id: "resource",
       name: "Resource server",
       status: resourceServer,
+      tooltip: `Resource server: ${resourceServer ? "Connected" : "Disabled"} (Click for details)`,
     },
     {
       id: "internet",
       name: "Internet",
       status: internet,
+      tooltip: `Internet: ${internet ? "Online" : "Offline"} (Click for details)`,
     },
   ];
 
   return (
     <div className="relative group">
       <div
+        onClick={() => onOpen("connectionDetails")}
         className={cn(
           "flex items-center gap-x-2.5 px-3 py-1.5 rounded-full",
           "border border-zinc-200 dark:border-zinc-700/80",
           "bg-white/80 dark:bg-[#1e1f22]/90 backdrop-blur-md",
-          "shadow-sm hover:shadow-md transition-all duration-300 ease-in-out cursor-default",
-          "select-none"
+          "shadow-sm hover:shadow-md transition-all duration-300 ease-in-out cursor-pointer",
+          "select-none hover:border-indigo-500/50"
         )}
       >
         {statuses.map((item, index) => (
-          <div key={item.id} className="flex items-center">
-            {/* Separator dot between items in expanded state */}
-            {index > 0 && (
-              <span className="w-0 opacity-0 group-hover:w-auto group-hover:opacity-100 group-hover:mr-2.5 text-zinc-300 dark:text-zinc-700 transition-all duration-300 select-none">
-                •
-              </span>
-            )}
+          <ActionTooltip key={item.id} label={item.tooltip} side="bottom">
+            <div className="flex items-center">
+              {/* Separator dot between items in expanded state */}
+              {index > 0 && (
+                <span className="w-0 opacity-0 group-hover:w-auto group-hover:opacity-100 group-hover:mr-2.5 text-zinc-300 dark:text-zinc-700 transition-all duration-300 select-none">
+                  •
+                </span>
+              )}
 
-            {/* Static Status Dot */}
-            <div className="flex items-center justify-center">
-              <span
-                className={cn(
-                  "w-2.5 h-2.5 rounded-full shrink-0 transition-colors duration-200",
-                  item.status ? "bg-emerald-500" : "bg-rose-500"
-                )}
-              />
-            </div>
+              {/* Static Status Dot */}
+              <div className="flex items-center justify-center">
+                <span
+                  className={cn(
+                    "w-2.5 h-2.5 rounded-full shrink-0 transition-colors duration-200",
+                    item.status ? "bg-emerald-500" : "bg-rose-500"
+                  )}
+                />
+              </div>
 
-            {/* Expanded Label Text (Expands horizontally on hover without status text) */}
-            <div className="max-w-0 opacity-0 group-hover:max-w-[150px] group-hover:opacity-100 group-hover:ml-2 transition-all duration-300 ease-in-out overflow-hidden whitespace-nowrap text-xs">
-              <span className="font-medium text-zinc-700 dark:text-zinc-300">
-                {item.name}
-              </span>
+              {/* Expanded Label Text (Expands horizontally on hover without status text) */}
+              <div className="max-w-0 opacity-0 group-hover:max-w-[150px] group-hover:opacity-100 group-hover:ml-2 transition-all duration-300 ease-in-out overflow-hidden whitespace-nowrap text-xs">
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                  {item.name}
+                </span>
+              </div>
             </div>
-          </div>
+          </ActionTooltip>
         ))}
       </div>
     </div>

@@ -26,14 +26,19 @@ import {
   ShieldCheck,
   Activity,
   Command,
-  FileText
+  FileText,
+  LogOut,
+  Calendar
 } from "lucide-react";
-import { StatusDisplayMode } from "@/lib/mock-store";
+import { StatusDisplayMode, formatMessageDate } from "@/lib/mock-store";
 
 export const SettingsModal = () => {
   const { isOpen, onClose, type } = useModal();
   const compactMode = useMockStore((state) => state.compactMode);
   const setCompactMode = useMockStore((state) => state.setCompactMode);
+
+  const confirmLeaveChannel = useMockStore((state) => state.confirmLeaveChannel ?? true);
+  const setConfirmLeaveChannel = useMockStore((state) => state.setConfirmLeaveChannel);
 
   const enableCommandSuggestions = useMockStore((state) => state.enableCommandSuggestions ?? true);
   const setEnableCommandSuggestions = useMockStore((state) => state.setEnableCommandSuggestions);
@@ -59,6 +64,12 @@ export const SettingsModal = () => {
 
   const statusDisplayMode = useMockStore((state) => state.statusDisplayMode) || "always";
   const setStatusDisplayMode = useMockStore((state) => state.setStatusDisplayMode);
+
+  const dateFormatPreset = useMockStore((state) => state.dateFormatPreset) || "d MMM yyyy, HH:mm";
+  const setDateFormatPreset = useMockStore((state) => state.setDateFormatPreset);
+
+  const customDateFormat = useMockStore((state) => state.customDateFormat) || "yyyy/MM/dd HH:mm";
+  const setCustomDateFormat = useMockStore((state) => state.setCustomDateFormat);
 
   // New URL Rule Form State
   const [newRulePrefix, setNewRulePrefix] = useState("");
@@ -123,6 +134,25 @@ export const SettingsModal = () => {
             />
           </div>
 
+          {/* Confirm Before Leaving Channel */}
+          <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
+            <div className="space-y-0.5 pr-4">
+              <div className="flex items-center gap-x-2">
+                <LogOut className="w-4 h-4 text-rose-500 dark:text-rose-400" />
+                <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 cursor-pointer">
+                  Confirm before leaving channel
+                </label>
+              </div>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                Show a confirmation dialog when leaving a channel.
+              </p>
+            </div>
+            <Switch
+              checked={confirmLeaveChannel}
+              onCheckedChange={(checked) => setConfirmLeaveChannel(checked)}
+            />
+          </div>
+
           {/* Slash Command Autocomplete */}
           <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
             <div className="space-y-0.5 pr-4">
@@ -181,6 +211,55 @@ export const SettingsModal = () => {
               <option value="on_error">Only on error</option>
               <option value="disabled">Disabled (hidden)</option>
             </select>
+          </div>
+
+          {/* Date Display Format */}
+          <div className="flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-3 shadow-sm transition">
+            <div className="flex items-center gap-x-2">
+              <Calendar className="w-4 h-4 text-indigo-500" />
+              <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Date display format
+              </label>
+            </div>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+              Choose how timestamps are displayed in chat messages.
+            </p>
+            <select
+              value={dateFormatPreset}
+              onChange={(e) => setDateFormatPreset(e.target.value)}
+              className="w-full bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              <option value="d MMM yyyy, HH:mm">Default (20 Aug 2026, 23:30)</option>
+              <option value="yyyy-MM-dd HH:mm:ss">ISO 8601 (2026-08-20 23:30:00)</option>
+              <option value="MM/dd/yyyy, h:mm a">US format (08/20/2026, 11:30 PM)</option>
+              <option value="dd.MM.yyyy HH:mm">European format (20.08.2026 23:30)</option>
+              <option value="HH:mm:ss">Time only (23:30:00)</option>
+              <option value="custom">Custom format</option>
+            </select>
+
+            {dateFormatPreset === "custom" && (
+              <div className="space-y-1 pt-1">
+                <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                  Custom format pattern
+                </label>
+                <Input
+                  value={customDateFormat}
+                  onChange={(e) => setCustomDateFormat(e.target.value)}
+                  placeholder="e.g. yyyy/MM/dd HH:mm"
+                  className="bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-xs text-zinc-900 dark:text-zinc-100"
+                />
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                  Uses tokens based on <a href="https://unicode.org/reports/tr35/tr35-dates.html#Date_Format_Patterns" target="_blank" rel="noreferrer" className="text-indigo-500 hover:underline">Unicode Technical Standard #35 date format patterns</a> (e.g. yyyy/MM/dd HH:mm).
+                </p>
+              </div>
+            )}
+
+            <div className="pt-1 text-xs text-zinc-500 dark:text-zinc-400 font-mono flex items-center justify-between border-t border-zinc-200 dark:border-zinc-700/50 mt-1">
+              <span className="font-sans text-[11px]">Preview:</span>
+              <span className="font-semibold text-zinc-800 dark:text-zinc-200">
+                {formatMessageDate(new Date(), dateFormatPreset, customDateFormat)}
+              </span>
+            </div>
           </div>
 
           {/* Switch 1: Enable Link Previews (All embeds) */}
