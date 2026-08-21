@@ -13,6 +13,7 @@ export interface CommandContext {
   activeServer: Server;
   addMessage: (channelId: string, member: Member, content: string) => void;
   addDirectMessage: (conversationId: string, member: Member, content: string) => void;
+  navigate?: (path: string) => void;
 }
 
 export interface SlashCommand {
@@ -260,4 +261,59 @@ commandRegistry.register({
   description: "Removes voice status from a user: /devoice [#channel] <nick...>",
   execute: (args: string, ctx: CommandContext) => handleRoleMode("-v", args, ctx),
 });
+
+commandRegistry.register({
+  name: "query",
+  description: "Opens a private message conversation: /query [nickname] [message]",
+  execute: async (args: string, ctx: CommandContext) => {
+    const trimmed = args.trim();
+    if (!trimmed) {
+      const { useModalStore } = await import("@/hooks/use-modal-store");
+      useModalStore.getState().onOpen("privateMessages", { serverId: ctx.serverId });
+      return true;
+    }
+
+    const parts = trimmed.split(/\s+/);
+    const rawNick = parts[0];
+    if (!rawNick) {
+      const { useModalStore } = await import("@/hooks/use-modal-store");
+      useModalStore.getState().onOpen("privateMessages", { serverId: ctx.serverId });
+      return true;
+    }
+
+    const cleanNick = rawNick.replace(/^@/, "");
+    const initialMessage = parts.slice(1).join(" ").trim();
+
+    const { useMockStore } = await import("@/lib/mock-store");
+    const store = useMockStore.getState();
+
+    const targetMember = store.addServerMember(ctx.serverId, cleanNick);
+    if (!targetMember) return true;
+
+    store.openConversation(ctx.serverId, targetMember.id);
+    store.addToHistoricalConversations(ctx.serverId, targetMember.id);
+
+    if (initialMessage) {
+      const conversationId = [ctx.currentMember.id, targetMember.id].sort().join("-");
+      try {
+        await invoke("send_message", {
+          serverId: ctx.serverId,
+          channel: cleanNick,
+          message: initialMessage,
+        });
+        ctx.addDirectMessage(conversationId, ctx.currentMember, initialMessage);
+      } catch (err) {
+        console.error("Failed to send /query message via Tauri IRC:", err);
+        ctx.addDirectMessage(conversationId, ctx.currentMember, initialMessage);
+      }
+    }
+
+    if (ctx.navigate) {
+      ctx.navigate(`/servers/${ctx.serverId}/conversations/${targetMember.id}`);
+    }
+
+    return true;
+  },
+});
+
 

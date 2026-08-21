@@ -1,5 +1,5 @@
 import { ChannelType } from "@/types";
-import { Hash, User, Check, X, Sparkles } from "lucide-react";
+import { Hash, User, Check, X, Sparkles, Plus } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -13,6 +13,8 @@ import { ServerSection } from "./server-section";
 import { ServerChannel } from "./server-channel";
 import { ServerConversation } from "./server-conversation";
 import { useUIStore } from "@/hooks/use-ui-store";
+import { ActionTooltip } from "@/components/action-tooltip";
+import { useModal } from "@/hooks/use-modal-store";
 
 interface ServerSidebarProps {
   serverId: string;
@@ -35,6 +37,7 @@ export const ServerSidebar = ({
   const ignorePendingInvite = useMockStore((state) => state.ignorePendingInvite);
 
   const setMembersSidebar = useUIStore((state) => state.setMembersSidebar);
+  const { onOpen } = useModal();
 
   const [splitPercent, setSplitPercent] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -273,6 +276,14 @@ export const ServerSidebar = ({
               >
                 Private messages ({pmMembers.length})
               </p>
+              <ActionTooltip label="Start private message" side="top">
+                <button
+                  onClick={() => onOpen("privateMessages", { server })}
+                  className="text-zinc-500 hover:text-zinc-600 dark:text-zinc-400 dark:hover:text-zinc-300 transition"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </ActionTooltip>
             </div>
           </div>
           <ScrollArea className="flex-1 px-3">

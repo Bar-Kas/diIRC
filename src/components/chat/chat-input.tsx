@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { readImage } from "@tauri-apps/plugin-clipboard-manager";
 import { readFile } from "@tauri-apps/plugin-fs";
+import { useNavigate } from "react-router-dom";
 
 import {
   Form,
@@ -49,6 +50,7 @@ export const ChatInput = ({
   const ircConnectedServers = useMockStore((state) => state.ircConnectedServers);
   const enableCommandSuggestions = useMockStore((state) => state.enableCommandSuggestions ?? true);
   const { onOpen } = useModal();
+  const navigate = useNavigate();
 
   const activeId = query?.channelId || query?.conversationId;
 
@@ -477,6 +479,7 @@ export const ChatInput = ({
           activeServer,
           addMessage,
           addDirectMessage,
+          navigate,
         });
 
         if (isHandled) {
