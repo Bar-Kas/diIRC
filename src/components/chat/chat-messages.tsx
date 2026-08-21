@@ -101,7 +101,7 @@ export const ChatMessages = ({
   }, [items.length, atBottom]);
 
   const newMessagesCount = !atBottom ? Math.max(0, items.length - lastSeenCountRef.current) + pendingLiveCount : pendingLiveCount;
-  const showJumpToLatest = !atBottom || hasNewer || pendingLiveCount > 0;
+  const showJumpToLatest = (items.length > 0 && !atBottom) || hasNewer || pendingLiveCount > 0;
 
   const virtualizer = useVirtualizer({
     count: totalCount,
@@ -295,10 +295,10 @@ export const ChatMessages = ({
       return;
     }
 
+    const canScroll = element.scrollHeight > element.clientHeight + 5;
     const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
-    const isAtBottom = distanceFromBottom < 30;
+    const isAtBottom = !canScroll || distanceFromBottom < 30;
 
-    const stickChanged = shouldStickToBottomRef.current !== isAtBottom;
     shouldStickToBottomRef.current = isAtBottom;
     setAtBottom((prev) => (prev === isAtBottom ? prev : isAtBottom));
 
@@ -310,7 +310,7 @@ export const ChatMessages = ({
     const programmaticRemaining = Math.max(0, programmaticScrollUntilRef.current - performance.now());
     const isProgrammatic = programmaticRemaining > 0;
 
-    if (!isProgrammatic) {
+    if (!isProgrammatic && canScroll) {
       if (element.scrollTop <= HISTORY_EDGE_TRIGGER_PX) {
         triggerLoadOlder();
       } else if (distanceFromBottom <= HISTORY_EDGE_TRIGGER_PX) {
@@ -323,8 +323,9 @@ export const ChatMessages = ({
     const element = chatRef.current;
     if (!element) return;
 
+    const canScroll = element.scrollHeight > element.clientHeight + 5;
     const wasSticking = shouldStickToBottomRef.current;
-    if (e.deltaY < 0 && wasSticking) {
+    if (e.deltaY < 0 && wasSticking && canScroll) {
       shouldStickToBottomRef.current = false;
       setAtBottom(false);
       jumpingToLatestRef.current = false;
@@ -336,7 +337,7 @@ export const ChatMessages = ({
 
     const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
 
-    if (!isProgrammatic) {
+    if (!isProgrammatic && canScroll) {
       if (e.deltaY < 0 && element.scrollTop <= HISTORY_EDGE_TRIGGER_PX) {
         triggerLoadOlder();
       } else if (e.deltaY > 0 && distanceFromBottom <= HISTORY_EDGE_TRIGGER_PX) {
@@ -367,6 +368,12 @@ export const ChatMessages = ({
   useLayoutEffect(() => {
     const element = chatRef.current;
     if (!element) return;
+
+    const canScroll = element.scrollHeight > element.clientHeight + 5;
+    if (!canScroll) {
+      shouldStickToBottomRef.current = true;
+      setAtBottom(true);
+    }
 
     if (shouldStickToBottomRef.current && totalCount > 0) {
       pinToBottom("auto", "useLayoutEffect (stickToBottom)");
