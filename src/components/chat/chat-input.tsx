@@ -155,6 +155,20 @@ export const ChatInput = ({
   }, [content, attachedImages, activeId, setDraft]);
 
   useEffect(() => {
+    const handleRestore = (e: Event) => {
+      const customEvent = e as CustomEvent<{ id: string; content: string }>;
+      if (customEvent.detail && customEvent.detail.id === activeId) {
+        form.setValue("content", customEvent.detail.content);
+        form.setFocus("content");
+      }
+    };
+    window.addEventListener("restore_unsent_message", handleRestore);
+    return () => {
+      window.removeEventListener("restore_unsent_message", handleRestore);
+    };
+  }, [activeId, form]);
+
+  useEffect(() => {
     if (enableCommandSuggestions && isFocused && content?.startsWith("/")) {
       if (content.indexOf(" ") === -1) {
         setCommandQuery(content.slice(1).toLowerCase());
@@ -516,46 +530,46 @@ export const ChatInput = ({
         }
       }
 
-      for (const line of linesToSend) {
-        if (type === "channel" && query?.channelId) {
-          try {
-            await invoke("send_message", { 
-              serverId: activeServer.id,
-              channel: name.startsWith("#") ? name : `#${name}`, 
-              message: line 
-            });
-            addMessage(query.channelId, senderMember, line);
-          } catch (err: any) {
-            console.error("Failed to send channel message via Tauri IRC:", err);
-            addMessage(query.channelId, senderMember, line);
-          }
-        } else if (type === "conversation" && query?.conversationId) {
-          try {
-            await invoke("send_message", { 
-              serverId: activeServer.id,
-              channel: name, 
-              message: line 
-            });
-            addDirectMessage(query.conversationId, senderMember, line);
-            if (query.targetMemberId) {
-              useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
-            }
-          } catch (err: any) {
-            console.error("Failed to send private message via Tauri IRC:", err);
-            addDirectMessage(query.conversationId, senderMember, line);
-            if (query.targetMemberId) {
-              useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
-            }
-          }
-        }
-      }
-
       if (activeId) {
         clearDraft(activeId);
       }
       form.reset({ content: "" });
       clearAllAttachments();
       form.setFocus("content");
+
+      for (const line of linesToSend) {
+        if (type === "channel" && query?.channelId) {
+          addMessage(query.channelId, senderMember, line);
+          try {
+            await invoke("send_message", { 
+              serverId: activeServer.id,
+              channel: name.startsWith("#") ? name : `#${name}`, 
+              message: line 
+            });
+          } catch (err: any) {
+            console.error("Failed to send channel message via Tauri IRC:", err);
+            form.setValue("content", line);
+            return;
+          }
+        } else if (type === "conversation" && query?.conversationId) {
+          addDirectMessage(query.conversationId, senderMember, line);
+          if (query.targetMemberId) {
+            useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
+          }
+          try {
+            await invoke("send_message", { 
+              serverId: activeServer.id,
+              channel: name, 
+              message: line 
+            });
+          } catch (err: any) {
+            console.error("Failed to send private message via Tauri IRC:", err);
+            useMockStore.getState().removeLastDirectMessageFromMember(query.conversationId, senderMember.id);
+            form.setValue("content", line);
+            return;
+          }
+        }
+      }
     } catch (error) {
       console.error(error);
     }

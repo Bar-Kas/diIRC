@@ -214,7 +214,8 @@ interface MockState {
   closeConversation: (serverId: string, memberId: string) => void;
   syncActiveConversationsWithDisk: (serverId: string, loggedNicks: string[]) => void;
 
-  addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null) => DirectMessage;
+  addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean) => DirectMessage;
+  removeLastDirectMessageFromMember: (conversationId: string, memberId: string) => string | null;
   deleteDirectMessage: (conversationId: string, messageId: string) => void;
 }
 
@@ -1404,7 +1405,7 @@ export const useMockStore = create<MockState>()(
         });
       },
 
-      addDirectMessage: (conversationId, member, content, fileUrl) => {
+      addDirectMessage: (conversationId, member, content, fileUrl, isSystem) => {
         const newDm: DirectMessage = {
           id: `dm-${uuidv4().slice(0, 8)}`,
           content,
@@ -1413,6 +1414,7 @@ export const useMockStore = create<MockState>()(
           member,
           conversationId,
           deleted: false,
+          isSystem,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -1425,6 +1427,30 @@ export const useMockStore = create<MockState>()(
         }));
 
         return newDm;
+      },
+
+      removeLastDirectMessageFromMember: (conversationId, memberId) => {
+        let removedContent: string | null = null;
+        set((state) => {
+          const currentDms = state.directMessages[conversationId] || [];
+          let lastIndex = -1;
+          for (let i = currentDms.length - 1; i >= 0; i--) {
+            if (currentDms[i].memberId === memberId && !currentDms[i].isSystem) {
+              lastIndex = i;
+              break;
+            }
+          }
+          if (lastIndex === -1) return state;
+          removedContent = currentDms[lastIndex].content;
+          const updatedDms = currentDms.filter((_, idx) => idx !== lastIndex);
+          return {
+            directMessages: {
+              ...state.directMessages,
+              [conversationId]: updatedDms,
+            },
+          };
+        });
+        return removedContent;
       },
 
       deleteDirectMessage: (conversationId, messageId) => {

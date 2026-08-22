@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useMockStore } from "@/lib/mock-store";
 import { useModalStore } from "@/hooks/use-modal-store";
+import { useDraftStore } from "@/hooks/use-draft-store";
 import { Server, ChannelType } from "@/types";
 import { extractFlag } from "@/lib/flag-tips";
 
@@ -242,7 +243,32 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                 };
-                store.addDirectMessage(conversationId, systemMember as any, content, null);
+
+                const lowerContent = content.toLowerCase();
+                const isSendError =
+                  lowerContent.includes("cannot send message") ||
+                  lowerContent.startsWith("error:") ||
+                  lowerContent.includes("no such nick");
+
+                if (isSendError) {
+                  const restoredContent = store.removeLastDirectMessageFromMember(
+                    conversationId,
+                    currentMember.id
+                  );
+                  if (restoredContent) {
+                    useDraftStore.getState().setDraft(conversationId, {
+                      content: restoredContent,
+                      attachedImages: [],
+                    });
+                    window.dispatchEvent(
+                      new CustomEvent("restore_unsent_message", {
+                        detail: { id: conversationId, content: restoredContent },
+                      })
+                    );
+                  }
+                }
+
+                store.addDirectMessage(conversationId, systemMember as any, content, null, true);
                 store.openConversation(targetServer.id, targetMember.id);
                 store.addToHistoricalConversations(targetServer.id, targetMember.id);
               }

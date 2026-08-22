@@ -12,7 +12,7 @@ export interface CommandContext {
   currentMember: Member;
   activeServer: Server;
   addMessage: (channelId: string, member: Member, content: string) => void;
-  addDirectMessage: (conversationId: string, member: Member, content: string) => void;
+  addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean) => void;
   navigate?: (path: string) => void;
 }
 
