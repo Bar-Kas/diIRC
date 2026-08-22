@@ -1419,6 +1419,26 @@ export const useMockStore = create<MockState>()(
           updatedAt: new Date().toISOString(),
         };
 
+        if (member.serverId && !isSystem) {
+          const state = get();
+          const server = state.servers.find((s) => s.id === member.serverId);
+          const currentMember = server?.members.find(
+            (m) =>
+              m.profileId === state.currentProfile.id ||
+              m.profile?.id === state.currentProfile.id ||
+              (server.nicknames && server.nicknames.includes(m.profile?.name)) ||
+              m.id.startsWith("member-")
+          );
+
+          if (currentMember) {
+            const memberIds = conversationId.split("-");
+            const otherMemberId = memberIds.find((id) => id !== currentMember.id) || member.id;
+            if (otherMemberId && otherMemberId !== currentMember.id) {
+              get().addToHistoricalConversations(member.serverId, otherMemberId);
+            }
+          }
+        }
+
         set((state) => ({
           directMessages: {
             ...state.directMessages,

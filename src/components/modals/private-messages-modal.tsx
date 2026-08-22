@@ -65,7 +65,6 @@ export const PrivateMessagesModal = () => {
     const targetMember = store.addServerMember(activeServerId, cleanNick);
     if (targetMember) {
       store.openConversation(activeServerId, targetMember.id);
-      store.addToHistoricalConversations(activeServerId, targetMember.id);
       handleClose();
       navigate(`/servers/${activeServerId}/conversations/${targetMember.id}`);
     }

@@ -291,7 +291,6 @@ commandRegistry.register({
     if (!targetMember) return true;
 
     store.openConversation(ctx.serverId, targetMember.id);
-    store.addToHistoricalConversations(ctx.serverId, targetMember.id);
 
     if (initialMessage) {
       const conversationId = [ctx.currentMember.id, targetMember.id].sort().join("-");
