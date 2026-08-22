@@ -1,5 +1,5 @@
-import { useParams, useNavigate } from "react-router-dom";
-import { useEffect } from "react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { useEffect, useRef } from "react";
 import { useMockStore } from "@/lib/mock-store";
 import { useUIStore } from "@/hooks/use-ui-store";
 import { ChatHeader } from "@/components/chat/chat-header";
@@ -11,6 +11,7 @@ import { getMemberDisplayName } from "@/components/user-hover-card";
 export const ConversationPage = () => {
   const { serverId, memberId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const servers = useMockStore((state) => state.servers);
   const currentProfile = useMockStore((state) => state.currentProfile);
   const showMembersSidebar = useUIStore((state) => state.showMembersSidebar);
@@ -19,12 +20,19 @@ export const ConversationPage = () => {
   const server = servers.find((s) => s.id === serverId);
   const targetMember = server?.members.find((m) => m.id === memberId);
 
+  const prevPathRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (serverId && memberId) {
       useMockStore.getState().openConversation(serverId, memberId);
-      setMembersSidebar(false);
+      
+      const wasInConversation = prevPathRef.current?.includes("/conversations/");
+      if (!wasInConversation) {
+        setMembersSidebar(false);
+      }
     }
-  }, [serverId, memberId, setMembersSidebar]);
+    prevPathRef.current = location.pathname;
+  }, [serverId, memberId, location.pathname, setMembersSidebar]);
 
   useEffect(() => {
     if (!server && servers.length > 0) {
