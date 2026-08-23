@@ -1774,6 +1774,15 @@ async fn send_invite(
     }
 }
 
+#[tauri::command]
+fn toggle_devtools(window: tauri::WebviewWindow) {
+    if window.is_devtools_open() {
+        window.close_devtools();
+    } else {
+        window.open_devtools();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1801,16 +1810,13 @@ pub fn run() {
             send_mode,
             send_invite,
             refresh_channel_names,
-            fetch_image_proxy
+            fetch_image_proxy,
+            toggle_devtools
         ])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
-                #[cfg(debug_assertions)]
-                {
-                    window.open_devtools();
-                }
             }
             if cfg!(debug_assertions) {
                 app.handle().plugin(
