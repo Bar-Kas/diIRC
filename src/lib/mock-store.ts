@@ -299,11 +299,16 @@ interface MockState {
   addMessage: (channelId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean) => Message;
   deleteMessage: (channelId: string, messageId: string) => void;
 
-  // Direct Message Actions
   activeConversations: Record<string, string[]>;
+  historicalConversations: Record<string, string[]>;
   openConversation: (serverId: string, memberId: string) => void;
+  addToHistoricalConversations: (serverId: string, memberId: string) => void;
   closeConversation: (serverId: string, memberId: string) => void;
-  addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null) => DirectMessage;
+  syncActiveConversationsWithDisk: (serverId: string, loggedNicks: string[]) => void;
+
+  addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean) => DirectMessage;
+  removeLastMessageFromChannel: (channelId: string, memberId: string) => string | null;
+  removeLastDirectMessageFromMember: (conversationId: string, memberId: string) => string | null;
   deleteDirectMessage: (conversationId: string, messageId: string) => void;
 }
 
@@ -327,6 +332,7 @@ export const useMockStore = create<MockState>()(
         }
       },
       activeConversations: {},
+      historicalConversations: {},
       compactMode: false,
       enableMarkdown: true,
       confirmLeaveChannel: true,
@@ -1545,13 +1551,30 @@ export const useMockStore = create<MockState>()(
               return state;
             }
           }
+          const currentActive = state.activeConversations[serverId] || [];
+          
+          const newActive = currentActive.includes(memberId) ? currentActive : [...currentActive, memberId];
 
-          const current = state.activeConversations[serverId] || [];
-          if (current.includes(memberId)) return state;
+          if (currentActive.length === newActive.length) return state;
+
           return {
             activeConversations: {
               ...state.activeConversations,
-              [serverId]: [...current, memberId],
+              [serverId]: newActive,
+            },
+          };
+        });
+      },
+
+      addToHistoricalConversations: (serverId, memberId) => {
+        set((state) => {
+          const currentHistorical = state.historicalConversations[serverId] || [];
+          if (currentHistorical.includes(memberId)) return state;
+          
+          return {
+            historicalConversations: {
+              ...state.historicalConversations,
+              [serverId]: [...currentHistorical, memberId],
             },
           };
         });
@@ -1569,7 +1592,84 @@ export const useMockStore = create<MockState>()(
         });
       },
 
-      addDirectMessage: (conversationId, member, content, fileUrl) => {
+      syncActiveConversationsWithDisk: (serverId, loggedNicks) => {
+        set((state) => {
+          const server = state.servers.find((s) => s.id === serverId);
+          if (!server) return state;
+
+          const loggedSet = new Set(loggedNicks.map((n) => n.toLowerCase()));
+
+          // Ensure members exist for all logged nicks
+          const updatedMembers = [...server.members];
+          loggedNicks.forEach((nick) => {
+            if (nick && nick.trim()) {
+              const cleanNick = nick.trim().replace(/^[~&@%+]+/, "");
+              const exists = updatedMembers.find((m) => m.profile.name.toLowerCase() === cleanNick.toLowerCase());
+              if (!exists) {
+                const mockMember: Member = {
+                  id: `irc-${cleanNick}`,
+                  profileId: `profile-${cleanNick}`,
+                  profile: {
+                    id: `profile-${cleanNick}`,
+                    userId: `user-${cleanNick}`,
+                    name: cleanNick,
+                    imageUrl: "",
+                    email: `${cleanNick}@irc.local`,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  },
+                  serverId,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                };
+                updatedMembers.push(mockMember);
+              }
+            }
+          });
+
+          const currentMember = updatedMembers.find(
+            (m) =>
+              m.profileId === state.currentProfile.id ||
+              m.profile?.id === state.currentProfile.id ||
+              (server.nicknames && server.nicknames.includes(m.profile?.name)) ||
+              m.id.startsWith("member-")
+          ) || updatedMembers[0];
+
+          const validMemberIds = new Set<string>();
+
+          // Include members whose log file is non-empty on disk
+          updatedMembers.forEach((m) => {
+            if (loggedSet.has(m.profile.name.toLowerCase()) && m.id !== currentMember?.id) {
+              validMemberIds.add(m.id);
+            }
+          });
+
+          // Include members with in-memory messages
+          if (currentMember) {
+            updatedMembers.forEach((m) => {
+              if (m.id !== currentMember.id) {
+                const convId = [currentMember.id, m.id].sort().join("-");
+                const dms = state.directMessages[convId];
+                if (dms && dms.length > 0) {
+                  validMemberIds.add(m.id);
+                }
+              }
+            });
+          }
+
+          return {
+            servers: state.servers.map((s) => (s.id === serverId ? { ...s, members: updatedMembers } : s)),
+            historicalConversations: {
+              ...state.historicalConversations,
+              [serverId]: Array.from(validMemberIds),
+            },
+            // Note: we intentionally do NOT overwrite activeConversations here, 
+            // so closed PM tabs stay closed.
+          };
+        });
+      },
+
+      addDirectMessage: (conversationId, member, content, fileUrl, isSystem) => {
         const newDm: DirectMessage = {
           id: `dm-${uuidv4().slice(0, 8)}`,
           content,
@@ -1578,9 +1678,30 @@ export const useMockStore = create<MockState>()(
           member,
           conversationId,
           deleted: false,
+          isSystem,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
+
+        if (member.serverId && !isSystem) {
+          const state = get();
+          const server = state.servers.find((s) => s.id === member.serverId);
+          const currentMember = server?.members.find(
+            (m) =>
+              m.profileId === state.currentProfile.id ||
+              m.profile?.id === state.currentProfile.id ||
+              (server.nicknames && server.nicknames.includes(m.profile?.name)) ||
+              m.id.startsWith("member-")
+          );
+
+          if (currentMember) {
+            const memberIds = conversationId.split("-");
+            const otherMemberId = memberIds.find((id) => id !== currentMember.id) || member.id;
+            if (otherMemberId && otherMemberId !== currentMember.id) {
+              get().addToHistoricalConversations(member.serverId, otherMemberId);
+            }
+          }
+        }
 
         const key = chatKey("conversation", conversationId);
         const state = get();
@@ -1617,6 +1738,54 @@ export const useMockStore = create<MockState>()(
         }
 
         return newDm;
+      },
+
+      removeLastMessageFromChannel: (channelId, memberId) => {
+        let removedContent: string | null = null;
+        set((state) => {
+          const currentMsgs = state.messages[channelId] || [];
+          let lastIndex = -1;
+          for (let i = currentMsgs.length - 1; i >= 0; i--) {
+            if (currentMsgs[i].memberId === memberId && !currentMsgs[i].isSystem) {
+              lastIndex = i;
+              break;
+            }
+          }
+          if (lastIndex === -1) return state;
+          removedContent = currentMsgs[lastIndex].content;
+          const updatedMsgs = currentMsgs.filter((_, idx) => idx !== lastIndex);
+          return {
+            messages: {
+              ...state.messages,
+              [channelId]: updatedMsgs,
+            },
+          };
+        });
+        return removedContent;
+      },
+
+      removeLastDirectMessageFromMember: (conversationId, memberId) => {
+        let removedContent: string | null = null;
+        set((state) => {
+          const currentDms = state.directMessages[conversationId] || [];
+          let lastIndex = -1;
+          for (let i = currentDms.length - 1; i >= 0; i--) {
+            if (currentDms[i].memberId === memberId && !currentDms[i].isSystem) {
+              lastIndex = i;
+              break;
+            }
+          }
+          if (lastIndex === -1) return state;
+          removedContent = currentDms[lastIndex].content;
+          const updatedDms = currentDms.filter((_, idx) => idx !== lastIndex);
+          return {
+            directMessages: {
+              ...state.directMessages,
+              [conversationId]: updatedDms,
+            },
+          };
+        });
+        return removedContent;
       },
 
       deleteDirectMessage: (conversationId, messageId) => {

@@ -18,7 +18,9 @@ export type ModalType =
   | "setChannelPassword"
   | "channelSettings"
   | "channelOperatorSettings"
-  | "connectionDetails";
+  | "connectionDetails"
+  | "roleIcons"
+  | "privateMessages";
 
 interface ModalData {
   server?: Server;

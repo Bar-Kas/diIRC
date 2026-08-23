@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useMockStore } from "@/lib/mock-store";
 import { useModalStore } from "@/hooks/use-modal-store";
+import { useDraftStore } from "@/hooks/use-draft-store";
 import { Server, ChannelType } from "@/types";
 import { extractFlag } from "@/lib/flag-tips";
 
@@ -129,6 +130,28 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     });
   }, [servers, attemptConnect, setIrcConnected]);
 
+  // Track which servers have been synced
+  const syncedServersRef = useRef<Set<string>>(new Set());
+
+  // Sync active Conversations with non-empty log files on disk
+  useEffect(() => {
+    servers.forEach(async (server) => {
+      if (syncedServersRef.current.has(server.id)) return;
+      syncedServersRef.current.add(server.id);
+      
+      try {
+        const loggedNicks = await invoke<string[]>("list_logged_conversations", {
+          serverId: server.id,
+        });
+        useMockStore.getState().syncActiveConversationsWithDisk(server.id, loggedNicks);
+      } catch (err) {
+        console.error(`Failed to sync conversations with disk for ${server.name}:`, err);
+        // If it fails, allow it to retry later by removing from the set
+        syncedServersRef.current.delete(server.id);
+      }
+    });
+  }, [servers]);
+
   // Auto-reconnect loop with exponential backoff & error throttling for disconnected servers
   useEffect(() => {
     const interval = setInterval(() => {
@@ -195,6 +218,83 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
           if (!isChannelMsg) {
             // Private Message (PM)
             const store = useMockStore.getState();
+            if (isSystem || sender === "System") {
+              const targetNick = channel;
+              const targetMember = store.addServerMember(targetServer.id, targetNick);
+              const currentMember = targetServer.members.find(
+                (m) => m.profileId === store.currentProfile.id
+              ) || targetServer.members[0];
+
+              if (targetMember && currentMember) {
+                const conversationId = [currentMember.id, targetMember.id].sort().join("-");
+                const systemMember = {
+                  id: "system",
+                  profileId: "system",
+                  profile: {
+                    id: "system",
+                    userId: "system",
+                    name: "System",
+                    imageUrl: "",
+                    email: "system@irc.local",
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  },
+                  serverId: targetServer.id,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                };
+
+                const lowerContent = content.toLowerCase();
+                const isSendError =
+                  lowerContent.includes("cannot send message") ||
+                  lowerContent.startsWith("error:") ||
+                  lowerContent.includes("no such nick") ||
+                  lowerContent.includes("cannot send to user") ||
+                  lowerContent.includes("user not online");
+
+                if (isSendError) {
+                  const restoredContent = store.removeLastDirectMessageFromMember(
+                    conversationId,
+                    currentMember.id
+                  );
+                  if (restoredContent) {
+                    useDraftStore.getState().setDraft(conversationId, {
+                      content: restoredContent,
+                      attachedImages: [],
+                    });
+                    window.dispatchEvent(
+                      new CustomEvent("restore_unsent_message", {
+                        detail: { id: conversationId, content: restoredContent },
+                      })
+                    );
+                  }
+
+                  invoke("delete_last_log_entry", {
+                    serverId: targetServer.id,
+                    target: targetNick,
+                    sender: currentMember.profile.name,
+                  })
+                    .then(() => {
+                      invoke<string[]>("list_logged_conversations", {
+                        serverId: targetServer.id,
+                      })
+                        .then((loggedNicks) => {
+                          store.syncActiveConversationsWithDisk(targetServer.id, loggedNicks);
+                        })
+                        .catch(console.error);
+                    })
+                    .catch(console.error);
+                }
+
+                store.addDirectMessage(conversationId, systemMember as any, content, null, true);
+                store.openConversation(targetServer.id, targetMember.id);
+                if (!isSendError) {
+                  store.addToHistoricalConversations(targetServer.id, targetMember.id);
+                }
+              }
+              return;
+            }
+
             let senderMember = store.addServerMember(targetServer.id, sender);
 
             const currentMember = targetServer.members.find(
@@ -205,6 +305,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               const conversationId = [currentMember.id, senderMember.id].sort().join("-");
               store.addDirectMessage(conversationId, senderMember, content, null);
               store.openConversation(targetServer.id, senderMember.id);
+              store.addToHistoricalConversations(targetServer.id, senderMember.id);
             }
             return;
           }
@@ -213,6 +314,45 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
           const targetChannel = targetServer.channels.find(
             (c) => c.name.toLowerCase() === cleanName
           );
+
+          if (isSystem || sender === "System") {
+            const lowerContent = content.toLowerCase();
+            const isSendError =
+              lowerContent.includes("cannot send") ||
+              lowerContent.startsWith("error:") ||
+              lowerContent.includes("permission denied") ||
+              lowerContent.includes("banned");
+
+            if (isSendError && targetChannel) {
+              const store = useMockStore.getState();
+              const currentMember = targetServer.members.find(
+                (m) => m.profileId === store.currentProfile.id
+              ) || targetServer.members[0];
+
+              if (currentMember) {
+                const restoredContent = store.removeLastMessageFromChannel(
+                  targetChannel.id,
+                  currentMember.id
+                );
+                if (restoredContent) {
+                  useDraftStore.getState().setDraft(targetChannel.id, {
+                    content: restoredContent,
+                    attachedImages: [],
+                  });
+                  window.dispatchEvent(
+                    new CustomEvent("restore_unsent_message", {
+                      detail: { id: targetChannel.id, content: restoredContent },
+                    })
+                  );
+                }
+                invoke("delete_last_log_entry", {
+                  serverId: targetServer.id,
+                  target: targetChannel.name.startsWith("#") ? targetChannel.name : `#${targetChannel.name}`,
+                  sender: currentMember.profile.name,
+                }).catch(console.error);
+              }
+            }
+          }
 
           const mockMember = {
             id: `irc-${sender}`,

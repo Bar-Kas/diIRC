@@ -23,7 +23,6 @@ import {
   Key, 
   Plus, 
   Trash2, 
-  ShieldCheck,
   Activity,
   Command,
   FileText,
@@ -33,7 +32,7 @@ import {
 import { StatusDisplayMode, formatMessageDate } from "@/lib/mock-store";
 
 export const SettingsModal = () => {
-  const { isOpen, onClose, type } = useModal();
+  const { isOpen, onClose, type, onOpen } = useModal();
   const compactMode = useMockStore((state) => state.compactMode);
   const setCompactMode = useMockStore((state) => state.setCompactMode);
 

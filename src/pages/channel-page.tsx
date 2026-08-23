@@ -13,9 +13,16 @@ export const ChannelPage = () => {
   const servers = useMockStore((state) => state.servers);
   const currentProfile = useMockStore((state) => state.currentProfile);
   const showMembersSidebar = useUIStore((state) => state.showMembersSidebar);
+  const setMembersSidebar = useUIStore((state) => state.setMembersSidebar);
 
   const server = servers.find((s) => s.id === serverId);
   const channel = server?.channels.find((c) => c.id === channelId);
+
+  useEffect(() => {
+    if (channelId) {
+      setMembersSidebar(true);
+    }
+  }, [channelId, setMembersSidebar]);
 
   useEffect(() => {
     if (!server && servers.length > 0) {
@@ -60,7 +67,7 @@ export const ChannelPage = () => {
             }}
           />
         </div>
-        {showMembersSidebar && <ChatMembersSidebar server={server} channel={channel} />}
+        <ChatMembersSidebar server={server} channel={channel} />
       </div>
     </div>
   );

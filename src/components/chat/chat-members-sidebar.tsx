@@ -1,10 +1,14 @@
 import { Channel, Member, Server } from "@/types";
 import { UserAvatar } from "@/components/user-avatar";
 import { UserHoverCard, getMemberDisplayName } from "@/components/user-hover-card";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useMockStore } from "@/lib/mock-store";
 import { cn } from "@/lib/utils";
 import { UserRoleIcon, getHighestChannelRole } from "@/components/user-role-icon";
+import { useUIStore } from "@/hooks/use-ui-store";
+import { useModal } from "@/hooks/use-modal-store";
+import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
+import { ActionTooltip } from "@/components/action-tooltip";
 
 interface ChatMembersSidebarProps {
   server: Server;
@@ -16,11 +20,18 @@ export const ChatMembersSidebar = ({
   channel
 }: ChatMembersSidebarProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { onOpen } = useModal();
   const openConversation = useMockStore((state) => state.openConversation);
   const currentProfile = useMockStore((state) => state.currentProfile);
   const channelMembersMap = useMockStore((state) => state.channelMembers);
   const channelUserModesMap = useMockStore((state) => state.channelUserModes);
   const ircConnectedServers = useMockStore((state) => state.ircConnectedServers);
+  const historicalConversations = useMockStore((state) => state.historicalConversations);
+  const directMessagesMap = useMockStore((state) => state.directMessages);
+
+  const showMembersSidebar = useUIStore((state) => state.showMembersSidebar);
+  const toggleMembersSidebar = useUIStore((state) => state.toggleMembersSidebar);
 
   const isConnected = !!ircConnectedServers[server.id];
 
@@ -52,7 +63,8 @@ export const ChatMembersSidebar = ({
     m.profile.name.toLowerCase() !== selfNickLower;
 
   // Ustalamy listę pozostałych użytkowników do wyświetlenia:
-  // jeśli channelMembers ma wpis dla tego kanału – filtrujemy, w p.p. pokazujemy wszystkich
+  // w trybie kanału: filtrujemy użytkowników z tego kanału
+  // w trybie PM: pokazujemy tylko osoby, z którymi prowadzimy aktywne konwersacje (i posiadające wiadomości lub aktywne)
   let otherMembers: Member[];
   if (channel) {
     const channelUserNicks = channelMembersMap[channel.id];
@@ -65,14 +77,47 @@ export const ChatMembersSidebar = ({
       otherMembers = server.members.filter(isNotSelf);
     }
   } else {
-    otherMembers = server.members.filter(isNotSelf);
+    const activeMemberIds = (historicalConversations[server.id] || []).filter(
+      (memberId) => memberId !== selfMember?.id
+    );
+    otherMembers = activeMemberIds
+      .map((memberId) => server.members.find((m) => m.id === memberId))
+      .filter((m): m is NonNullable<typeof m> => {
+        if (!m || !isNotSelf(m)) return false;
+        if (!selfMember) return false;
+        const convId = [selfMember.id, m.id].sort().join("-");
+        const msgs = directMessagesMap[convId];
+        if (msgs !== undefined && msgs.length === 0) return false;
+        return true;
+      });
   }
 
-  otherMembers = otherMembers.sort((a, b) => {
-    const nameA = getMemberDisplayName(a, server);
-    const nameB = getMemberDisplayName(b, server);
-    return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
-  });
+  if (channel) {
+    otherMembers = otherMembers.sort((a, b) => {
+      const nameA = getMemberDisplayName(a, server);
+      const nameB = getMemberDisplayName(b, server);
+      return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+    });
+  } else {
+    otherMembers = otherMembers.sort((a, b) => {
+      if (!selfMember) return 0;
+      const convIdA = [selfMember.id, a.id].sort().join("-");
+      const convIdB = [selfMember.id, b.id].sort().join("-");
+      const msgsA = directMessagesMap[convIdA] || [];
+      const msgsB = directMessagesMap[convIdB] || [];
+      const lastMsgA = msgsA[msgsA.length - 1];
+      const lastMsgB = msgsB[msgsB.length - 1];
+      const timeA = lastMsgA ? new Date(lastMsgA.createdAt).getTime() : 0;
+      const timeB = lastMsgB ? new Date(lastMsgB.createdAt).getTime() : 0;
+      
+      if (timeA !== timeB) return timeB - timeA; // Descending (newest first)
+      
+      // Fallback to alphabetical
+      const nameA = getMemberDisplayName(a, server);
+      const nameB = getMemberDisplayName(b, server);
+      return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+    });
+  }
 
   const totalCount = 1 + otherMembers.length;
 
@@ -112,21 +157,67 @@ export const ChatMembersSidebar = ({
   };
 
   return (
-    <div className="h-full w-60 bg-[#F2F3F5] dark:bg-[#2B2D31] flex flex-col pt-4 px-2 overflow-y-auto overflow-x-hidden discord-scrollbar-ghost hidden md:flex shrink-0 border-l border-zinc-200 dark:border-zinc-800">
-      <div className="mb-6">
-        <h3 className="uppercase text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2 px-2">
-          Users — {totalCount}
-        </h3>
-        <div className={cn("space-y-[2px] transition-all duration-300", !isConnected && "grayscale opacity-60 pointer-events-none")}>
-          {selfMember && (
-            <>
-              <div key={selfMember.id} className="pointer-events-auto">{renderMember(selfMember, true)}</div>
-              <div className="my-1.5 border-b border-zinc-200 dark:border-zinc-700/60 pointer-events-none" />
-            </>
+    <div
+      className={cn(
+        "relative h-full transition-[width] duration-300 ease-in-out hidden md:block shrink-0 z-10 select-none",
+        showMembersSidebar ? "w-60" : "w-0"
+      )}
+    >
+      {/* Side Edge Toggle Arrow Button */}
+      <div className="absolute left-0 bottom-[34px] -translate-x-1/2 z-30 pointer-events-auto">
+        <ActionTooltip
+          side="left"
+          label={showMembersSidebar ? "Hide user list" : "Show user list"}
+        >
+          <button
+            onClick={toggleMembersSidebar}
+            className="h-8 w-5 rounded-l-md rounded-r-xs bg-white dark:bg-[#2B2D31] border border-zinc-200 dark:border-zinc-700 shadow-md flex items-center justify-center cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 transition group"
+          >
+            {showMembersSidebar ? (
+              <ChevronRight className="w-3.5 h-3.5 stroke-[2.5]" />
+            ) : (
+              <ChevronLeft className="w-3.5 h-3.5 stroke-[2.5]" />
+            )}
+          </button>
+        </ActionTooltip>
+      </div>
+
+      {/* Sliding Outer Clipping Wrapper */}
+      <div className="w-full h-full overflow-hidden border-l border-zinc-200 dark:border-zinc-800 bg-[#F2F3F5] dark:bg-[#2B2D31]">
+        <div className="w-60 h-full flex flex-col">
+          {/* Scrollable Members / Conversations List */}
+          <div className="flex-1 overflow-y-auto pt-4 px-2">
+            <div className="mb-6">
+              <h3 className="uppercase text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2 px-2">
+                {channel ? "Users" : "Conversations"} — {totalCount}
+              </h3>
+              <div className={cn("space-y-[2px] transition-all duration-300", !isConnected && "grayscale opacity-60 pointer-events-none")}>
+                {selfMember && (
+                  <>
+                    <div key={selfMember.id} className="pointer-events-auto">{renderMember(selfMember, true)}</div>
+                    <div className="my-1.5 border-b border-zinc-200 dark:border-zinc-700/60 pointer-events-none" />
+                  </>
+                )}
+                {otherMembers.map((member) => (
+                  <div key={member.id}>{renderMember(member, false)}</div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Anchored Bottom Footer for Private Messages */}
+          {!channel && (
+            <div className="p-3 border-t border-zinc-200 dark:border-zinc-700/60 bg-[#F2F3F5] dark:bg-[#2B2D31] shrink-0 mt-auto">
+              <button
+                onClick={() => onOpen("privateMessages")}
+                className="w-full text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white bg-zinc-200/80 dark:bg-zinc-700/80 hover:bg-zinc-300 dark:hover:bg-zinc-600 px-3 py-2 rounded-md transition flex items-center justify-center gap-x-2 shadow-sm cursor-pointer"
+                title="More options"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+                More
+              </button>
+            </div>
           )}
-          {otherMembers.map((member) => (
-            <div key={member.id}>{renderMember(member, false)}</div>
-          ))}
         </div>
       </div>
     </div>

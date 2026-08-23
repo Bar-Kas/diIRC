@@ -250,6 +250,63 @@ fn parse_log_line(line: &str) -> Option<LogEntry> {
     })
 }
 
+async fn remove_last_log_line_internal(
+    app: &AppHandle,
+    state: &LogState,
+    server_id: &str,
+    target: &str,
+    sender: &str,
+) -> Result<bool, String> {
+    let (key, path) = log_path(app, server_id, target)?;
+
+    {
+        let mut writers = state.writers.lock().await;
+        writers.remove(&key);
+    }
+
+    if !path.exists() {
+        return Ok(false);
+    }
+
+    let content = match fs::read_to_string(&path).await {
+        Ok(c) => c,
+        Err(e) => return Err(format!("Failed to read log file: {e}")),
+    };
+
+    let mut lines: Vec<&str> = content.lines().collect();
+    if lines.is_empty() {
+        let _ = fs::remove_file(&path).await;
+        return Ok(false);
+    }
+
+    let mut remove_idx = None;
+    for (i, line) in lines.iter().enumerate().rev() {
+        if let Some(entry) = parse_log_line(line) {
+            if entry.sender.eq_ignore_ascii_case(sender) || sender.is_empty() || sender == "You" {
+                remove_idx = Some(i);
+                break;
+            }
+        }
+    }
+
+    if let Some(idx) = remove_idx {
+        lines.remove(idx);
+        if lines.is_empty() {
+            if let Err(e) = fs::remove_file(&path).await {
+                log::error!("Failed to remove empty log file {:?}: {}", path, e);
+            }
+        } else {
+            let new_content = lines.join("\n") + "\n";
+            if let Err(e) = fs::write(&path, new_content).await {
+                return Err(format!("Failed to write updated log file: {e}"));
+            }
+        }
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
 async fn read_log_tail(
     app: &AppHandle,
     server_id: &str,
@@ -494,6 +551,59 @@ async fn read_log_page_forward(
         next_offset: None,
         next_after,
     })
+}
+
+#[tauri::command]
+async fn list_logged_conversations(
+    app: AppHandle,
+    server_id: String,
+) -> Result<Vec<String>, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Failed to resolve application data directory: {error}"))?
+        .join("logs");
+    let safe_server = safe_log_component(&server_id);
+    let server_dir = root.join(safe_server);
+
+    let mut dir = match fs::read_dir(&server_dir).await {
+        Ok(dir) => dir,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("Failed to read log directory: {e}")),
+    };
+
+    let mut logged_targets = Vec::new();
+    while let Ok(Some(entry)) = dir.next_entry().await {
+        let path = entry.path();
+        if path.is_file() {
+            if let Some(ext) = path.extension() {
+                if ext == "log" {
+                    if let Ok(meta) = entry.metadata().await {
+                        if meta.len() > 0 {
+                            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                                if !stem.starts_with('#') && !stem.starts_with('&') {
+                                    logged_targets.push(stem.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(logged_targets)
+}
+
+#[tauri::command]
+async fn delete_last_log_entry(
+    app: AppHandle,
+    log_state: State<'_, LogState>,
+    server_id: String,
+    target: String,
+    sender: String,
+) -> Result<bool, String> {
+    remove_last_log_line_internal(&app, &log_state, &server_id, &target, &sender).await
 }
 
 #[tauri::command]
@@ -863,7 +973,9 @@ async fn connect_irc(
                         Command::Response(Response::ERR_CANNOTSENDTOCHAN, ref args) => {
                             let channel = args.get(1).cloned().unwrap_or_default();
                             let reason = args.get(2).cloned().unwrap_or_else(|| "Cannot send to channel".to_string());
-                            
+                            let sender_name = nicknames_clone.lock().await.get(&stream_server_id).cloned().unwrap_or_else(|| "You".to_string());
+                            let _ = remove_last_log_line_internal(&app_clone, &log_state_clone, &stream_server_id, &channel, &sender_name).await;
+
                             let msg_payload = IrcMessage {
                                 server_id: stream_server_id.clone(),
                                 sender: "System".to_string(),
@@ -1080,6 +1192,36 @@ async fn connect_irc(
                                 error: reason,
                             };
                             let _ = app_clone.emit("irc_mode_error", mode_err_payload);
+                        }
+                        Command::Response(Response::ERR_NOSUCHNICK, ref args) => {
+                            let target = args.get(1).cloned().unwrap_or_default();
+                            let reason = args.get(2).cloned().unwrap_or_else(|| "No such nick".to_string());
+                            let sender_name = nicknames_clone.lock().await.get(&stream_server_id).cloned().unwrap_or_else(|| "You".to_string());
+                            let _ = remove_last_log_line_internal(&app_clone, &log_state_clone, &stream_server_id, &target, &sender_name).await;
+
+                            let msg_payload = IrcMessage {
+                                server_id: stream_server_id.clone(),
+                                sender: "System".to_string(),
+                                content: format!("Error: Cannot send message to {}: {}", target, reason),
+                                channel: target,
+                                is_system: true,
+                            };
+                            let _ = app_clone.emit("irc_message", msg_payload);
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "401" => {
+                            let target = args.get(1).cloned().unwrap_or_default();
+                            let reason = args.get(2).cloned().unwrap_or_else(|| "No such nick".to_string());
+                            let sender_name = nicknames_clone.lock().await.get(&stream_server_id).cloned().unwrap_or_else(|| "You".to_string());
+                            let _ = remove_last_log_line_internal(&app_clone, &log_state_clone, &stream_server_id, &target, &sender_name).await;
+
+                            let msg_payload = IrcMessage {
+                                server_id: stream_server_id.clone(),
+                                sender: "System".to_string(),
+                                content: format!("Error: Cannot send message to {}: {}", target, reason),
+                                channel: target,
+                                is_system: true,
+                            };
+                            let _ = app_clone.emit("irc_message", msg_payload);
                         }
                         Command::Response(Response::RPL_TOPIC, ref args) => {
                             if args.len() >= 3 {
@@ -1802,6 +1944,8 @@ pub fn run() {
             send_message,
             load_log_tail,
             load_log_page,
+            list_logged_conversations,
+            delete_last_log_entry,
             disconnect_irc,
             join_channel,
             part_channel,
