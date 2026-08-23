@@ -1925,6 +1925,142 @@ fn toggle_devtools(window: tauri::WebviewWindow) {
     }
 }
 
+/// Stores the D-Bus notification ID per tag, and reverse lookup for action clicks.
+static TAG_TO_ID: std::sync::Mutex<Option<HashMap<String, u32>>> = std::sync::Mutex::new(None);
+static ID_TO_TAG: std::sync::Mutex<Option<HashMap<u32, String>>> = std::sync::Mutex::new(None);
+
+#[cfg(target_os = "linux")]
+fn parse_gdbus_uint32(s: &str) -> Option<u32> {
+    // gdbus output format: "(uint32 5,)\n"
+    let inner = s.trim().trim_start_matches('(').trim_end_matches(')');
+    let inner = inner.trim_end_matches(',').trim();
+    let mut parts = inner.split_whitespace();
+    if parts.next()? == "uint32" {
+        parts.next()?.parse::<u32>().ok()
+    } else {
+        None
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn parse_action_invoked_id(line: &str) -> Option<u32> {
+    if !line.contains("ActionInvoked") {
+        return None;
+    }
+    if let Some(pos) = line.find("uint32") {
+        let rest = &line[pos + 6..];
+        let digits: String = rest
+            .chars()
+            .skip_while(|c| !c.is_ascii_digit())
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+        digits.parse::<u32>().ok()
+    } else {
+        let digits: String = line
+            .chars()
+            .skip_while(|c| !c.is_ascii_digit())
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+        digits.parse::<u32>().ok()
+    }
+}
+
+/// Send a system notification using D-Bus directly via `gdbus`.
+/// Uses replaces_id to update notifications in-place, and action strings to handle clicks.
+#[tauri::command]
+async fn send_os_notification(title: String, body: String, tag: Option<String>) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            let tag_str = tag.as_deref().unwrap_or("default");
+
+            let replace_id: u32 = {
+                let mut lock = TAG_TO_ID.lock().unwrap_or_else(|e| e.into_inner());
+                let map = lock.get_or_insert_with(HashMap::new);
+                map.get(tag_str).copied().unwrap_or(0)
+            };
+
+            let hints = format!("{{\"x-canonical-private-synchronous\": <\"{tag_str}\">, \"urgency\": <byte 1>}}");
+
+            let output = std::process::Command::new("gdbus")
+                .args([
+                    "call", "--session",
+                    "--dest=org.freedesktop.Notifications",
+                    "--object-path=/org/freedesktop/Notifications",
+                    "--method=org.freedesktop.Notifications.Notify",
+                    "diIRC",
+                    &replace_id.to_string(),
+                    "",          // icon
+                    &title,
+                    &body,
+                    "[\"default\", \"Open\"]", // actions
+                    &hints,
+                    "6000",      // timeout ms
+                ])
+                .output();
+
+            if let Ok(out) = output {
+                if out.status.success() {
+                    let stdout = String::from_utf8_lossy(&out.stdout);
+                    if let Some(new_id) = parse_gdbus_uint32(&stdout) {
+                        let mut lock_tag = TAG_TO_ID.lock().unwrap_or_else(|e| e.into_inner());
+                        lock_tag.get_or_insert_with(HashMap::new).insert(tag_str.to_string(), new_id);
+
+                        let mut lock_id = ID_TO_TAG.lock().unwrap_or_else(|e| e.into_inner());
+                        lock_id.get_or_insert_with(HashMap::new).insert(new_id, tag_str.to_string());
+                    }
+                } else {
+                    let _ = std::process::Command::new("notify-send")
+                        .args(["--app-name=diIRC", "-t", "6000", "-u", "normal", "--", &title, &body])
+                        .status();
+                }
+            }
+        })
+        .await
+        .map_err(|e| format!("spawn_blocking failed: {e}"))?;
+
+        return Ok(());
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (title, body, tag);
+        Ok(())
+    }
+}
+
+#[tauri::command]
+async fn clear_os_notification(tag: String) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            let id = {
+                let mut lock_tag = TAG_TO_ID.lock().unwrap_or_else(|e| e.into_inner());
+                let id_opt = lock_tag.get_or_insert_with(HashMap::new).remove(&tag);
+                if let Some(notif_id) = id_opt {
+                    let mut lock_id = ID_TO_TAG.lock().unwrap_or_else(|e| e.into_inner());
+                    lock_id.get_or_insert_with(HashMap::new).remove(&notif_id);
+                }
+                id_opt
+            };
+            if let Some(notif_id) = id {
+                let _ = std::process::Command::new("gdbus")
+                    .args([
+                        "call", "--session",
+                        "--dest=org.freedesktop.Notifications",
+                        "--object-path=/org/freedesktop/Notifications",
+                        "--method=org.freedesktop.Notifications.CloseNotification",
+                        &notif_id.to_string(),
+                    ])
+                    .status();
+            }
+        })
+        .await
+        .map_err(|e| format!("spawn_blocking failed: {e}"))?;
+    }
+    let _ = tag;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1939,6 +2075,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             connect_irc,
             send_message,
@@ -1955,13 +2092,59 @@ pub fn run() {
             send_invite,
             refresh_channel_names,
             fetch_image_proxy,
-            toggle_devtools
+            toggle_devtools,
+            send_os_notification,
+            clear_os_notification
         ])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.set_focus();
             }
+
+            #[cfg(target_os = "linux")]
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    use std::io::BufRead;
+                    let child = std::process::Command::new("gdbus")
+                        .args([
+                            "monitor", "--session",
+                            "--dest", "org.freedesktop.Notifications",
+                            "--object-path", "/org/freedesktop/Notifications"
+                        ])
+                        .stdout(std::process::Stdio::piped())
+                        .spawn();
+
+                    if let Ok(mut child) = child {
+                        if let Some(stdout) = child.stdout.take() {
+                            let reader = std::io::BufReader::new(stdout);
+                            for line_res in reader.lines() {
+                                if let Ok(line) = line_res {
+                                    if line.contains("ActionInvoked") {
+                                        if let Some(id) = parse_action_invoked_id(&line) {
+                                            let tag_opt = {
+                                                let lock = ID_TO_TAG.lock().unwrap_or_else(|e| e.into_inner());
+                                                lock.as_ref().and_then(|map| map.get(&id).cloned())
+                                            };
+                                            if let Some(tag) = tag_opt {
+                                                if let Some(window) = app_handle.get_webview_window("main") {
+                                                    let _ = window.unminimize();
+                                                    let _ = window.show();
+                                                    let _ = window.set_focus();
+                                                }
+                                                let _ = app_handle.emit("notification_clicked", tag);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        let _ = child.wait();
+                    }
+                });
+            }
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -1974,3 +2157,4 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+

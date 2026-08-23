@@ -27,9 +27,16 @@ import {
   Command,
   FileText,
   LogOut,
-  Calendar
+  Calendar,
+  Bell,
+  Volume2,
+  Play,
+  Monitor
 } from "lucide-react";
 import { StatusDisplayMode, formatMessageDate } from "@/lib/mock-store";
+import { playNotificationSound, SoundPreset } from "@/lib/notification-sound";
+import { requestDesktopNotificationPermission } from "@/lib/notification-service";
+import { NotificationSettingsFields } from "@/components/notifications/notification-settings-fields";
 
 export const SettingsModal = () => {
   const { isOpen, onClose, type, onOpen } = useModal();
@@ -70,6 +77,14 @@ export const SettingsModal = () => {
   const customDateFormat = useMockStore((state) => state.customDateFormat) || "yyyy/MM/dd HH:mm";
   const setCustomDateFormat = useMockStore((state) => state.setCustomDateFormat);
 
+  const notificationSettings = useMockStore((state) => state.notificationSettings) || {
+    soundEnabled: true,
+    soundPreset: "chime",
+    popupEnabled: true,
+    taskbarHighlightEnabled: true,
+  };
+  const setGlobalNotificationSettings = useMockStore((state) => state.setGlobalNotificationSettings);
+
   // New URL Rule Form State
   const [newRulePrefix, setNewRulePrefix] = useState("");
   const [newRuleHeaderName, setNewRuleHeaderName] = useState("Authorization");
@@ -79,6 +94,17 @@ export const SettingsModal = () => {
 
   const handleClose = () => {
     onClose();
+  };
+
+  const handleTestSound = () => {
+    playNotificationSound(notificationSettings.soundPreset || "chime");
+  };
+
+  const handleTogglePopup = async (checked: boolean) => {
+    setGlobalNotificationSettings({ popupEnabled: checked });
+    if (checked) {
+      await requestDesktopNotificationPermission();
+    }
   };
 
   const handleProviderChange = (provider: ImageUploadProvider) => {
@@ -102,18 +128,42 @@ export const SettingsModal = () => {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={handleClose}>
-      <DialogContent className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden max-w-lg border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl">
+      <DialogContent className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden sm:max-w-xl border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl">
         <DialogHeader className="pt-6 px-6 space-y-1">
           <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100 flex items-center justify-center gap-x-2">
             <Settings className="w-6 h-6 text-indigo-500" />
             Settings
           </DialogTitle>
           <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400 text-xs sm:text-sm">
-            Manage application preferences, image servers, and authorization rules.
+            Manage application preferences, notifications, image servers, and authorization rules.
           </DialogDescription>
         </DialogHeader>
 
         <div className="px-6 py-6 space-y-5 max-h-[75vh] overflow-y-auto">
+          {/* SECTION: GLOBAL NOTIFICATIONS */}
+          <NotificationSettingsFields
+            mode="global"
+            values={{
+              sound: notificationSettings.soundEnabled,
+              soundPreset: notificationSettings.soundPreset || "chime",
+              dmSoundPreset: notificationSettings.dmSoundPreset || "chime",
+              customSoundUrl: notificationSettings.customSoundUrl,
+              customDmSoundUrl: notificationSettings.customDmSoundUrl,
+              soundCooldown: notificationSettings.soundCooldownMs ?? 2500,
+              popup: notificationSettings.popupEnabled,
+              taskbar: notificationSettings.taskbarHighlightEnabled,
+            }}
+            onChange={(field, val) => {
+              if (field === "sound") setGlobalNotificationSettings({ soundEnabled: Boolean(val) });
+              else if (field === "soundPreset") setGlobalNotificationSettings({ soundPreset: val });
+              else if (field === "dmSoundPreset") setGlobalNotificationSettings({ dmSoundPreset: val });
+              else if (field === "customSoundUrl") setGlobalNotificationSettings({ customSoundUrl: val });
+              else if (field === "customDmSoundUrl") setGlobalNotificationSettings({ customDmSoundUrl: val });
+              else if (field === "soundCooldown") setGlobalNotificationSettings({ soundCooldownMs: Number(val) });
+              else if (field === "popup") setGlobalNotificationSettings({ popupEnabled: Boolean(val) });
+              else if (field === "taskbar") setGlobalNotificationSettings({ taskbarHighlightEnabled: Boolean(val) });
+            }}
+          />
           {/* Compact Mode */}
           <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
             <div className="space-y-0.5 pr-4">

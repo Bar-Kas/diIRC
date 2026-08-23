@@ -7,6 +7,11 @@ import { useModalStore } from "@/hooks/use-modal-store";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { Server, ChannelType } from "@/types";
 import { extractFlag } from "@/lib/flag-tips";
+import {
+  resolveEffectiveNotificationSettings,
+  triggerIncomingNotification,
+  clearNotificationGroup,
+} from "@/lib/notification-service";
 
 interface IrcMessagePayload {
   serverId?: string;
@@ -33,11 +38,81 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   const removeServerMember = useMockStore((state) => state.removeServerMember);
   const updateChannelMembers = useMockStore((state) => state.updateChannelMembers);
   const setIrcConnected = useMockStore((state) => state.setIrcConnected);
+  const activeChatKey = useMockStore((state) => state.activeChatKey);
   const navigate = useNavigate();
   const connectedConfigsRef = useRef<Map<string, string>>(new Map());
   const connectingRef = useRef<Set<string>>(new Set());
   const attemptsRef = useRef<Map<string, number>>(new Map());
   const nextReconnectTimeRef = useRef<Map<string, number>>(new Map());
+
+  // Clear notifications for active chat when switched
+  useEffect(() => {
+    if (activeChatKey) {
+      const parts = activeChatKey.split(":");
+      if (parts.length >= 2) {
+        const type = parts[0];
+        const chatId = parts[1];
+        const store = useMockStore.getState();
+        for (const server of store.servers) {
+          if (type === "channel" && server.channels.some((c) => c.id === chatId)) {
+            clearNotificationGroup(`chan:${server.id}:${chatId}`);
+            break;
+          }
+          if (type === "conversation") {
+            clearNotificationGroup(`dm:${server.id}:${chatId}`);
+          }
+        }
+      }
+    }
+  }, [activeChatKey]);
+
+  // Listen for notification click events from OS (Linux D-Bus / Web)
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    import("@tauri-apps/api/event")
+      .then(({ listen }) => {
+        listen<string>("notification_clicked", (event) => {
+          const tag = event.payload;
+          if (!tag) return;
+
+          const parts = tag.split(":");
+          if (parts.length >= 3) {
+            const kind = parts[0];
+            const serverId = parts[1];
+            const targetId = parts[2];
+
+            const store = useMockStore.getState();
+            const server = store.servers.find((s) => s.id === serverId);
+            if (!server) return;
+
+            if (kind === "chan") {
+              const channel = server.channels.find(
+                (c) => c.id === targetId || c.name.toLowerCase() === targetId.toLowerCase()
+              );
+              if (channel) {
+                navigate(`/servers/${serverId}/channels/${channel.id}`);
+              }
+            } else if (kind === "dm") {
+              const member = server.members.find((m) => m.id === targetId);
+              if (member) {
+                store.openConversation(serverId, member.id);
+                navigate(`/servers/${serverId}/conversations/${member.id}`);
+              }
+            }
+            clearNotificationGroup(tag);
+          }
+        })
+          .then((un) => {
+            unlisten = un;
+          })
+          .catch(console.error);
+      })
+      .catch(console.error);
+
+    return () => {
+      unlisten?.();
+    };
+  }, [navigate]);
 
   const attemptConnect = useCallback(async (server: Server) => {
     if (connectingRef.current.has(server.id)) return;
@@ -306,6 +381,35 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               store.addDirectMessage(conversationId, senderMember, content, null);
               store.openConversation(targetServer.id, senderMember.id);
               store.addToHistoricalConversations(targetServer.id, senderMember.id);
+
+              // Trigger notification for DM
+              const ourNick = targetServer.nicknames?.[0] || store.currentProfile.name;
+              if (sender.toLowerCase() !== ourNick.toLowerCase()) {
+                const activeKey = store.activeChatKey;
+                const isCurrentChat = activeKey === `conversation:${senderMember.id}` || activeKey === `conversation:${conversationId}`;
+                const isWindowFocused = typeof document !== "undefined" && document.hasFocus();
+
+                if (!isCurrentChat || !isWindowFocused) {
+                  const globalNotif = store.notificationSettings;
+                  const serverNotif = targetServer.notificationSettings;
+                  const conversationNotif = store.conversationNotificationSettings[conversationId];
+
+                  const effectiveSettings = resolveEffectiveNotificationSettings(
+                    globalNotif,
+                    serverNotif,
+                    conversationNotif,
+                    true
+                  );
+
+                  triggerIncomingNotification({
+                    title: `${sender} (Private Message)`,
+                    body: content,
+                    sender,
+                    tag: `dm:${targetServer.id}:${senderMember.id}`,
+                    effectiveSettings,
+                  });
+                }
+              }
             }
             return;
           }
@@ -375,6 +479,38 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             addMessage(targetChannel.id, mockMember as any, content, null, isSystem);
           } else if (targetServer.channels.length > 0) {
             addMessage(targetServer.channels[0].id, mockMember as any, content, null, isSystem);
+          }
+
+          // Trigger notification for channel message
+          const store = useMockStore.getState();
+          const ourNick = targetServer.nicknames?.[0] || store.currentProfile.name;
+          if (!isSystem && sender !== "System" && sender.toLowerCase() !== ourNick.toLowerCase()) {
+            const activeKey = store.activeChatKey;
+            const isCurrentChat = targetChannel && activeKey === `channel:${targetChannel.id}`;
+            const isWindowFocused = typeof document !== "undefined" && document.hasFocus();
+
+            if (!isCurrentChat || !isWindowFocused) {
+              const globalNotif = store.notificationSettings;
+              const serverNotif = targetServer.notificationSettings;
+              const channelNotif = targetChannel?.notificationSettings;
+
+              const effectiveSettings = resolveEffectiveNotificationSettings(
+                globalNotif,
+                serverNotif,
+                channelNotif,
+                false
+              );
+
+              const chanName = targetChannel ? `#${targetChannel.name}` : channel;
+
+              triggerIncomingNotification({
+                title: `${chanName} - ${sender}`,
+                body: content,
+                sender,
+                tag: `chan:${targetServer.id}:${targetChannel?.id || channel}`,
+                effectiveSettings,
+              });
+            }
           }
         });
 

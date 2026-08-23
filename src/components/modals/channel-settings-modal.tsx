@@ -1,4 +1,5 @@
-import { Settings, Sparkles } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Settings } from "lucide-react";
 
 import {
   Dialog,
@@ -8,44 +9,161 @@ import {
 } from "@/components/ui/dialog";
 import { useModal } from "@/hooks/use-modal-store";
 import { Button } from "@/components/ui/button";
+import { useMockStore } from "@/lib/mock-store";
+import { NotificationOverrideValue, SoundPreset } from "@/types";
+import { resolveEffectiveNotificationSettings } from "@/lib/notification-service";
+import { NotificationSettingsFields } from "@/components/notifications/notification-settings-fields";
 
 export const ChannelSettingsModal = () => {
   const { isOpen, onClose, type, data } = useModal();
 
+  const setChannelNotificationSettings = useMockStore((state) => state.setChannelNotificationSettings);
+  const setConversationNotificationSettings = useMockStore((state) => state.setConversationNotificationSettings);
+  const globalNotificationSettings = useMockStore((state) => state.notificationSettings);
+
   const isModalOpen = isOpen && type === "channelSettings";
-  const { channel } = data;
+  const { channel, server, conversationId } = data;
+
+  // Retrieve current server & channel or conversation state
+  const currentServer = useMockStore((state) =>
+    state.servers.find((s) => s.id === (server?.id || channel?.serverId))
+  ) || server;
+
+  const currentChannel = currentServer?.channels.find((c) => c.id === channel?.id) || channel;
+  const conversationOverrides = useMockStore((state) =>
+    conversationId ? state.conversationNotificationSettings[conversationId] : undefined
+  );
+
+  const targetOverrides = currentChannel
+    ? currentChannel.notificationSettings
+    : conversationOverrides;
+
+  const [soundOverride, setSoundOverride] = useState<NotificationOverrideValue>("default");
+  const [popupOverride, setPopupOverride] = useState<NotificationOverrideValue>("default");
+  const [taskbarOverride, setTaskbarOverride] = useState<NotificationOverrideValue>("default");
+  const [soundCooldownOverride, setSoundCooldownOverride] = useState<"default" | number>("default");
+  const [soundPresetOverride, setSoundPresetOverride] = useState<"default" | SoundPreset>("default");
+  const [customSoundUrlOverride, setCustomSoundUrlOverride] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (isModalOpen) {
+      setSoundOverride(targetOverrides?.sound || "default");
+      setPopupOverride(targetOverrides?.popup || "default");
+      setTaskbarOverride(targetOverrides?.taskbar || "default");
+      setSoundCooldownOverride(targetOverrides?.soundCooldown ?? "default");
+      setSoundPresetOverride(targetOverrides?.soundPreset || "default");
+      setCustomSoundUrlOverride(targetOverrides?.customSoundUrl);
+    }
+  }, [isModalOpen, targetOverrides]);
 
   const handleClose = () => {
     onClose("channelSettings");
   };
 
+  const handleSave = () => {
+    const updated = {
+      sound: soundOverride,
+      popup: popupOverride,
+      taskbar: taskbarOverride,
+      soundCooldown: soundCooldownOverride,
+      soundPreset: soundPresetOverride,
+      customSoundUrl: customSoundUrlOverride,
+    };
+
+    if (currentServer && currentChannel) {
+      setChannelNotificationSettings(currentServer.id, currentChannel.id, updated);
+    } else if (conversationId) {
+      setConversationNotificationSettings(conversationId, updated);
+    }
+
+    handleClose();
+  };
+
+  const isDm = Boolean(conversationId);
+
+  // Calculate parent's effective inherited settings for default labels
+  const parentEffective = resolveEffectiveNotificationSettings(
+    globalNotificationSettings,
+    currentServer?.notificationSettings,
+    undefined,
+    isDm
+  );
+
+  const parentSoundStr = parentEffective.sound ? "Enabled" : "Muted";
+  const parentPopupStr = parentEffective.popup ? "Enabled" : "Off";
+  const parentTaskbarStr = parentEffective.taskbar ? "Enabled" : "Off";
+  const parentCooldownSec = (parentEffective.soundCooldownMs / 1000).toFixed(1);
+  const parentSoundPresetStr = parentEffective.soundPreset;
+
+  const targetMember = isDm && currentServer && conversationId
+    ? currentServer.members.find((m) => conversationId.includes(m.id))
+    : undefined;
+
+  const targetName = currentChannel
+    ? `#${currentChannel.name}`
+    : targetMember
+    ? `@${targetMember.profile.name}`
+    : conversationId
+    ? "Private Conversation"
+    : "Channel";
+
   return (
     <Dialog open={isModalOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
-      <DialogContent className="bg-white dark:bg-[#313338] text-black dark:text-white p-0 overflow-hidden sm:max-w-md">
-        <DialogHeader className="pt-8 px-6">
-          <DialogTitle className="text-xl text-center font-bold flex items-center justify-center gap-2">
+      <DialogContent className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden sm:max-w-lg border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-2xl">
+        <DialogHeader className="pt-6 px-6 space-y-1">
+          <DialogTitle className="text-xl text-center font-bold flex items-center justify-center gap-x-2 text-zinc-900 dark:text-zinc-100">
             <Settings className="w-5 h-5 text-indigo-500" />
-            Channel settings
+            {isDm ? "Private Conversation Settings" : "Channel Settings"}
           </DialogTitle>
-          <p className="text-center text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-            General settings for <span className="font-semibold text-indigo-500">#{channel?.name}</span>
+          <p className="text-center text-xs text-zinc-500 dark:text-zinc-400">
+            Notification preferences for <span className="font-semibold text-indigo-600 dark:text-indigo-400">{targetName}</span>
           </p>
         </DialogHeader>
 
-        <div className="px-6 py-8 flex flex-col items-center justify-center text-center space-y-3">
-          <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-100">
-            Coming soon
-          </h3>
+        <div className="px-6 py-4 max-h-[70vh] overflow-y-auto">
+          <NotificationSettingsFields
+            mode={isDm ? "dm" : "channel"}
+            values={{
+              sound: soundOverride,
+              soundPreset: soundPresetOverride,
+              customSoundUrl: customSoundUrlOverride,
+              soundCooldown: soundCooldownOverride,
+              popup: popupOverride,
+              taskbar: taskbarOverride,
+            }}
+            inherited={{
+              soundStr: parentSoundStr,
+              soundPresetStr: parentSoundPresetStr,
+              cooldownSec: parentCooldownSec,
+              popupStr: parentPopupStr,
+              taskbarStr: parentTaskbarStr,
+            }}
+            onChange={(field, val) => {
+              if (field === "sound") setSoundOverride(val);
+              else if (field === "soundPreset") setSoundPresetOverride(val);
+              else if (field === "customSoundUrl") setCustomSoundUrlOverride(val);
+              else if (field === "soundCooldown") setSoundCooldownOverride(val);
+              else if (field === "popup") setPopupOverride(val);
+              else if (field === "taskbar") setTaskbarOverride(val);
+            }}
+          />
         </div>
 
-        <div className="bg-zinc-100 dark:bg-zinc-800/40 px-6 py-3 flex justify-end">
+        <div className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 px-6 py-4 flex items-center justify-between">
           <Button
             type="button"
             variant="ghost"
             onClick={handleClose}
-            className="text-xs"
+            className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
           >
-            Close
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={handleSave}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-5 py-2 rounded-lg transition shadow-md hover:shadow-indigo-500/20"
+          >
+            Save Overrides
           </Button>
         </div>
       </DialogContent>

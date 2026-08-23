@@ -1,11 +1,12 @@
 import { Member, Profile, Server } from "@/types";
-import { X } from "lucide-react";
+import { X, Settings } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/user-avatar";
-import { UserHoverCard, getMemberDisplayName } from "@/components/user-hover-card";
+import { getMemberDisplayName } from "@/components/user-hover-card";
 import { ActionTooltip } from "@/components/action-tooltip";
 import { useMockStore } from "@/lib/mock-store";
+import { useModal } from "@/hooks/use-modal-store";
 
 interface ServerConversationProps {
   member: Member & { profile: Profile };
@@ -18,6 +19,7 @@ export const ServerConversation = ({
 }: ServerConversationProps) => {
   const params = useParams();
   const navigate = useNavigate();
+  const { onOpen } = useModal();
   const closeConversation = useMockStore((state) => state.closeConversation);
 
   const isSelected = params?.memberId === member.id;
@@ -25,6 +27,15 @@ export const ServerConversation = ({
 
   const onClick = () => {
     navigate(`/servers/${server.id}/conversations/${member.id}`);
+  };
+
+  const onSettings = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const currentMember = server.members.find((m) => m.profileId);
+    if (currentMember) {
+      const conversationId = [currentMember.id, member.id].sort().join("-");
+      onOpen("channelSettings", { server, conversationId });
+    }
   };
 
   const onClose = (e: React.MouseEvent) => {
@@ -78,7 +89,13 @@ export const ServerConversation = ({
           {displayName}
         </p>
       </div>
-      <div className="ml-auto flex items-center gap-x-2 shrink-0">
+      <div className="ml-auto flex items-center gap-x-1 shrink-0">
+        <ActionTooltip label="PM Settings">
+          <Settings
+            onClick={onSettings}
+            className="hidden group-hover:block w-4 h-4 text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition"
+          />
+        </ActionTooltip>
         <ActionTooltip label="Close PM">
           <X
             onClick={onClose}

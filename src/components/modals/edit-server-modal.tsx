@@ -24,9 +24,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ChannelInput } from "@/components/ui/channel-input";
-import { Plus, Trash } from "lucide-react";
+import { Plus, Trash, Bell, Volume2, Monitor, Clock } from "lucide-react";
 import { useModal } from "@/hooks/use-modal-store";
 import { useMockStore } from "@/lib/mock-store";
+import { NotificationOverrideValue, SoundPreset } from "@/types";
+import { NotificationSettingsFields } from "@/components/notifications/notification-settings-fields";
 
 const formSchema = z.object({
   name: z.string().min(1, { message: "Server name is required." }),
@@ -58,7 +60,24 @@ export const EditServerModal = () => {
     state.servers.find((s) => s.id === initialServer?.id)
   ) || initialServer;
 
+  const globalNotif = useMockStore((state) => state.notificationSettings);
+
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
+  const [soundOverride, setSoundOverride] = useState<NotificationOverrideValue>("default");
+  const [popupOverride, setPopupOverride] = useState<NotificationOverrideValue>("default");
+  const [taskbarOverride, setTaskbarOverride] = useState<NotificationOverrideValue>("default");
+  const [soundCooldownOverride, setSoundCooldownOverride] = useState<"default" | number>("default");
+  const [soundPresetOverride, setSoundPresetOverride] = useState<"default" | SoundPreset>("default");
+  const [dmSoundPresetOverride, setDmSoundPresetOverride] = useState<"default" | SoundPreset>("default");
+  const [customSoundUrlOverride, setCustomSoundUrlOverride] = useState<string | undefined>(undefined);
+  const [customDmSoundUrlOverride, setCustomDmSoundUrlOverride] = useState<string | undefined>(undefined);
+
+  const inheritedSoundStr = globalNotif?.soundEnabled ? "Enabled" : "Muted";
+  const inheritedPopupStr = globalNotif?.popupEnabled ? "Enabled" : "Off";
+  const inheritedTaskbarStr = globalNotif?.taskbarHighlightEnabled ? "Enabled" : "Off";
+  const inheritedCooldownSec = ((globalNotif?.soundCooldownMs ?? 2500) / 1000).toFixed(1);
+  const inheritedSoundPresetStr = globalNotif?.soundPreset || "chime";
+  const inheritedDmSoundPresetStr = globalNotif?.dmSoundPreset || "chime";
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -95,6 +114,15 @@ export const EditServerModal = () => {
       const defaultChannels = server.channels && server.channels.length > 0
         ? server.channels.map(c => ({ value: c.name }))
         : [];
+
+      setSoundOverride(server.notificationSettings?.sound || "default");
+      setPopupOverride(server.notificationSettings?.popup || "default");
+      setTaskbarOverride(server.notificationSettings?.taskbar || "default");
+      setSoundCooldownOverride(server.notificationSettings?.soundCooldown ?? "default");
+      setSoundPresetOverride(server.notificationSettings?.soundPreset || "default");
+      setDmSoundPresetOverride(server.notificationSettings?.dmSoundPreset || "default");
+      setCustomSoundUrlOverride(server.notificationSettings?.customSoundUrl);
+      setCustomDmSoundUrlOverride(server.notificationSettings?.customDmSoundUrl);
 
       form.reset({
         name: server.name || "",
@@ -135,6 +163,16 @@ export const EditServerModal = () => {
         autoConnect: values.autoConnect,
         autoReconnect: values.autoReconnect,
         autoJoinChannels: channelArray,
+        notificationSettings: {
+          sound: soundOverride,
+          popup: popupOverride,
+          taskbar: taskbarOverride,
+          soundCooldown: soundCooldownOverride,
+          soundPreset: soundPresetOverride,
+          dmSoundPreset: dmSoundPresetOverride,
+          customSoundUrl: customSoundUrlOverride,
+          customDmSoundUrl: customDmSoundUrlOverride,
+        },
       });
 
       // Join the channels on IRC in case new ones were added
@@ -179,7 +217,7 @@ export const EditServerModal = () => {
       <Dialog open={isModalOpen} onOpenChange={handleAttemptClose}>
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden max-w-md max-h-[90vh] flex flex-col border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl"
+          className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden sm:max-w-lg max-h-[90vh] flex flex-col border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl"
         >
           <DialogHeader className="pt-6 px-6 space-y-1">
             <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
@@ -466,6 +504,39 @@ export const EditServerModal = () => {
                     </FormControl>
                   </FormItem>
                 )}
+              />
+
+              {/* SECTION: SERVER NOTIFICATION OVERRIDES */}
+              <NotificationSettingsFields
+                mode="server"
+                values={{
+                  sound: soundOverride,
+                  soundPreset: soundPresetOverride,
+                  dmSoundPreset: dmSoundPresetOverride,
+                  customSoundUrl: customSoundUrlOverride,
+                  customDmSoundUrl: customDmSoundUrlOverride,
+                  soundCooldown: soundCooldownOverride,
+                  popup: popupOverride,
+                  taskbar: taskbarOverride,
+                }}
+                inherited={{
+                  soundStr: inheritedSoundStr,
+                  soundPresetStr: inheritedSoundPresetStr,
+                  dmSoundPresetStr: inheritedDmSoundPresetStr,
+                  cooldownSec: inheritedCooldownSec,
+                  popupStr: inheritedPopupStr,
+                  taskbarStr: inheritedTaskbarStr,
+                }}
+                onChange={(field, val) => {
+                  if (field === "sound") setSoundOverride(val);
+                  else if (field === "soundPreset") setSoundPresetOverride(val);
+                  else if (field === "dmSoundPreset") setDmSoundPresetOverride(val);
+                  else if (field === "customSoundUrl") setCustomSoundUrlOverride(val);
+                  else if (field === "customDmSoundUrl") setCustomDmSoundUrlOverride(val);
+                  else if (field === "soundCooldown") setSoundCooldownOverride(val);
+                  else if (field === "popup") setPopupOverride(val);
+                  else if (field === "taskbar") setTaskbarOverride(val);
+                }}
               />
 
               <DialogFooter className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 -mx-6 -mb-2 px-6 py-4 mt-4 flex items-center justify-between">

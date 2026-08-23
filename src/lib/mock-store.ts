@@ -13,7 +13,9 @@ import {
   LogPage,
   StatusDisplayMode,
   HistoryWindow,
-  PendingInvite
+  PendingInvite,
+  NotificationOverride,
+  GlobalNotificationSettings
 } from "@/types";
 import { 
   INITIAL_SERVERS, 
@@ -196,6 +198,7 @@ export interface AddServerOptions {
   imageUrl?: string;
   autoConnect?: boolean;
   autoReconnect?: boolean;
+  notificationSettings?: NotificationOverride;
 }
 
 export interface UpdateServerOptions {
@@ -210,6 +213,7 @@ export interface UpdateServerOptions {
   imageUrl?: string;
   autoConnect?: boolean;
   autoReconnect?: boolean;
+  notificationSettings?: NotificationOverride;
 }
 
 export type { StatusDisplayMode };
@@ -236,6 +240,8 @@ interface MockState {
   statusDisplayMode: StatusDisplayMode;
   dateFormatPreset: string;
   customDateFormat: string;
+  notificationSettings: GlobalNotificationSettings;
+  conversationNotificationSettings: Record<string, NotificationOverride>;
 
   // Connection Actions
   setIrcConnected: (serverId: string, isConnected: boolean, error?: string | null) => void;
@@ -254,6 +260,10 @@ interface MockState {
   removeUrlAuthRule: (id: string) => void;
   setDateFormatPreset: (preset: string) => void;
   setCustomDateFormat: (format: string) => void;
+  setGlobalNotificationSettings: (settings: Partial<GlobalNotificationSettings>) => void;
+  setServerNotificationSettings: (serverId: string, settings: NotificationOverride) => void;
+  setChannelNotificationSettings: (serverId: string, channelId: string, settings: NotificationOverride) => void;
+  setConversationNotificationSettings: (conversationId: string, settings: NotificationOverride) => void;
 
   // Server Actions
   addServer: (optionsOrName: string | AddServerOptions, imageUrl?: string) => Server;
@@ -350,6 +360,14 @@ export const useMockStore = create<MockState>()(
       statusDisplayMode: "always",
       dateFormatPreset: "d MMM yyyy, HH:mm",
       customDateFormat: "yyyy/MM/dd HH:mm",
+      notificationSettings: {
+        soundEnabled: true,
+        soundPreset: "chime",
+        dmSoundPreset: "chime",
+        popupEnabled: true,
+        taskbarHighlightEnabled: true,
+      },
+      conversationNotificationSettings: {},
 
       setIrcConnected: (serverId: string, isConnected: boolean, error: string | null = null) =>
         set((state) => ({
@@ -366,6 +384,59 @@ export const useMockStore = create<MockState>()(
       setStatusDisplayMode: (mode: StatusDisplayMode) => set({ statusDisplayMode: mode }),
       setDateFormatPreset: (preset: string) => set({ dateFormatPreset: preset }),
       setCustomDateFormat: (format: string) => set({ customDateFormat: format }),
+
+      setGlobalNotificationSettings: (settings) =>
+        set((state) => ({
+          notificationSettings: { ...state.notificationSettings, ...settings },
+        })),
+
+      setServerNotificationSettings: (serverId, settings) =>
+        set((state) => ({
+          servers: state.servers.map((s) =>
+            s.id === serverId
+              ? {
+                  ...s,
+                  notificationSettings: {
+                    ...(s.notificationSettings || {}),
+                    ...settings,
+                  },
+                }
+              : s
+          ),
+        })),
+
+      setChannelNotificationSettings: (serverId, channelId, settings) =>
+        set((state) => ({
+          servers: state.servers.map((s) =>
+            s.id === serverId
+              ? {
+                  ...s,
+                  channels: s.channels.map((c) =>
+                    c.id === channelId
+                      ? {
+                          ...c,
+                          notificationSettings: {
+                            ...(c.notificationSettings || {}),
+                            ...settings,
+                          },
+                        }
+                      : c
+                  ),
+                }
+              : s
+          ),
+        })),
+
+      setConversationNotificationSettings: (conversationId, settings) =>
+        set((state) => ({
+          conversationNotificationSettings: {
+            ...state.conversationNotificationSettings,
+            [conversationId]: {
+              ...(state.conversationNotificationSettings[conversationId] || {}),
+              ...settings,
+            },
+          },
+        })),
 
       setCompactMode: (enabled: boolean) => set({ compactMode: enabled }),
       setEnableMarkdown: (enabled: boolean) => set({ enableMarkdown: enabled }),
@@ -560,6 +631,7 @@ export const useMockStore = create<MockState>()(
                 imageUrl: optionsOrName.imageUrl || s.imageUrl,
                 channels: updatedChannels,
                 members: updatedMembers,
+                notificationSettings: optionsOrName.notificationSettings ?? s.notificationSettings,
               };
             } else {
               return {

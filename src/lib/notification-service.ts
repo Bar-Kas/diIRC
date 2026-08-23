@@ -1,0 +1,267 @@
+import { SoundPreset, playNotificationSound } from "./notification-sound";
+import { NotificationOverride, GlobalNotificationSettings } from "@/types";
+import { invoke } from "@tauri-apps/api/core";
+import {
+  isPermissionGranted as tauriIsPermissionGranted,
+  requestPermission as tauriRequestPermission,
+  sendNotification as tauriSendNotification,
+} from "@tauri-apps/plugin-notification";
+
+export function resolveEffectiveNotificationSettings(
+  global: GlobalNotificationSettings,
+  serverOverride?: NotificationOverride,
+  channelOverride?: NotificationOverride,
+  isDm: boolean = false
+): {
+  sound: boolean;
+  popup: boolean;
+  taskbar: boolean;
+  soundCooldownMs: number;
+  soundPreset: SoundPreset;
+  customSoundUrl?: string;
+} {
+  const globalDefaults: GlobalNotificationSettings = {
+    soundEnabled: global?.soundEnabled ?? true,
+    soundPreset: global?.soundPreset ?? "chime",
+    dmSoundPreset: global?.dmSoundPreset ?? "chime",
+    soundCooldownMs: global?.soundCooldownMs ?? 2500,
+    popupEnabled: global?.popupEnabled ?? true,
+    taskbarHighlightEnabled: global?.taskbarHighlightEnabled ?? true,
+  };
+
+  let sound = globalDefaults.soundEnabled;
+  if (serverOverride?.sound && serverOverride.sound !== "default") {
+    sound = serverOverride.sound === "enabled";
+  }
+  if (channelOverride?.sound && channelOverride.sound !== "default") {
+    sound = channelOverride.sound === "enabled";
+  }
+
+  let soundCooldownMs = globalDefaults.soundCooldownMs ?? 2500;
+  if (serverOverride?.soundCooldown !== undefined && serverOverride.soundCooldown !== "default") {
+    soundCooldownMs = typeof serverOverride.soundCooldown === "number" ? serverOverride.soundCooldown : soundCooldownMs;
+  }
+  if (channelOverride?.soundCooldown !== undefined && channelOverride.soundCooldown !== "default") {
+    soundCooldownMs = typeof channelOverride.soundCooldown === "number" ? channelOverride.soundCooldown : soundCooldownMs;
+  }
+
+  let popup = globalDefaults.popupEnabled;
+  if (serverOverride?.popup && serverOverride.popup !== "default") {
+    popup = serverOverride.popup === "enabled";
+  }
+  if (channelOverride?.popup && channelOverride.popup !== "default") {
+    popup = channelOverride.popup === "enabled";
+  }
+
+  let taskbar = globalDefaults.taskbarHighlightEnabled;
+  if (serverOverride?.taskbar && serverOverride.taskbar !== "default") {
+    taskbar = serverOverride.taskbar === "enabled";
+  }
+  if (channelOverride?.taskbar && channelOverride.taskbar !== "default") {
+    taskbar = channelOverride.taskbar === "enabled";
+  }
+
+  // Resolve Sound Preset and Custom Sound URL
+  let soundPreset: SoundPreset = isDm
+    ? (globalDefaults.dmSoundPreset || globalDefaults.soundPreset)
+    : globalDefaults.soundPreset;
+  let customSoundUrl: string | undefined = isDm
+    ? (global?.customDmSoundUrl || global?.customSoundUrl)
+    : global?.customSoundUrl;
+
+  if (isDm) {
+    if (serverOverride?.dmSoundPreset && serverOverride.dmSoundPreset !== "default") {
+      soundPreset = serverOverride.dmSoundPreset;
+      customSoundUrl = serverOverride.customDmSoundUrl;
+    }
+    if (channelOverride?.soundPreset && channelOverride.soundPreset !== "default") {
+      soundPreset = channelOverride.soundPreset;
+      customSoundUrl = channelOverride.customSoundUrl;
+    }
+  } else {
+    if (serverOverride?.soundPreset && serverOverride.soundPreset !== "default") {
+      soundPreset = serverOverride.soundPreset;
+      customSoundUrl = serverOverride.customSoundUrl;
+    }
+    if (channelOverride?.soundPreset && channelOverride.soundPreset !== "default") {
+      soundPreset = channelOverride.soundPreset;
+      customSoundUrl = channelOverride.customSoundUrl;
+    }
+  }
+
+  return { sound, popup, taskbar, soundCooldownMs, soundPreset, customSoundUrl };
+}
+
+export interface TriggerNotificationParams {
+  title: string;
+  body: string;
+  sender?: string;
+  tag?: string;
+  effectiveSettings: {
+    sound: boolean;
+    popup: boolean;
+    taskbar: boolean;
+    soundCooldownMs: number;
+    soundPreset: SoundPreset;
+    customSoundUrl?: string;
+  };
+  soundPreset?: SoundPreset;
+}
+
+export async function requestDesktopNotificationPermission(): Promise<NotificationPermission> {
+  try {
+    const granted = await tauriIsPermissionGranted();
+    if (granted) return "granted";
+    const perm = await tauriRequestPermission();
+    return perm === "granted" ? "granted" : "denied";
+  } catch (_) {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        return await Notification.requestPermission();
+      }
+      return Notification.permission;
+    }
+  }
+  return "denied";
+}
+
+const isLinux =
+  typeof navigator !== "undefined" &&
+  navigator.userAgent.toLowerCase().includes("linux");
+
+const isTauriEnv =
+  typeof window !== "undefined" &&
+  ("__TAURI_INTERNALS__" in window || "__TAURI_IPC__" in window || "__TAURI__" in window);
+
+// --- Per-Tag Sound Throttling Map ---
+const lastSoundPlayedByTag = new Map<string, number>();
+
+// --- Per-Channel Accumulative Notification State ---
+interface UnreadGroup {
+  tag: string;
+  baseTitle: string;
+  count: number;
+  lastSender?: string;
+  lastBody: string;
+}
+
+const unreadGroupsMap = new Map<string, UnreadGroup>();
+
+export function clearNotificationGroup(tag: string) {
+  unreadGroupsMap.delete(tag);
+  if (isTauriEnv && isLinux) {
+    invoke("clear_os_notification", { tag }).catch(() => {});
+  }
+}
+
+export async function triggerIncomingNotification({
+  title,
+  body,
+  sender,
+  tag = "default",
+  effectiveSettings,
+  soundPreset,
+}: TriggerNotificationParams): Promise<void> {
+  const { sound, popup, taskbar, soundCooldownMs, customSoundUrl } = effectiveSettings;
+  const toneToPlay = soundPreset || effectiveSettings.soundPreset || "chime";
+
+  // 1. Play Sound with Throttle/Cooldown per Tag
+  if (sound) {
+    const now = Date.now();
+    const lastPlayed = lastSoundPlayedByTag.get(tag) || 0;
+    if (now - lastPlayed >= soundCooldownMs) {
+      lastSoundPlayedByTag.set(tag, now);
+      playNotificationSound(toneToPlay, customSoundUrl);
+    }
+  }
+
+  // 2. Accumulate & Update Group Notification per Channel/DM Tag
+  if (popup) {
+    let group = unreadGroupsMap.get(tag);
+    if (group) {
+      group.count += 1;
+      group.lastSender = sender;
+      group.lastBody = body;
+    } else {
+      group = {
+        tag,
+        baseTitle: title,
+        count: 1,
+        lastSender: sender,
+        lastBody: body,
+      };
+      unreadGroupsMap.set(tag, group);
+    }
+
+    let finalTitle = group.baseTitle;
+    let finalBody = group.lastBody;
+
+    if (group.count > 1) {
+      const channelOrName = group.baseTitle.split(" - ")[0] || group.baseTitle;
+      finalTitle = `${channelOrName} (${group.count} new messages)`;
+      finalBody = group.lastSender ? `${group.lastSender}: ${group.lastBody}` : group.lastBody;
+    }
+
+    if (isTauriEnv && isLinux) {
+      try {
+        await invoke("send_os_notification", {
+          title: finalTitle,
+          body: finalBody,
+          tag: group.tag,
+        });
+      } catch (e) {
+        console.warn("[NotificationService] notify-send failed:", e);
+      }
+    } else if (isTauriEnv && !isLinux) {
+      try {
+        let granted = await tauriIsPermissionGranted();
+        if (!granted) {
+          const perm = await tauriRequestPermission();
+          granted = perm === "granted";
+        }
+        if (granted) {
+          await tauriSendNotification({ title: finalTitle, body: finalBody });
+        }
+      } catch (e) {
+        console.warn("[NotificationService] Native Tauri notification failed:", e);
+      }
+    } else if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "granted") {
+        try {
+          const groupTag = group.tag;
+          const notif = new Notification(finalTitle, { body: finalBody, tag: groupTag });
+          notif.onclick = () => {
+            if (typeof window !== "undefined") {
+              window.focus();
+            }
+            if (isTauriEnv) {
+              import("@tauri-apps/api/event")
+                .then(({ emit }) => {
+                  emit("notification_clicked", groupTag);
+                })
+                .catch(() => {});
+            }
+          };
+        } catch (e) {
+          console.error("[NotificationService] Web Notification error:", e);
+        }
+      }
+    }
+  }
+
+  // 3. Taskbar Icon Highlight / User Attention (when window unfocused)
+  if (taskbar && typeof window !== "undefined" && !document.hasFocus()) {
+    try {
+      const windowApi = await import("@tauri-apps/api/window");
+      if (windowApi?.getCurrentWindow) {
+        const appWindow = windowApi.getCurrentWindow();
+        const attentionType = windowApi.UserAttentionType
+          ? windowApi.UserAttentionType.Informational
+          : 1;
+        await appWindow.requestUserAttention(attentionType as any);
+      }
+    } catch (e) {
+      console.warn("[NotificationService] Taskbar attention request failed:", e);
+    }
+  }
+}

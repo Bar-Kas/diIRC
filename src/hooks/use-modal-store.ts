@@ -27,6 +27,7 @@ interface ModalData {
   channel?: Channel;
   serverId?: string;
   channelName?: string;
+  conversationId?: string;
   key?: string;
   channelType?: ChannelType;
   apiUrl?: string;

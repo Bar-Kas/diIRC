@@ -23,6 +23,31 @@ export interface Member {
   updatedAt?: string;
 }
 
+export type NotificationOverrideValue = "default" | "enabled" | "disabled";
+export type SoundPreset = "chime" | "ping" | "bell" | "pop" | "custom";
+
+export interface NotificationOverride {
+  sound?: NotificationOverrideValue;
+  popup?: NotificationOverrideValue;
+  taskbar?: NotificationOverrideValue;
+  soundCooldown?: "default" | number;
+  soundPreset?: "default" | SoundPreset;
+  dmSoundPreset?: "default" | SoundPreset;
+  customSoundUrl?: string;
+  customDmSoundUrl?: string;
+}
+
+export interface GlobalNotificationSettings {
+  soundEnabled: boolean;
+  soundPreset: SoundPreset;
+  dmSoundPreset?: SoundPreset;
+  customSoundUrl?: string;
+  customDmSoundUrl?: string;
+  soundCooldownMs?: number;
+  popupEnabled: boolean;
+  taskbarHighlightEnabled: boolean;
+}
+
 export interface Channel {
   id: string;
   name: string;
@@ -33,6 +58,7 @@ export interface Channel {
   key?: string;
   modes?: string[];
   isTemporary?: boolean;
+  notificationSettings?: NotificationOverride;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -146,10 +172,12 @@ export interface Server {
   autoJoinChannels?: string[];
   autoConnect?: boolean;
   autoReconnect?: boolean;
+  notificationSettings?: NotificationOverride;
 }
 
 export type ServerWithMembersWithProfiles = Server;
 
 export type StatusDisplayMode = "always" | "on_error" | "disabled";
+
 
 
