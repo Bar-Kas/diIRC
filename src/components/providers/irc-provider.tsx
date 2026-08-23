@@ -45,9 +45,10 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   const attemptsRef = useRef<Map<string, number>>(new Map());
   const nextReconnectTimeRef = useRef<Map<string, number>>(new Map());
 
-  // Clear notifications for active chat when switched
+  // Clear notifications & unreads for active chat when switched or focused
   useEffect(() => {
     if (activeChatKey) {
+      useMockStore.getState().clearUnread(activeChatKey);
       const parts = activeChatKey.split(":");
       if (parts.length >= 2) {
         const type = parts[0];
@@ -65,6 +66,17 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
       }
     }
   }, [activeChatKey]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      const store = useMockStore.getState();
+      if (store.activeChatKey) {
+        store.clearUnread(store.activeChatKey);
+      }
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
 
   // Listen for notification click events from OS (Linux D-Bus / Web)
   useEffect(() => {
@@ -398,6 +410,9 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
                 }
 
                 if (!isCurrentChat || !isWindowFocused) {
+                  store.markUnread(`conversation:${conversationId}`, true);
+                  store.markUnread(`conversation:${senderMember.id}`, true);
+
                   const globalNotif = store.notificationSettings;
                   const serverNotif = targetServer.notificationSettings;
                   const conversationNotif = store.conversationNotificationSettings[conversationId];
@@ -506,6 +521,13 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             }
 
             if (!isCurrentChat || !isWindowFocused) {
+              const escapedNick = ourNick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const hasMention = new RegExp(`\\b${escapedNick}\\b`, "i").test(content);
+
+              if (targetChannel?.id) {
+                store.markUnread(`channel:${targetChannel.id}`, hasMention);
+              }
+
               const globalNotif = store.notificationSettings;
               const serverNotif = targetServer.notificationSettings;
               const channelNotif = targetChannel?.notificationSettings;

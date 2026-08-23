@@ -67,6 +67,8 @@ export const ServerChannel = ({
   };
 
   const isSelected = params?.channelId === channel.id;
+  const unread = useMockStore((state) => state.unreadState[`channel:${channel.id}`]);
+  const isUnread = !isSelected && !!unread && unread.count > 0;
 
   const handleLeaveChannel = (e?: React.MouseEvent) => {
     if (e) {
@@ -103,14 +105,34 @@ export const ServerChannel = ({
           onMouseDown={onMouseDown}
           onAuxClick={onAuxClick}
           className={cn(
-            "group px-2 py-2 rounded-md flex items-center gap-x-2 w-full hover:bg-zinc-700/10 dark:hover:bg-zinc-700/50 transition mb-1",
-            isSelected && "bg-zinc-700/20 dark:bg-zinc-700"
+            "group px-2 py-2 rounded-md flex items-center gap-x-2 w-full hover:bg-zinc-700/10 dark:hover:bg-zinc-700/50 transition mb-1 relative",
+            isSelected && "bg-zinc-700/20 dark:bg-zinc-700",
+            isUnread && "bg-indigo-500/10 dark:bg-indigo-500/15"
           )}
         >
-          <Icon className="flex-shrink-0 w-5 h-5 text-zinc-500 dark:text-zinc-400" />
+          {isUnread && (
+            <span
+              className={cn(
+                "absolute left-0 w-1.5 h-4 rounded-r-full transition-all",
+                unread.hasMention ? "bg-rose-500 animate-pulse" : "bg-indigo-500 dark:bg-indigo-400"
+              )}
+            />
+          )}
+          <Icon className={cn(
+            "flex-shrink-0 w-5 h-5 transition",
+            isSelected
+              ? "text-primary dark:text-zinc-200"
+              : isUnread
+              ? "text-indigo-600 dark:text-indigo-400 font-bold"
+              : "text-zinc-500 dark:text-zinc-400"
+          )} />
           <p className={cn(
-            "line-clamp-1 font-semibold text-sm text-zinc-500 group-hover:text-zinc-600 dark:text-zinc-400 dark:group-hover:text-zinc-300 transition",
-            isSelected && "text-primary dark:text-zinc-200 dark:group-hover:text-white"
+            "line-clamp-1 text-sm text-left transition flex-1",
+            isSelected
+              ? "font-semibold text-primary dark:text-zinc-200 dark:group-hover:text-white"
+              : isUnread
+              ? "font-bold text-zinc-900 dark:text-white drop-shadow-sm"
+              : "font-semibold text-zinc-500 group-hover:text-zinc-600 dark:text-zinc-400 dark:group-hover:text-zinc-300"
           )}>
             {channel.name}
           </p>
@@ -118,6 +140,16 @@ export const ServerChannel = ({
             <ActionTooltip label="Password protected">
               <Lock className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
             </ActionTooltip>
+          )}
+          {isUnread && (
+            <span
+              className={cn(
+                "ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full text-white leading-none shrink-0 shadow-sm transition-transform animate-in zoom-in-50",
+                unread.hasMention ? "bg-rose-500 shadow-rose-500/30 animate-pulse" : "bg-indigo-500 shadow-indigo-500/30"
+              )}
+            >
+              {unread.hasMention ? `@${unread.count}` : unread.count}
+            </span>
           )}
           <div className="ml-auto flex items-center gap-x-2">
             {isChannelOp && (

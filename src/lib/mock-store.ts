@@ -218,12 +218,18 @@ export interface UpdateServerOptions {
 
 export type { StatusDisplayMode };
 
+export interface UnreadInfo {
+  count: number;
+  hasMention: boolean;
+}
+
 interface MockState {
   currentProfile: Profile;
   servers: Server[];
   messages: Record<string, Message[]>;
   directMessages: Record<string, DirectMessage[]>;
   activeChatKey: string | null;
+  unreadState: Record<string, UnreadInfo>;
   historyLoadToken: number;
   historyWindow: HistoryWindow;
   compactMode: boolean;
@@ -246,6 +252,10 @@ interface MockState {
   // Connection Actions
   setIrcConnected: (serverId: string, isConnected: boolean, error?: string | null) => void;
   setStatusDisplayMode: (mode: StatusDisplayMode) => void;
+
+  // Unread Actions
+  markUnread: (key: string, hasMention?: boolean) => void;
+  clearUnread: (key: string) => void;
 
   // Settings Actions
   setCompactMode: (enabled: boolean) => void;
@@ -330,6 +340,29 @@ export const useMockStore = create<MockState>()(
       messages: INITIAL_MESSAGES,
       directMessages: INITIAL_DIRECT_MESSAGES,
       activeChatKey: null,
+      unreadState: {},
+      markUnread: (key: string, hasMention = false) => {
+        set((state) => {
+          const existing = state.unreadState[key] || { count: 0, hasMention: false };
+          return {
+            unreadState: {
+              ...state.unreadState,
+              [key]: {
+                count: existing.count + 1,
+                hasMention: existing.hasMention || hasMention,
+              },
+            },
+          };
+        });
+      },
+      clearUnread: (key: string) => {
+        set((state) => {
+          if (!state.unreadState[key]) return state;
+          const nextState = { ...state.unreadState };
+          delete nextState[key];
+          return { unreadState: nextState };
+        });
+      },
       historyLoadToken: 0,
       historyWindow: EMPTY_HISTORY_WINDOW,
       pendingJoin: null,
@@ -1250,8 +1283,17 @@ export const useMockStore = create<MockState>()(
             ...currentMsgs.filter((m) => m.offset === undefined),
             ...pending,
           ]);
+          const nextUnreads = { ...state.unreadState };
+          delete nextUnreads[requestedKey];
+          if (type === "conversation") {
+            delete nextUnreads[`conversation:${chatId}`];
+            const parts = chatId.split("-");
+            parts.forEach((pId) => delete nextUnreads[`conversation:${pId}`]);
+          }
+
           return {
             activeChatKey: requestedKey,
+            unreadState: nextUnreads,
             historyLoadToken: requestToken,
             historyWindow: {
               key: requestedKey,
@@ -1879,6 +1921,7 @@ export const useMockStore = create<MockState>()(
         messages: {},
         directMessages: {},
         activeChatKey: null,
+        unreadState: {},
         historyLoadToken: 0,
         historyWindow: EMPTY_HISTORY_WINDOW,
         servers: state.servers.map((s) => ({
@@ -1893,6 +1936,7 @@ export const useMockStore = create<MockState>()(
             messages: {},
             directMessages: {},
             activeChatKey: null,
+            unreadState: {},
             historyLoadToken: 0,
             historyWindow: EMPTY_HISTORY_WINDOW,
           };
