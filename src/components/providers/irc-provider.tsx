@@ -276,7 +276,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
     const setupListener = async () => {
       try {
-        const unlisten = await listen<IrcMessagePayload>("irc_message", (event) => {
+        const unlisten = await listen<IrcMessagePayload>("irc_message", async (event) => {
           const { sender, content, channel } = event.payload;
           const serverId = event.payload.serverId || event.payload.server_id;
           const isSystem = event.payload.isSystem ?? event.payload.is_system;
@@ -387,7 +387,15 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               if (sender.toLowerCase() !== ourNick.toLowerCase()) {
                 const activeKey = store.activeChatKey;
                 const isCurrentChat = activeKey === `conversation:${senderMember.id}` || activeKey === `conversation:${conversationId}`;
-                const isWindowFocused = typeof document !== "undefined" && document.hasFocus();
+                let isWindowFocused = typeof document !== "undefined" && document.hasFocus();
+                
+                try {
+                  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+                  const appWindow = getCurrentWindow();
+                  isWindowFocused = await appWindow.isFocused();
+                } catch (e) {
+                  // Fallback to document.hasFocus()
+                }
 
                 if (!isCurrentChat || !isWindowFocused) {
                   const globalNotif = store.notificationSettings;
@@ -487,7 +495,15 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
           if (!isSystem && sender !== "System" && sender.toLowerCase() !== ourNick.toLowerCase()) {
             const activeKey = store.activeChatKey;
             const isCurrentChat = targetChannel && activeKey === `channel:${targetChannel.id}`;
-            const isWindowFocused = typeof document !== "undefined" && document.hasFocus();
+            let isWindowFocused = typeof document !== "undefined" && document.hasFocus();
+            
+            try {
+              const { getCurrentWindow } = await import("@tauri-apps/api/window");
+              const appWindow = getCurrentWindow();
+              isWindowFocused = await appWindow.isFocused();
+            } catch (e) {
+              // Fallback to document.hasFocus()
+            }
 
             if (!isCurrentChat || !isWindowFocused) {
               const globalNotif = store.notificationSettings;
