@@ -215,6 +215,7 @@ interface MockState {
   syncActiveConversationsWithDisk: (serverId: string, loggedNicks: string[]) => void;
 
   addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean) => DirectMessage;
+  removeLastMessageFromChannel: (channelId: string, memberId: string) => string | null;
   removeLastDirectMessageFromMember: (conversationId: string, memberId: string) => string | null;
   deleteDirectMessage: (conversationId: string, messageId: string) => void;
 }
@@ -1447,6 +1448,30 @@ export const useMockStore = create<MockState>()(
         }));
 
         return newDm;
+      },
+
+      removeLastMessageFromChannel: (channelId, memberId) => {
+        let removedContent: string | null = null;
+        set((state) => {
+          const currentMsgs = state.messages[channelId] || [];
+          let lastIndex = -1;
+          for (let i = currentMsgs.length - 1; i >= 0; i--) {
+            if (currentMsgs[i].memberId === memberId && !currentMsgs[i].isSystem) {
+              lastIndex = i;
+              break;
+            }
+          }
+          if (lastIndex === -1) return state;
+          removedContent = currentMsgs[lastIndex].content;
+          const updatedMsgs = currentMsgs.filter((_, idx) => idx !== lastIndex);
+          return {
+            messages: {
+              ...state.messages,
+              [channelId]: updatedMsgs,
+            },
+          };
+        });
+        return removedContent;
       },
 
       removeLastDirectMessageFromMember: (conversationId, memberId) => {

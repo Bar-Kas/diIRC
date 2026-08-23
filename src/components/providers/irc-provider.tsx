@@ -248,7 +248,9 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
                 const isSendError =
                   lowerContent.includes("cannot send message") ||
                   lowerContent.startsWith("error:") ||
-                  lowerContent.includes("no such nick");
+                  lowerContent.includes("no such nick") ||
+                  lowerContent.includes("cannot send to user") ||
+                  lowerContent.includes("user not online");
 
                 if (isSendError) {
                   const restoredContent = store.removeLastDirectMessageFromMember(
@@ -266,11 +268,29 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
                       })
                     );
                   }
+
+                  invoke("delete_last_log_entry", {
+                    serverId: targetServer.id,
+                    target: targetNick,
+                    sender: currentMember.profile.name,
+                  })
+                    .then(() => {
+                      invoke<string[]>("list_logged_conversations", {
+                        serverId: targetServer.id,
+                      })
+                        .then((loggedNicks) => {
+                          store.syncActiveConversationsWithDisk(targetServer.id, loggedNicks);
+                        })
+                        .catch(console.error);
+                    })
+                    .catch(console.error);
                 }
 
                 store.addDirectMessage(conversationId, systemMember as any, content, null, true);
                 store.openConversation(targetServer.id, targetMember.id);
-                store.addToHistoricalConversations(targetServer.id, targetMember.id);
+                if (!isSendError) {
+                  store.addToHistoricalConversations(targetServer.id, targetMember.id);
+                }
               }
               return;
             }
@@ -294,6 +314,45 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
           const targetChannel = targetServer.channels.find(
             (c) => c.name.toLowerCase() === cleanName
           );
+
+          if (isSystem || sender === "System") {
+            const lowerContent = content.toLowerCase();
+            const isSendError =
+              lowerContent.includes("cannot send") ||
+              lowerContent.startsWith("error:") ||
+              lowerContent.includes("permission denied") ||
+              lowerContent.includes("banned");
+
+            if (isSendError && targetChannel) {
+              const store = useMockStore.getState();
+              const currentMember = targetServer.members.find(
+                (m) => m.profileId === store.currentProfile.id
+              ) || targetServer.members[0];
+
+              if (currentMember) {
+                const restoredContent = store.removeLastMessageFromChannel(
+                  targetChannel.id,
+                  currentMember.id
+                );
+                if (restoredContent) {
+                  useDraftStore.getState().setDraft(targetChannel.id, {
+                    content: restoredContent,
+                    attachedImages: [],
+                  });
+                  window.dispatchEvent(
+                    new CustomEvent("restore_unsent_message", {
+                      detail: { id: targetChannel.id, content: restoredContent },
+                    })
+                  );
+                }
+                invoke("delete_last_log_entry", {
+                  serverId: targetServer.id,
+                  target: targetChannel.name.startsWith("#") ? targetChannel.name : `#${targetChannel.name}`,
+                  sender: currentMember.profile.name,
+                }).catch(console.error);
+              }
+            }
+          }
 
           const mockMember = {
             id: `irc-${sender}`,

@@ -80,7 +80,6 @@ commandRegistry.register({
         ctx.addMessage(ctx.channelId, ctx.currentMember, ctcpAction);
       } catch (err) {
         console.error("Failed to send /me channel action via Tauri IRC:", err);
-        ctx.addMessage(ctx.channelId, ctx.currentMember, ctcpAction);
       }
     } else if (ctx.type === "conversation" && ctx.conversationId) {
       try {
@@ -96,11 +95,6 @@ commandRegistry.register({
         }
       } catch (err) {
         console.error("Failed to send /me direct action via Tauri IRC:", err);
-        ctx.addDirectMessage(ctx.conversationId, ctx.currentMember, ctcpAction);
-        if (ctx.targetMemberId) {
-          const { useMockStore } = await import("@/lib/mock-store");
-          useMockStore.getState().addToHistoricalConversations(ctx.serverId, ctx.targetMemberId);
-        }
       }
     }
   },
@@ -303,7 +297,6 @@ commandRegistry.register({
         ctx.addDirectMessage(conversationId, ctx.currentMember, initialMessage);
       } catch (err) {
         console.error("Failed to send /query message via Tauri IRC:", err);
-        ctx.addDirectMessage(conversationId, ctx.currentMember, initialMessage);
       }
     }
 

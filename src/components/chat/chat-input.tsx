@@ -548,6 +548,12 @@ export const ChatInput = ({
             });
           } catch (err: any) {
             console.error("Failed to send channel message via Tauri IRC:", err);
+            useMockStore.getState().removeLastMessageFromChannel(query.channelId, senderMember.id);
+            await invoke("delete_last_log_entry", {
+              serverId: activeServer.id,
+              target: name.startsWith("#") ? name : `#${name}`,
+              sender: senderMember.profile.name,
+            }).catch(() => {});
             form.setValue("content", line);
             return;
           }
@@ -565,6 +571,17 @@ export const ChatInput = ({
           } catch (err: any) {
             console.error("Failed to send private message via Tauri IRC:", err);
             useMockStore.getState().removeLastDirectMessageFromMember(query.conversationId, senderMember.id);
+            await invoke("delete_last_log_entry", {
+              serverId: activeServer.id,
+              target: name,
+              sender: senderMember.profile.name,
+            }).catch(() => {});
+            try {
+              const loggedNicks = await invoke<string[]>("list_logged_conversations", {
+                serverId: activeServer.id,
+              });
+              useMockStore.getState().syncActiveConversationsWithDisk(activeServer.id, loggedNicks);
+            } catch (e) {}
             form.setValue("content", line);
             return;
           }
