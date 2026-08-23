@@ -68,3 +68,41 @@ Pushing any tag matching `v*` (e.g., `v0.1.3`) triggers the [.github/workflows/r
 
 1. GitHub Actions automatically builds installers for Windows and Linux.
 2. A **Draft Release** with all installers attached will be generated under the **Releases** tab on GitHub.
+3. When signing is configured (see Section 5), `tauri-action` creates `.sig` files and publishes `latest.json` to GitHub Releases for automatic in-app updates.
+
+---
+
+## 5. Automatic Updates Configuration (Tauri Signer)
+
+Tauri v2 requires binary signature verification for security before installing updates.
+
+### Setting up Signing Keys:
+
+1. **Generate a signing keypair:**
+   ```bash
+   npx tauri signer generate
+   ```
+   Save the output public key and private key securely.
+
+2. **Add Public Key to `tauri.conf.json`:**
+   In `src-tauri/tauri.conf.json`:
+   ```json
+   "plugins": {
+     "updater": {
+       "pubkey": "YOUR_PUBLIC_KEY_HERE",
+       "endpoints": [
+         "https://github.com/TheStami/diIRC/releases/latest/download/latest.json"
+       ]
+     }
+   }
+   ```
+
+3. **Add Secrets to GitHub Repository:**
+   In your GitHub repository settings under **Settings > Secrets and variables > Actions**, add:
+   - `TAURI_SIGNING_PRIVATE_KEY`: Content of your generated private key file (`.key`).
+   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: (Optional) Your private key password if you created one.
+
+### How Updates Work Across Platforms:
+- **AppImage (Linux) & EXE (Windows):** Fully automated in-app download, signature verification, installation, and application restart.
+- **`.deb` Packages (Linux):** Since `.deb` packages are installed in root-owned system directories (`/usr/bin`), non-root applications cannot write to them directly. If an update is detected for a `.deb` installation, the app provides a convenient button to download the latest `.deb` package directly from GitHub Releases.
+

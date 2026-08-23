@@ -15,7 +15,11 @@ import { InvitePage } from "@/pages/invite-page";
 
 import { InvitePreviewPage } from "@/pages/invite-preview-page";
 
+import { useAutoUpdateCheck } from "@/hooks/use-auto-update-check";
+
 export function App() {
+  useAutoUpdateCheck();
+
   useEffect(() => {
     // Prevent default native webview right-click context menu globally except in text input fields
     const handleContextMenu = (e: MouseEvent) => {

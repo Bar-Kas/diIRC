@@ -20,7 +20,8 @@ export type ModalType =
   | "channelOperatorSettings"
   | "connectionDetails"
   | "roleIcons"
-  | "privateMessages";
+  | "privateMessages"
+  | "updateAvailable";
 
 interface ModalData {
   server?: Server;
@@ -37,6 +38,13 @@ interface ModalData {
   description?: string;
   errorMessage?: string;
   flag?: string;
+  updateInfo?: {
+    currentVersion: string;
+    version: string;
+    body?: string;
+    date?: string;
+    onUpdate?: () => Promise<void>;
+  };
 }
 
 interface ModalStore {

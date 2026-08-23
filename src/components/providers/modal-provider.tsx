@@ -18,6 +18,7 @@ import { ChannelOperatorSettingsModal } from "@/components/modals/channel-operat
 import { ConnectionDetailsModal } from "@/components/modals/connection-details-modal";
 import { RoleIconsModal } from "@/components/modals/role-icons-modal";
 import { PrivateMessagesModal } from "@/components/modals/private-messages-modal";
+import { UpdateModal } from "@/components/modals/update-modal";
 
 export const ModalProvider = () => {
   const [isMounted, setIsMounted] = useState(false);
@@ -50,6 +51,7 @@ export const ModalProvider = () => {
       <ConnectionDetailsModal />
       <RoleIconsModal />
       <PrivateMessagesModal />
+      <UpdateModal />
     </>
   );
 };

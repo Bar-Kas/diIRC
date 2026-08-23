@@ -12,17 +12,17 @@ import { Button } from "@/components/ui/button";
 import { useModal } from "@/hooks/use-modal-store";
 import { useMockStore } from "@/lib/mock-store";
 import { ImageUploadProvider, LitterboxTime } from "@/lib/upload/types";
-import { 
-  Settings, 
-  EyeOff, 
-  Link2, 
-  Server, 
-  Globe, 
-  UploadCloud, 
-  AlertTriangle, 
-  Key, 
-  Plus, 
-  Trash2, 
+import {
+  Settings,
+  EyeOff,
+  Link2,
+  Server,
+  Globe,
+  UploadCloud,
+  AlertTriangle,
+  Key,
+  Plus,
+  Trash2,
   Activity,
   Command,
   FileText,
@@ -31,12 +31,20 @@ import {
   Bell,
   Volume2,
   Play,
-  Monitor
+  Monitor,
+  DownloadCloud,
+  RefreshCw,
+  CheckCircle2,
+  Loader2,
+  Sparkles
 } from "lucide-react";
 import { StatusDisplayMode, formatMessageDate } from "@/lib/mock-store";
 import { playNotificationSound, SoundPreset } from "@/lib/notification-sound";
 import { requestDesktopNotificationPermission } from "@/lib/notification-service";
 import { NotificationSettingsFields } from "@/components/notifications/notification-settings-fields";
+import { checkForAppUpdate } from "@/lib/update-service";
+import { Update } from "@tauri-apps/plugin-updater";
+import tauriConfig from "../../../src-tauri/tauri.conf.json";
 
 export const SettingsModal = () => {
   const { isOpen, onClose, type, onOpen } = useModal();
@@ -84,6 +92,46 @@ export const SettingsModal = () => {
     taskbarHighlightEnabled: true,
   };
   const setGlobalNotificationSettings = useMockStore((state) => state.setGlobalNotificationSettings);
+
+  const autoUpdateMode = useMockStore((state) => state.autoUpdateMode) || "ask";
+  const setAutoUpdateMode = useMockStore((state) => state.setAutoUpdateMode);
+
+  const [checkStatus, setCheckStatus] = useState<"idle" | "checking" | "upToDate" | "available" | "error">("idle");
+  const [foundUpdate, setFoundUpdate] = useState<Update | null>(null);
+  const [checkErrorMsg, setCheckErrorMsg] = useState<string | null>(null);
+
+  const handleManualCheckUpdates = async () => {
+    setCheckStatus("checking");
+    setCheckErrorMsg(null);
+    try {
+      const update = await checkForAppUpdate();
+      if (update && update.available) {
+        setFoundUpdate(update);
+        setCheckStatus("available");
+      } else {
+        setFoundUpdate(null);
+        setCheckStatus("upToDate");
+      }
+    } catch (err: any) {
+      setFoundUpdate(null);
+      setCheckStatus("error");
+      setCheckErrorMsg(err?.message || String(err));
+    }
+  };
+
+  const handleOpenUpdateModal = () => {
+    if (!foundUpdate) return;
+    const currentVersion = tauriConfig.version || "0.1.7";
+    onOpen("updateAvailable", {
+      updateInfo: {
+        currentVersion,
+        version: foundUpdate.version,
+        body: foundUpdate.body,
+        date: foundUpdate.date,
+      },
+      updateRef: foundUpdate,
+    } as any);
+  };
 
   // New URL Rule Form State
   const [newRulePrefix, setNewRulePrefix] = useState("");
@@ -164,6 +212,156 @@ export const SettingsModal = () => {
               else if (field === "taskbar") setGlobalNotificationSettings({ taskbarHighlightEnabled: Boolean(val) });
             }}
           />
+
+          {/* SECTION: AUTOMATIC UPDATES */}
+          <div className="rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-4 shadow-sm transition">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-x-2">
+                <DownloadCloud className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
+                <label className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                  Software updates
+                </label>
+              </div>
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300">
+                v{tauriConfig.version || "0.1.7"}
+              </span>
+            </div>
+
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+              Select automatic check and download preferences for new releases.
+            </p>
+
+            {/* Mode selector */}
+            <div className="grid grid-cols-1 gap-2">
+              <label
+                className={`flex items-start gap-x-3 p-3 rounded-lg border cursor-pointer transition text-xs ${autoUpdateMode === "auto"
+                  ? "border-indigo-500 bg-indigo-500/10 text-indigo-900 dark:text-indigo-100 font-semibold"
+                  : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-[#1e1f22] text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-600"
+                  }`}
+              >
+                <input
+                  type="radio"
+                  name="autoUpdateMode"
+                  value="auto"
+                  checked={autoUpdateMode === "auto"}
+                  onChange={() => setAutoUpdateMode("auto")}
+                  className="mt-0.5 accent-indigo-500 cursor-pointer"
+                />
+                <div>
+                  <div className="font-bold flex items-center gap-x-1.5">
+                    🚀 Automatic update on startup
+                  </div>
+                  <div className="text-[11px] text-zinc-500 dark:text-zinc-400 font-normal mt-0.5">
+                    Check for new versions on app startup and notify when update is ready.
+                  </div>
+                </div>
+              </label>
+
+              <label
+                className={`flex items-start gap-x-3 p-3 rounded-lg border cursor-pointer transition text-xs ${autoUpdateMode === "ask"
+                  ? "border-indigo-500 bg-indigo-500/10 text-indigo-900 dark:text-indigo-100 font-semibold"
+                  : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-[#1e1f22] text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-600"
+                  }`}
+              >
+                <input
+                  type="radio"
+                  name="autoUpdateMode"
+                  value="ask"
+                  checked={autoUpdateMode === "ask"}
+                  onChange={() => setAutoUpdateMode("ask")}
+                  className="mt-0.5 accent-indigo-500 cursor-pointer"
+                />
+                <div>
+                  <div className="font-bold flex items-center gap-x-1.5">
+                    ❓ Ask about update on startup (Popup prompt)
+                  </div>
+                  <div className="text-[11px] text-zinc-500 dark:text-zinc-400 font-normal mt-0.5">
+                    Show a dialog when a new version is detected with options: "Update now" or "Remind me later".
+                  </div>
+                </div>
+              </label>
+
+              <label
+                className={`flex items-start gap-x-3 p-3 rounded-lg border cursor-pointer transition text-xs ${autoUpdateMode === "disabled"
+                  ? "border-rose-500/50 bg-rose-500/10 text-rose-900 dark:text-rose-100 font-semibold"
+                  : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-[#1e1f22] text-zinc-700 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-600"
+                  }`}
+              >
+                <input
+                  type="radio"
+                  name="autoUpdateMode"
+                  value="disabled"
+                  checked={autoUpdateMode === "disabled"}
+                  onChange={() => setAutoUpdateMode("disabled")}
+                  className="mt-0.5 accent-rose-500 cursor-pointer"
+                />
+                <div>
+                  <div className="font-bold flex items-center gap-x-1.5 text-zinc-800 dark:text-zinc-200">
+                    ⛔ Disable automatic updates
+                  </div>
+                  <div className="text-[11px] text-zinc-500 dark:text-zinc-400 font-normal mt-0.5">
+                    Application will not check for updates automatically on startup.
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            {/* Check / Update action row */}
+            <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700/60 flex items-center justify-between gap-x-3">
+              <div className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                {checkStatus === "idle" && (
+                  <span className="text-zinc-500">Installed version: v{tauriConfig.version || "0.1.7"}</span>
+                )}
+                {checkStatus === "checking" && (
+                  <span className="flex items-center gap-x-1.5 text-indigo-500 font-semibold">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Checking for updates...
+                  </span>
+                )}
+                {checkStatus === "upToDate" && (
+                  <span className="flex items-center gap-x-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    diIRC is up to date (v{tauriConfig.version || "0.1.7"})
+                  </span>
+                )}
+                {checkStatus === "available" && (
+                  <span className="flex items-center gap-x-1.5 text-indigo-600 dark:text-indigo-400 font-bold">
+                    <Sparkles className="w-4 h-4 text-indigo-500" />
+                    New version v{foundUpdate?.version} is available!
+                  </span>
+                )}
+                {checkStatus === "error" && (
+                  <span className="text-rose-500 text-[11px] block truncate max-w-[240px]">
+                    Error: {checkErrorMsg || "Failed to connect to update server."}
+                  </span>
+                )}
+              </div>
+
+              <div className="shrink-0">
+                {checkStatus === "available" ? (
+                  <Button
+                    size="sm"
+                    onClick={handleOpenUpdateModal}
+                    className="text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 flex items-center gap-x-1.5 shadow-sm"
+                  >
+                    <DownloadCloud className="w-3.5 h-3.5" />
+                    Update now (v{foundUpdate?.version})
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={checkStatus === "checking"}
+                    onClick={handleManualCheckUpdates}
+                    className="text-xs font-semibold border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-x-1.5"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${checkStatus === "checking" ? "animate-spin" : ""}`} />
+                    Check for updates
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
           {/* Compact Mode */}
           <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
             <div className="space-y-0.5 pr-4">

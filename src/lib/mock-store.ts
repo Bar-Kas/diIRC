@@ -248,6 +248,8 @@ interface MockState {
   customDateFormat: string;
   notificationSettings: GlobalNotificationSettings;
   conversationNotificationSettings: Record<string, NotificationOverride>;
+  autoUpdateMode: "auto" | "ask" | "disabled";
+  setAutoUpdateMode: (mode: "auto" | "ask" | "disabled") => void;
 
   // Connection Actions
   setIrcConnected: (serverId: string, isConnected: boolean, error?: string | null) => void;
@@ -401,6 +403,8 @@ export const useMockStore = create<MockState>()(
         taskbarHighlightEnabled: true,
       },
       conversationNotificationSettings: {},
+      autoUpdateMode: "ask",
+      setAutoUpdateMode: (mode) => set({ autoUpdateMode: mode }),
 
       setIrcConnected: (serverId: string, isConnected: boolean, error: string | null = null) =>
         set((state) => ({
