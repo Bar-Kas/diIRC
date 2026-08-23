@@ -78,6 +78,8 @@ export const ChatMessages = ({
   const customDateFormat = useMockStore((state) => state.customDateFormat) || "yyyy/MM/dd HH:mm";
   const [atBottom, setAtBottom] = useState(true);
   const lastSeenBottomMessageIdRef = useRef<string | null>(null);
+  const lastSeenTimestampRef = useRef<number>(0);
+  const lastCountedTailIdRef = useRef<string | null>(null);
   const unreadAccumulatorRef = useRef<number>(0);
 
   const {
@@ -97,10 +99,13 @@ export const ChatMessages = ({
 
   useEffect(() => {
     if (atBottom && !hasNewer && items.length > 0) {
-      const newId = items[items.length - 1].id;
+      const lastMsg = items[items.length - 1];
+      const newId = lastMsg.id;
       const prevId = lastSeenBottomMessageIdRef.current;
       if (prevId !== newId) {
         lastSeenBottomMessageIdRef.current = newId;
+        lastSeenTimestampRef.current = new Date(lastMsg.createdAt).getTime();
+        lastCountedTailIdRef.current = newId;
         unreadAccumulatorRef.current = 0;
       }
     }
@@ -108,16 +113,48 @@ export const ChatMessages = ({
 
   const newMessagesAtTail = useMemo(() => {
     if (atBottom || !lastSeenBottomMessageIdRef.current || items.length === 0) return 0;
+    // When reading history, preserve the accumulated count from the tail.
+    if (hasNewer) {
+      return unreadAccumulatorRef.current;
+    }
+
+    const currentTailId = items[items.length - 1].id;
+
+    // 1. Check if lastSeen message is still in the items window
     const lastSeenIndex = items.findIndex((m) => m.id === lastSeenBottomMessageIdRef.current);
     if (lastSeenIndex !== -1) {
       const count = Math.max(0, items.length - 1 - lastSeenIndex);
       unreadAccumulatorRef.current = count;
+      lastCountedTailIdRef.current = currentTailId;
       return count;
     }
-    // If lastSeenId was trimmed because older chunks moved the window into the past (hasNewer === true),
-    // preserve the accumulated unread messages from the tail.
+
+    // 2. lastSeen message was trimmed off the top. Incremental delta addition since lastCountedTailId:
+    if (lastCountedTailIdRef.current) {
+      const lastCountedIndex = items.findIndex((m) => m.id === lastCountedTailIdRef.current);
+      if (lastCountedIndex !== -1) {
+        const delta = Math.max(0, items.length - 1 - lastCountedIndex);
+        if (delta > 0) {
+          unreadAccumulatorRef.current += delta;
+          lastCountedTailIdRef.current = currentTailId;
+        }
+        return unreadAccumulatorRef.current;
+      }
+    }
+
+    // 3. If neither lastSeen nor lastCountedTail is in items (e.g. waking from sleep with >600 new messages),
+    // check if items[0] is newer than lastSeen timestamp:
+    const firstMsgTimestamp = new Date(items[0].createdAt).getTime();
+    if (lastSeenTimestampRef.current > 0 && firstMsgTimestamp > lastSeenTimestampRef.current) {
+      if (lastCountedTailIdRef.current !== currentTailId) {
+        unreadAccumulatorRef.current = Math.max(unreadAccumulatorRef.current + items.length, items.length);
+        lastCountedTailIdRef.current = currentTailId;
+      }
+      return unreadAccumulatorRef.current;
+    }
+
     return unreadAccumulatorRef.current;
-  }, [items, atBottom, chatId, pendingLiveCount]);
+  }, [items, atBottom, hasNewer, chatId]);
 
   const newMessagesCount = newMessagesAtTail + pendingLiveCount;
   const showJumpToLatest = (items.length > 0 && !atBottom) || hasNewer || pendingLiveCount > 0;
@@ -319,7 +356,10 @@ export const ChatMessages = ({
     if (isAtBottom) {
       anchorRef.current = null;
       if (items.length > 0) {
-        lastSeenBottomMessageIdRef.current = items[items.length - 1].id;
+        const lastMsg = items[items.length - 1];
+        lastSeenBottomMessageIdRef.current = lastMsg.id;
+        lastSeenTimestampRef.current = new Date(lastMsg.createdAt).getTime();
+        lastCountedTailIdRef.current = lastMsg.id;
         unreadAccumulatorRef.current = 0;
       }
     }
@@ -370,6 +410,8 @@ export const ChatMessages = ({
     isLoadingNewerRef.current = false;
     anchorRef.current = null;
     lastSeenBottomMessageIdRef.current = null;
+    lastSeenTimestampRef.current = 0;
+    lastCountedTailIdRef.current = null;
     unreadAccumulatorRef.current = 0;
     rowElementsRef.current.clear();
     remeasureCallbacksRef.current.clear();
@@ -544,9 +586,6 @@ export const ChatMessages = ({
     shouldStickToBottomRef.current = true;
     anchorRef.current = null;
     setAtBottom(true);
-    if (items.length > 0) {
-      lastSeenBottomMessageIdRef.current = items[items.length - 1].id;
-    }
     if (hasNewer || pendingLiveCount > 0) {
       void jumpToLatest(type, chatId, serverId, historyTarget).then(() => {
         shouldStickToBottomRef.current = true;
@@ -564,7 +603,7 @@ export const ChatMessages = ({
         programmaticScrollUntilRef.current = 0;
       }, 500);
     }
-  }, [hasNewer, pendingLiveCount, items, jumpToLatest, type, chatId, serverId, historyTarget, pinToBottom]);
+  }, [hasNewer, pendingLiveCount, jumpToLatest, type, chatId, serverId, historyTarget, pinToBottom]);
 
   if (status === "loading") {
     return (
