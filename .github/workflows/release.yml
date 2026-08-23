@@ -58,4 +58,6 @@ jobs:
           releaseBody: 'See the assets to download the release for your platform.'
           releaseDraft: true
           prerelease: false
+          includeUpdaterJson: true
+          updaterJsonKeepSignatures: true
           args: ${{ matrix.args }}
