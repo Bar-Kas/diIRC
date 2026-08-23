@@ -1926,7 +1926,9 @@ fn toggle_devtools(window: tauri::WebviewWindow) {
 }
 
 /// Stores the D-Bus notification ID per tag, and reverse lookup for action clicks.
+#[cfg(target_os = "linux")]
 static TAG_TO_ID: std::sync::Mutex<Option<HashMap<String, u32>>> = std::sync::Mutex::new(None);
+#[cfg(target_os = "linux")]
 static ID_TO_TAG: std::sync::Mutex<Option<HashMap<u32, String>>> = std::sync::Mutex::new(None);
 
 #[cfg(target_os = "linux")]
