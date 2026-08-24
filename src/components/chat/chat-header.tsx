@@ -1,4 +1,4 @@
-import { Hash, PanelLeft, Server, Users, Edit3, Bell } from "lucide-react";
+import { Hash, PanelLeft, Server, Users, Edit3 } from "lucide-react";
 
 import { MobileToggle } from "@/components/mobile-toggle";
 import { UserAvatar } from "@/components/user-avatar";
@@ -153,22 +153,6 @@ export const ChatHeader = ({
 
       <div className="ml-auto flex items-center gap-x-3 shrink-0">
         <ConnectionStatus />
-
-        <ActionTooltip side="bottom" label="Notification settings">
-          <button
-            onClick={() => {
-              if (type === "channel" && server && channel) {
-                onOpen("channelSettings", { server, channel });
-              } else if (type === "conversation") {
-                const convId = targetMember && server ? [server.members.find(m => m.profileId)?.id, targetMember.id].filter(Boolean).sort().join("-") : undefined;
-                onOpen("channelSettings", { server, conversationId: convId });
-              }
-            }}
-            className="flex items-center justify-center p-1.5 rounded-lg hover:bg-zinc-200/60 dark:hover:bg-zinc-700/50 transition text-zinc-500 hover:text-indigo-500 dark:text-zinc-400 dark:hover:text-indigo-400"
-          >
-            <Bell className="w-5 h-5" />
-          </button>
-        </ActionTooltip>
 
         <ActionTooltip 
           side="bottom" 
