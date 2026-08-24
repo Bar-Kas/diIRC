@@ -195,16 +195,16 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
           {isGlobal
             ? "Global notification settings"
             : isServer
-            ? "Server notification overrides"
-            : "Notification overrides"}
+              ? "Server notification overrides"
+              : "Notification overrides"}
         </span>
       </div>
       <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
         {isGlobal
           ? "Configure default audio alerts, desktop popups, and taskbar indicators. You can override these per server or channel."
           : isServer
-          ? "Customize notification rules for messages on this server. Select \"Default\" to inherit from client settings."
-          : "Customize notification rules for this chat. Select \"Default\" to inherit from parent settings."}
+            ? "Customize notification rules for messages on this server. Select \"Default\" to inherit from client settings."
+            : "Customize notification rules for this chat. Select \"Default\" to inherit from parent settings."}
       </p>
 
       {/* CHANNEL NOTIFICATIONS CONTROL */}
@@ -320,11 +320,26 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
                 {isChannelOrDm
                   ? "Sound Tone"
                   : isServer || isGlobal
-                  ? "Channel Sound Tone"
-                  : "Sound Tone"}
+                    ? "Channel Sound Tone"
+                    : "Sound Tone"}
               </div>
 
               <div className="flex items-center gap-x-1.5 shrink-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const preset = (values.soundPreset === "default" ? inherited.soundPresetStr : values.soundPreset) as SoundPreset || "chime";
+                    playNotificationSound(preset, values.customSoundUrl);
+                  }}
+                  title="Test Sound"
+                  className="h-8 px-2.5 bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-x-1"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current text-indigo-500" />
+                  <span className="text-[11px] font-semibold">Test</span>
+                </Button>
+
                 {values.soundPreset === "custom" && (
                   <Button
                     type="button"
@@ -361,21 +376,6 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
                   <option value="pop">🫧 Bubble Pop</option>
                   <option value="custom">📁 Custom Audio File...</option>
                 </select>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    const preset = (values.soundPreset === "default" ? inherited.soundPresetStr : values.soundPreset) as SoundPreset || "chime";
-                    playNotificationSound(preset, values.customSoundUrl);
-                  }}
-                  title="Test Sound"
-                  className="h-8 px-2.5 bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-x-1"
-                >
-                  <Play className="w-3.5 h-3.5 fill-current text-indigo-500" />
-                  <span className="text-[11px] font-semibold">Test</span>
-                </Button>
               </div>
             </div>
 
@@ -413,10 +413,25 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
               <div className="flex items-center justify-between gap-x-2">
                 <div className="flex items-center gap-x-1.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100 shrink-0">
                   <Volume2 className="w-3.5 h-3.5 text-zinc-500" />
-                  Private Message (DM) Tone
+                  Private Message Tone
                 </div>
 
                 <div className="flex items-center gap-x-1.5 shrink-0">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const preset = (values.dmSoundPreset === "default" ? inherited.dmSoundPresetStr : values.dmSoundPreset) as SoundPreset || "chime";
+                      playNotificationSound(preset, values.customDmSoundUrl || values.customSoundUrl);
+                    }}
+                    title="Test DM Sound"
+                    className="h-8 px-2.5 bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-x-1"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current text-indigo-500" />
+                    <span className="text-[11px] font-semibold">Test</span>
+                  </Button>
+
                   {values.dmSoundPreset === "custom" && (
                     <Button
                       type="button"
@@ -453,21 +468,6 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
                     <option value="pop">🫧 Bubble Pop</option>
                     <option value="custom">📁 Custom Audio File...</option>
                   </select>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      const preset = (values.dmSoundPreset === "default" ? inherited.dmSoundPresetStr : values.dmSoundPreset) as SoundPreset || "chime";
-                      playNotificationSound(preset, values.customDmSoundUrl || values.customSoundUrl);
-                    }}
-                    title="Test DM Sound"
-                    className="h-8 px-2.5 bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-x-1"
-                  >
-                    <Play className="w-3.5 h-3.5 fill-current text-indigo-500" />
-                    <span className="text-[11px] font-semibold">Test</span>
-                  </Button>
                 </div>
               </div>
 
