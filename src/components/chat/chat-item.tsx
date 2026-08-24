@@ -93,7 +93,118 @@ const ChatItemInner = ({
     navigate(`/servers/${server.id}/conversations/${targetMember.id}`);
   };
 
+  const servers = useMockStore((state) => state.servers);
+  const currentProfile = useMockStore((state) => state.currentProfile);
+  const activeServer = servers.find((s) => s.id === params?.serverId) || servers[0];
+  const displayName = getMemberDisplayName(member, activeServer);
+
+  const myNicks = useMemo(() => {
+    return Array.from(
+      new Set(
+        [
+          ...(activeServer?.nicknames || []),
+          currentMember?.profile?.name,
+          currentProfile?.name,
+        ].filter(Boolean) as string[]
+      )
+    );
+  }, [activeServer?.nicknames, currentMember?.profile?.name, currentProfile?.name]);
+
+  const allMemberNicks = useMemo(() => {
+    return (activeServer?.members || []).map((m) => m.profile.name).filter(Boolean);
+  }, [activeServer?.members]);
+
+  const isSelf = useMemo(() => {
+    if (!member) return false;
+    const senderName = member.profile?.name?.toLowerCase();
+    const isCurrentMemberId = member.id === currentMember?.id || member.profileId === currentMember?.profileId;
+    if (isCurrentMemberId) return true;
+    return myNicks.some((n) => n.toLowerCase() === senderName);
+  }, [member, currentMember, myNicks]);
+
+  const isMention = useMemo(() => {
+    if (isSystem || deleted || isSelf || !content) return false;
+    return myNicks.some((nick) => {
+      const escaped = nick.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return (
+        new RegExp(`(?:^|\\s|@)${escaped}(?:[:,]?(?:\\s|$))`, "i").test(content) ||
+        new RegExp(`\\b${escaped}\\b`, "i").test(content)
+      );
+    });
+  }, [content, isSystem, deleted, isSelf, myNicks]);
+
   const urlRegex = /(https?:\/\/[^\s]+)/g;
+
+  const isAction = typeof content === "string" && /^\x01ACTION ([\s\S]*)\x01?$/i.test(content.trim());
+  const actionText = isAction
+    ? content.trim().replace(/^\x01ACTION /i, "").replace(/\x01$/, "").trim()
+    : content;
+
+  // Check if there is any visible text remaining after hiding image URLs
+  const textToEvaluate = isAction ? actionText : content;
+
+  // Markdown vs legacy rendering — only when markdown chars present
+  const shouldUseMarkdown = enableMarkdown && !deleted && !isSystem && !isAction && hasMarkdownSyntax(textToEvaluate);
+
+  const parseMentions = (text: string, keyPrefix: string | number) => {
+    if (!text) return text;
+    const myNicksLower = new Set(myNicks.map((n) => n.toLowerCase()));
+    const allNicksLower = new Set(allMemberNicks.map((n) => n.toLowerCase()));
+
+    const escapedMyNicks = myNicks
+      .filter(Boolean)
+      .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+
+    const regexPattern =
+      `(@[a-zA-Z0-9_\\-\\[\\]\\\`^{}|]+)` +
+      (escapedMyNicks.length > 0
+        ? `|(\\b(?:${escapedMyNicks.join("|")})(?:[:,]?(?=\\s|$)|\\b))`
+        : "");
+
+    if (!regexPattern) return text;
+
+    const regex = new RegExp(regexPattern, "gi");
+    let match: RegExpExecArray | null;
+    let lastIndex = 0;
+    const elements: (string | React.ReactNode)[] = [];
+
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        elements.push(text.slice(lastIndex, match.index));
+      }
+
+      const matchedStr = match[0];
+      const cleanNick = matchedStr.replace(/^@/, "").replace(/[:,]$/, "").toLowerCase();
+      const isMyMention = myNicksLower.has(cleanNick);
+      const isMemberMention = isMyMention || allNicksLower.has(cleanNick) || matchedStr.startsWith("@");
+
+      if (isMemberMention) {
+        elements.push(
+          <span
+            key={`mention-${keyPrefix}-${match.index}`}
+            className={cn(
+              "inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold transition-colors mx-0.5 select-none",
+              isMyMention
+                ? "bg-amber-500/25 dark:bg-amber-500/35 text-amber-900 dark:text-amber-200 border border-amber-500/30"
+                : "bg-indigo-500/15 dark:bg-indigo-500/25 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20"
+            )}
+          >
+            {matchedStr}
+          </span>
+        );
+      } else {
+        elements.push(matchedStr);
+      }
+
+      lastIndex = match.index + matchedStr.length;
+    }
+
+    if (lastIndex < text.length) {
+      elements.push(text.slice(lastIndex));
+    }
+
+    return elements.length > 0 ? elements : text;
+  };
 
   const renderContentWithLinks = (text: string) => {
     if (deleted) return text;
@@ -115,20 +226,9 @@ const ChatItemInner = ({
           </button>
         );
       }
-      return part;
+      return parseMentions(part, index);
     });
   };
-
-  const isAction = typeof content === "string" && /^\x01ACTION ([\s\S]*)\x01?$/i.test(content.trim());
-  const actionText = isAction
-    ? content.trim().replace(/^\x01ACTION /i, "").replace(/\x01$/, "").trim()
-    : content;
-
-  // Check if there is any visible text remaining after hiding image URLs
-  const textToEvaluate = isAction ? actionText : content;
-
-  // Markdown vs legacy rendering — only when markdown chars present
-  const shouldUseMarkdown = enableMarkdown && !deleted && !isSystem && !isAction && hasMarkdownSyntax(textToEvaluate);
 
   let renderedElements: any = null;
   let hasVisibleText = false;
@@ -177,10 +277,6 @@ const ChatItemInner = ({
     }
   }
 
-  const servers = useMockStore((state) => state.servers);
-  const activeServer = servers.find((s) => s.id === params?.serverId) || servers[0];
-  const displayName = getMemberDisplayName(member, activeServer);
-
   if (isSystem) {
     return (
       <div className="relative group flex items-center hover:bg-black/5 px-4 py-1 transition w-full">
@@ -200,8 +296,11 @@ const ChatItemInner = ({
 
   return (
     <div className={cn(
-      "relative group flex items-center hover:bg-black/5 px-4 transition w-full",
-      compact ? "py-[2px]" : "pt-2.5 pb-[2px]"
+      "relative group flex items-center px-4 transition w-full border-l-[3px]",
+      compact ? "py-[2px]" : "pt-2.5 pb-[2px]",
+      isMention
+        ? "bg-amber-500/10 hover:bg-amber-500/15 dark:bg-amber-500/15 dark:hover:bg-amber-500/20 border-amber-500"
+        : "hover:bg-black/5 border-transparent"
     )}>
       <div className="group flex gap-x-2 items-start w-full">
         {!compactMode && !compact ? (
@@ -261,7 +360,13 @@ const ChatItemInner = ({
                     "text-sm text-zinc-600 dark:text-zinc-300",
                     deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
                   )}>
-                    <MarkdownRenderer content={content} onContentSizeChange={onContentSizeChange} compact={compact} />
+                    <MarkdownRenderer
+                      content={content}
+                      onContentSizeChange={onContentSizeChange}
+                      compact={compact}
+                      myNicks={myNicks}
+                      allMemberNicks={allMemberNicks}
+                    />
                   </div>
                 ) : (
                   <p className={cn(

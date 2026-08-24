@@ -41,9 +41,10 @@ const baseTagNames = [
   "img",
   "spoiler", // custom — will be mapped to React component
   "underline", // custom
+  "mention", // custom
 ];
 
-// Note: `rehype-sanitize` will strip unknown tags unless in schema, so we whitelist spoiler/underline
+// Note: `rehype-sanitize` will strip unknown tags unless in schema, so we whitelist spoiler/underline/mention
 // but they will be rendered via ReactMarkdown components mapping.
 
 export const markdownSanitizeSchema: SanitizeOptions = {
@@ -68,6 +69,7 @@ export const markdownSanitizeSchema: SanitizeOptions = {
     img: ["src", "alt", "title"],
     spoiler: ["className"],
     underline: ["className"],
+    mention: ["className", "isMyMention", "dataIsMyMention"],
     u: ["className"],
     input: ["type", "checked", "disabled", "className"],
     // allow className globally for Tailwind
