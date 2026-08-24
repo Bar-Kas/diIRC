@@ -74,8 +74,23 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
         store.clearUnread(store.activeChatKey);
       }
     };
+
     window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
+
+    let unlisten: (() => void) | undefined;
+    import("@tauri-apps/api/window")
+      .then(({ getCurrentWindow }) => {
+        const appWindow = getCurrentWindow();
+        appWindow.listen("tauri://focus", handleFocus).then((fn) => {
+          unlisten = fn;
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      if (unlisten) unlisten();
+    };
   }, []);
 
   // Listen for notification click events from OS (Linux D-Bus / Web)
@@ -413,7 +428,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
                   // Fallback to document.hasFocus()
                 }
 
-                if (!isCurrentChat) {
+                if (!isCurrentChat || !isWindowFocused) {
                   store.markUnread(`conversation:${conversationId}`, true);
                   store.markUnread(`conversation:${senderMember.id}`, true);
                 }
@@ -540,7 +555,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             const escapedNick = ourNick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const hasMention = new RegExp(`\\b${escapedNick}\\b`, "i").test(content);
 
-            if (!isCurrentChat) {
+            if (!isCurrentChat || !isWindowFocused) {
               if (targetChannel?.id) {
                 store.markUnread(`channel:${targetChannel.id}`, hasMention);
               }

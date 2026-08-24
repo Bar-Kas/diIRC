@@ -38,7 +38,7 @@ export const ServerConversation = ({
   const unread = useMockStore(
     (state) => state.unreadState[`conversation:${conversationId}`] || state.unreadState[`conversation:${member.id}`]
   );
-  const isUnread = !isSelected && !!unread && unread.count > 0;
+  const isUnread = !!unread && unread.count > 0;
 
   const onClick = () => {
     navigate(`/servers/${server.id}/conversations/${member.id}`);

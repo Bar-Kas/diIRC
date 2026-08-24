@@ -58,7 +58,7 @@ export const NavigationItem = ({
     }
   }
 
-  const isUnread = !isSelected && totalUnread > 0;
+  const isUnread = totalUnread > 0;
 
   return (
     <ActionTooltip

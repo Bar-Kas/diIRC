@@ -68,7 +68,7 @@ export const ServerChannel = ({
 
   const isSelected = params?.channelId === channel.id;
   const unread = useMockStore((state) => state.unreadState[`channel:${channel.id}`]);
-  const isUnread = !isSelected && !!unread && unread.count > 0;
+  const isUnread = !!unread && unread.count > 0;
 
   const handleLeaveChannel = (e?: React.MouseEvent) => {
     if (e) {
