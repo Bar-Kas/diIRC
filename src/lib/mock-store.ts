@@ -25,6 +25,7 @@ import {
 } from "./mock-data";
 import { v4 as uuidv4 } from "uuid";
 import { ImageUploadConfig, UrlAuthRule } from "./upload/types";
+import { MESSAGE_DEDUPLICATION_MODE } from "./config";
 
 export const MAX_HISTORY_WINDOW = 600;
 export const MAX_PENDING_LIVE = 100;
@@ -1524,15 +1525,16 @@ export const useMockStore = create<MockState>()(
         const state = get();
         const activeMsgs = state.activeChatKey === key ? (state.messages[channelId] || []) : [];
         const lastMsg = activeMsgs[activeMsgs.length - 1];
-        if (
-          lastMsg &&
-          lastMsg.content === content &&
-          new Date().getTime() - new Date(lastMsg.createdAt).getTime() < 3000 &&
-          (isSystem
-            ? lastMsg.isSystem
-            : lastMsg.member?.profile?.name?.toLowerCase() === member.profile?.name?.toLowerCase())
-        ) {
-          return lastMsg;
+        if (MESSAGE_DEDUPLICATION_MODE === "A") {
+          if (
+            isSystem &&
+            lastMsg &&
+            lastMsg.isSystem &&
+            lastMsg.content === content &&
+            new Date().getTime() - new Date(lastMsg.createdAt).getTime() < 3000
+          ) {
+            return lastMsg;
+          }
         }
 
         const newMessage: Message = {
