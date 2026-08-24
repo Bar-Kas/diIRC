@@ -27,7 +27,7 @@ import { ChannelInput } from "@/components/ui/channel-input";
 import { Plus, Trash, Bell, Volume2, Monitor, Clock } from "lucide-react";
 import { useModal } from "@/hooks/use-modal-store";
 import { useMockStore } from "@/lib/mock-store";
-import { NotificationOverrideValue, SoundPreset } from "@/types";
+import { NotificationOverrideValue, SoundPreset, ChannelNotificationOverrideValue, DmNotificationOverrideValue } from "@/types";
 import { NotificationSettingsFields } from "@/components/notifications/notification-settings-fields";
 
 const formSchema = z.object({
@@ -63,6 +63,8 @@ export const EditServerModal = () => {
   const globalNotif = useMockStore((state) => state.notificationSettings);
 
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
+  const [channelNotificationsOverride, setChannelNotificationsOverride] = useState<ChannelNotificationOverrideValue>("default");
+  const [dmNotificationsOverride, setDmNotificationsOverride] = useState<DmNotificationOverrideValue>("default");
   const [soundOverride, setSoundOverride] = useState<NotificationOverrideValue>("default");
   const [popupOverride, setPopupOverride] = useState<NotificationOverrideValue>("default");
   const [taskbarOverride, setTaskbarOverride] = useState<NotificationOverrideValue>("default");
@@ -72,6 +74,13 @@ export const EditServerModal = () => {
   const [customSoundUrlOverride, setCustomSoundUrlOverride] = useState<string | undefined>(undefined);
   const [customDmSoundUrlOverride, setCustomDmSoundUrlOverride] = useState<string | undefined>(undefined);
 
+  const inheritedChannelNotifStr =
+    globalNotif?.channelNotifications === "all"
+      ? "All messages"
+      : globalNotif?.channelNotifications === "off"
+      ? "Disabled"
+      : "Mentions only";
+  const inheritedDmNotifStr = globalNotif?.dmNotifications === "off" ? "Disabled" : "Enabled";
   const inheritedSoundStr = globalNotif?.soundEnabled ? "Enabled" : "Muted";
   const inheritedPopupStr = globalNotif?.popupEnabled ? "Enabled" : "Off";
   const inheritedTaskbarStr = globalNotif?.taskbarHighlightEnabled ? "Enabled" : "Off";
@@ -115,6 +124,8 @@ export const EditServerModal = () => {
         ? server.channels.map(c => ({ value: c.name }))
         : [];
 
+      setChannelNotificationsOverride(server.notificationSettings?.channelNotifications || "default");
+      setDmNotificationsOverride(server.notificationSettings?.dmNotifications || "default");
       setSoundOverride(server.notificationSettings?.sound || "default");
       setPopupOverride(server.notificationSettings?.popup || "default");
       setTaskbarOverride(server.notificationSettings?.taskbar || "default");
@@ -164,6 +175,8 @@ export const EditServerModal = () => {
         autoReconnect: values.autoReconnect,
         autoJoinChannels: channelArray,
         notificationSettings: {
+          channelNotifications: channelNotificationsOverride,
+          dmNotifications: dmNotificationsOverride,
           sound: soundOverride,
           popup: popupOverride,
           taskbar: taskbarOverride,
@@ -510,6 +523,8 @@ export const EditServerModal = () => {
               <NotificationSettingsFields
                 mode="server"
                 values={{
+                  channelNotifications: channelNotificationsOverride,
+                  dmNotifications: dmNotificationsOverride,
                   sound: soundOverride,
                   soundPreset: soundPresetOverride,
                   dmSoundPreset: dmSoundPresetOverride,
@@ -520,6 +535,8 @@ export const EditServerModal = () => {
                   taskbar: taskbarOverride,
                 }}
                 inherited={{
+                  channelNotificationsStr: inheritedChannelNotifStr,
+                  dmNotificationsStr: inheritedDmNotifStr,
                   soundStr: inheritedSoundStr,
                   soundPresetStr: inheritedSoundPresetStr,
                   dmSoundPresetStr: inheritedDmSoundPresetStr,
@@ -528,7 +545,9 @@ export const EditServerModal = () => {
                   taskbarStr: inheritedTaskbarStr,
                 }}
                 onChange={(field, val) => {
-                  if (field === "sound") setSoundOverride(val);
+                  if (field === "channelNotifications") setChannelNotificationsOverride(val);
+                  else if (field === "dmNotifications") setDmNotificationsOverride(val);
+                  else if (field === "sound") setSoundOverride(val);
                   else if (field === "soundPreset") setSoundPresetOverride(val);
                   else if (field === "dmSoundPreset") setDmSoundPresetOverride(val);
                   else if (field === "customSoundUrl") setCustomSoundUrlOverride(val);

@@ -100,11 +100,14 @@ export const ServerSidebar = ({
   );
 
   const directMessagesMap = useMockStore((state) => state.directMessages);
+  const sortDmByUnread = useMockStore((state) => state.sortDmByUnread ?? true);
+  const dmSortOrder = useMockStore((state) => state.dmSortOrder ?? "opening");
+  const unreadState = useMockStore((state) => state.unreadState);
 
   const activeMemberIds = (activeConversations[server.id] || []).filter(
     (memberId) => memberId !== currentMember?.id
   );
-  const pmMembers = activeMemberIds
+  const rawPmMembers = activeMemberIds
     .map((memberId) => server.members.find((m) => m.id === memberId))
     .filter((m): m is NonNullable<typeof m> => {
       if (!m) return false;
@@ -116,6 +119,29 @@ export const ServerSidebar = ({
       if (msgs !== undefined && msgs.length === 0) return false;
       return true;
     });
+
+  const sortedPmMembers = [...rawPmMembers];
+  if (dmSortOrder === "alphabetical") {
+    sortedPmMembers.sort((a, b) => {
+      const nameA = getMemberDisplayName(a, server) || a.profile?.name || "";
+      const nameB = getMemberDisplayName(b, server) || b.profile?.name || "";
+      return nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+    });
+  }
+
+  if (sortDmByUnread) {
+    sortedPmMembers.sort((a, b) => {
+      const convIdA = currentMember ? [currentMember.id, a.id].sort().join("-") : "";
+      const convIdB = currentMember ? [currentMember.id, b.id].sort().join("-") : "";
+      const unreadA = unreadState[`conversation:${convIdA}`] || unreadState[`conversation:${a.id}`];
+      const unreadB = unreadState[`conversation:${convIdB}`] || unreadState[`conversation:${b.id}`];
+      const isUnreadA = !!unreadA && unreadA.count > 0 ? 1 : 0;
+      const isUnreadB = !!unreadB && unreadB.count > 0 ? 1 : 0;
+      return isUnreadB - isUnreadA;
+    });
+  }
+
+  const pmMembers = sortedPmMembers;
 
   const isConversationPage = location.pathname.includes("/conversations/");
 

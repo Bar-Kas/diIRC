@@ -36,7 +36,9 @@ import {
   RefreshCw,
   CheckCircle2,
   Loader2,
-  Sparkles
+  Sparkles,
+  MessageSquare,
+  ArrowUpDown
 } from "lucide-react";
 import { StatusDisplayMode, formatMessageDate } from "@/lib/mock-store";
 import { playNotificationSound, SoundPreset } from "@/lib/notification-sound";
@@ -95,6 +97,12 @@ export const SettingsModal = () => {
 
   const autoUpdateMode = useMockStore((state) => state.autoUpdateMode) || "ask";
   const setAutoUpdateMode = useMockStore((state) => state.setAutoUpdateMode);
+
+  const sortDmByUnread = useMockStore((state) => state.sortDmByUnread ?? true);
+  const setSortDmByUnread = useMockStore((state) => state.setSortDmByUnread);
+
+  const dmSortOrder = useMockStore((state) => state.dmSortOrder ?? "opening");
+  const setDmSortOrder = useMockStore((state) => state.setDmSortOrder);
 
   const [checkStatus, setCheckStatus] = useState<"idle" | "checking" | "upToDate" | "available" | "error">("idle");
   const [foundUpdate, setFoundUpdate] = useState<Update | null>(null);
@@ -192,6 +200,8 @@ export const SettingsModal = () => {
           <NotificationSettingsFields
             mode="global"
             values={{
+              channelNotifications: notificationSettings.channelNotifications || "mentions",
+              dmNotifications: notificationSettings.dmNotifications || "all",
               sound: notificationSettings.soundEnabled,
               soundPreset: notificationSettings.soundPreset || "chime",
               dmSoundPreset: notificationSettings.dmSoundPreset || "chime",
@@ -202,7 +212,9 @@ export const SettingsModal = () => {
               taskbar: notificationSettings.taskbarHighlightEnabled,
             }}
             onChange={(field, val) => {
-              if (field === "sound") setGlobalNotificationSettings({ soundEnabled: Boolean(val) });
+              if (field === "channelNotifications") setGlobalNotificationSettings({ channelNotifications: val });
+              else if (field === "dmNotifications") setGlobalNotificationSettings({ dmNotifications: val });
+              else if (field === "sound") setGlobalNotificationSettings({ soundEnabled: Boolean(val) });
               else if (field === "soundPreset") setGlobalNotificationSettings({ soundPreset: val });
               else if (field === "dmSoundPreset") setGlobalNotificationSettings({ dmSoundPreset: val });
               else if (field === "customSoundUrl") setGlobalNotificationSettings({ customSoundUrl: val });
@@ -436,6 +448,46 @@ export const SettingsModal = () => {
               checked={enableMarkdown}
               onCheckedChange={(checked) => setEnableMarkdown(checked)}
             />
+          </div>
+
+          {/* Sort Private Messages by Unread */}
+          <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
+            <div className="space-y-0.5 pr-4">
+              <div className="flex items-center gap-x-2">
+                <MessageSquare className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
+                <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 cursor-pointer">
+                  Sort private messages by unread
+                </label>
+              </div>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                Move private messages with unread messages to the top of the list.
+              </p>
+            </div>
+            <Switch
+              checked={sortDmByUnread}
+              onCheckedChange={(checked) => setSortDmByUnread(checked)}
+            />
+          </div>
+
+          {/* Base Private Message Sorting */}
+          <div className="flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-3 shadow-sm transition">
+            <div className="flex items-center gap-x-2">
+              <ArrowUpDown className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
+              <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Sort private messages
+              </label>
+            </div>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+              Choose base sorting order for active private messages.
+            </p>
+            <select
+              value={dmSortOrder}
+              onChange={(e) => setDmSortOrder(e.target.value as "opening" | "alphabetical")}
+              className="w-full bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              <option value="opening">By opening order</option>
+              <option value="alphabetical">Alphabetical</option>
+            </select>
           </div>
 
           {/* Status Indicator Display Mode */}

@@ -24,6 +24,11 @@ export interface Member {
 }
 
 export type NotificationOverrideValue = "default" | "enabled" | "disabled";
+export type ChannelNotificationMode = "all" | "mentions" | "off";
+export type DmNotificationMode = "all" | "off";
+export type ChannelNotificationOverrideValue = "default" | "all" | "mentions" | "off";
+export type DmNotificationOverrideValue = "default" | "all" | "off";
+
 export type SoundPreset = "chime" | "ping" | "bell" | "pop" | "custom";
 
 export interface NotificationOverride {
@@ -35,6 +40,8 @@ export interface NotificationOverride {
   dmSoundPreset?: "default" | SoundPreset;
   customSoundUrl?: string;
   customDmSoundUrl?: string;
+  channelNotifications?: ChannelNotificationOverrideValue;
+  dmNotifications?: DmNotificationOverrideValue;
 }
 
 export interface GlobalNotificationSettings {
@@ -46,6 +53,8 @@ export interface GlobalNotificationSettings {
   soundCooldownMs?: number;
   popupEnabled: boolean;
   taskbarHighlightEnabled: boolean;
+  channelNotifications?: ChannelNotificationMode;
+  dmNotifications?: DmNotificationMode;
 }
 
 export interface Channel {

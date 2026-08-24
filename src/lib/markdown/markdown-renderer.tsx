@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeSanitize from "rehype-sanitize";
 import { markdownSanitizeSchema } from "./markdown-config";
-import { remarkSpoiler, remarkUnderline } from "./remark-plugins";
+import { remarkSpoiler, remarkUnderline, remarkMention } from "./remark-plugins";
 import { openExternalUrl } from "@/lib/system-utils";
 import { cn } from "@/lib/utils";
 import { isSafeHref } from "./markdown-utils";
@@ -16,6 +16,8 @@ interface MarkdownRendererProps {
   onContentSizeChange?: () => void;
   className?: string;
   compact?: boolean;
+  myNicks?: string[];
+  allMemberNicks?: string[];
 }
 
 // Spoiler component — hidden until clicked
@@ -46,6 +48,8 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   onContentSizeChange,
   className,
   compact = false,
+  myNicks = [],
+  allMemberNicks = [],
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const enableLinkPreviews = useMockStore((s) => s.enableLinkPreviews);
@@ -60,7 +64,10 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     return () => ro.disconnect();
   }, [content, onContentSizeChange]);
 
-  const remarkPlugins = useMemo(() => [remarkSpoiler, remarkUnderline, remarkGfm, remarkBreaks], []);
+  const remarkPlugins = useMemo(
+    () => [[remarkMention, { myNicks, allMemberNicks }] as any, remarkSpoiler, remarkUnderline, remarkGfm, remarkBreaks],
+    [myNicks, allMemberNicks]
+  );
   const rehypePlugins = useMemo(() => [[rehypeSanitize, markdownSanitizeSchema] as any], []);
 
   if (!content || !content.trim()) return null;
@@ -141,6 +148,21 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     spoiler: ({ children }: any) => <SpoilerInline>{children}</SpoilerInline>,
     underline: ({ children }: any) => <Underline>{children}</Underline>,
     u: ({ children }: any) => <Underline>{children}</Underline>,
+    mention: ({ children, isMyMention, ...props }: any) => {
+      const isMine = isMyMention === "true" || props["data-is-my-mention"] === "true";
+      return (
+        <span
+          className={cn(
+            "inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold transition-colors mx-0.5 select-none",
+            isMine
+              ? "bg-amber-500/25 dark:bg-amber-500/35 text-amber-900 dark:text-amber-200 border border-amber-500/30"
+              : "bg-indigo-500/15 dark:bg-indigo-500/25 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20"
+          )}
+        >
+          {children}
+        </span>
+      );
+    },
     input: (props: any) => {
       if (props.type === "checkbox") {
         return <input type="checkbox" checked={!!props.checked} disabled className="mr-2 align-middle" {...props} />;

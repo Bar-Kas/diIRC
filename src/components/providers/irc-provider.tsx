@@ -74,8 +74,23 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
         store.clearUnread(store.activeChatKey);
       }
     };
+
     window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
+
+    let unlisten: (() => void) | undefined;
+    import("@tauri-apps/api/window")
+      .then(({ getCurrentWindow }) => {
+        const appWindow = getCurrentWindow();
+        appWindow.listen("tauri://focus", handleFocus).then((fn) => {
+          unlisten = fn;
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      if (unlisten) unlisten();
+    };
   }, []);
 
   // Listen for notification click events from OS (Linux D-Bus / Web)
@@ -395,8 +410,12 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               store.addToHistoricalConversations(targetServer.id, senderMember.id);
 
               // Trigger notification for DM
-              const ourNick = targetServer.nicknames?.[0] || store.currentProfile.name;
-              if (sender.toLowerCase() !== ourNick.toLowerCase()) {
+              const isSelf =
+                sender.toLowerCase() === store.currentProfile.name.toLowerCase() ||
+                (targetServer.nicknames && targetServer.nicknames.some((n) => n.toLowerCase() === sender.toLowerCase())) ||
+                (currentMember.profile?.name && currentMember.profile.name.toLowerCase() === sender.toLowerCase());
+
+              if (!isSelf) {
                 const activeKey = store.activeChatKey;
                 const isCurrentChat = activeKey === `conversation:${senderMember.id}` || activeKey === `conversation:${conversationId}`;
                 let isWindowFocused = typeof document !== "undefined" && document.hasFocus();
@@ -412,7 +431,9 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
                 if (!isCurrentChat || !isWindowFocused) {
                   store.markUnread(`conversation:${conversationId}`, true);
                   store.markUnread(`conversation:${senderMember.id}`, true);
+                }
 
+                if (!isCurrentChat || !isWindowFocused) {
                   const globalNotif = store.notificationSettings;
                   const serverNotif = targetServer.notificationSettings;
                   const conversationNotif = store.conversationNotificationSettings[conversationId];
@@ -424,13 +445,15 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
                     true
                   );
 
-                  triggerIncomingNotification({
-                    title: `${sender} (Private Message)`,
-                    body: content,
-                    sender,
-                    tag: `dm:${targetServer.id}:${senderMember.id}`,
-                    effectiveSettings,
-                  });
+                  if (effectiveSettings.shouldNotify()) {
+                    triggerIncomingNotification({
+                      title: `${sender} (Private Message)`,
+                      body: content,
+                      sender,
+                      tag: `dm:${targetServer.id}:${senderMember.id}`,
+                      effectiveSettings,
+                    });
+                  }
                 }
               }
             }
@@ -506,8 +529,16 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
           // Trigger notification for channel message
           const store = useMockStore.getState();
-          const ourNick = targetServer.nicknames?.[0] || store.currentProfile.name;
-          if (!isSystem && sender !== "System" && sender.toLowerCase() !== ourNick.toLowerCase()) {
+          const isSelf =
+            sender.toLowerCase() === store.currentProfile.name.toLowerCase() ||
+            (targetServer.nicknames && targetServer.nicknames.some((n) => n.toLowerCase() === sender.toLowerCase())) ||
+            targetServer.members.some(
+              (m) =>
+                (m.profileId === store.currentProfile.id || m.profile?.id === store.currentProfile.id) &&
+                m.profile?.name?.toLowerCase() === sender.toLowerCase()
+            );
+
+          if (!isSystem && sender !== "System" && !isSelf) {
             const activeKey = store.activeChatKey;
             const isCurrentChat = targetChannel && activeKey === `channel:${targetChannel.id}`;
             let isWindowFocused = typeof document !== "undefined" && document.hasFocus();
@@ -520,14 +551,17 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               // Fallback to document.hasFocus()
             }
 
-            if (!isCurrentChat || !isWindowFocused) {
-              const escapedNick = ourNick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              const hasMention = new RegExp(`\\b${escapedNick}\\b`, "i").test(content);
+            const ourNick = targetServer.nicknames?.[0] || store.currentProfile.name;
+            const escapedNick = ourNick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const hasMention = new RegExp(`\\b${escapedNick}\\b`, "i").test(content);
 
+            if (!isCurrentChat || !isWindowFocused) {
               if (targetChannel?.id) {
                 store.markUnread(`channel:${targetChannel.id}`, hasMention);
               }
+            }
 
+            if (!isCurrentChat || !isWindowFocused) {
               const globalNotif = store.notificationSettings;
               const serverNotif = targetServer.notificationSettings;
               const channelNotif = targetChannel?.notificationSettings;
@@ -539,15 +573,17 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
                 false
               );
 
-              const chanName = targetChannel ? `#${targetChannel.name}` : channel;
+              if (effectiveSettings.shouldNotify(hasMention)) {
+                const chanName = targetChannel ? `#${targetChannel.name}` : channel;
 
-              triggerIncomingNotification({
-                title: `${chanName} - ${sender}`,
-                body: content,
-                sender,
-                tag: `chan:${targetServer.id}:${targetChannel?.id || channel}`,
-                effectiveSettings,
-              });
+                triggerIncomingNotification({
+                  title: `${chanName} - ${sender}`,
+                  body: content,
+                  sender,
+                  tag: `chan:${targetServer.id}:${targetChannel?.id || channel}`,
+                  effectiveSettings,
+                });
+              }
             }
           }
         });

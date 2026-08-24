@@ -893,7 +893,13 @@ async fn connect_irc(
                                 let _ = app_clone.emit("irc_ops_event", ops_payload);
                             }
                         }
-                        Command::Response(Response::RPL_WELCOME, ref _args) => {
+                        Command::Response(Response::RPL_WELCOME, ref args) => {
+                            if let Some(welcome_nick) = args.first() {
+                                nicknames_clone
+                                    .lock()
+                                    .await
+                                    .insert(stream_server_id.clone(), welcome_nick.clone());
+                            }
                             let _ = app_clone.emit(
                                 "irc_status",
                                 IrcStatusEvent {
@@ -1460,6 +1466,21 @@ async fn connect_irc(
                                 inviter: sender_name,
                             };
                             let _ = app_clone.emit("irc_invited", invite_payload);
+                        }
+                        Command::NICK(ref new_nick) => {
+                            if let Some(source) = message.prefix {
+                                let sender_name = match source {
+                                    Prefix::Nickname(nick, _, _) => nick,
+                                    Prefix::ServerName(name) => name,
+                                };
+                                let mut nicks = nicknames_clone.lock().await;
+                                let is_own = nicks
+                                    .get(&stream_server_id)
+                                    .map_or(false, |own_nick| own_nick.eq_ignore_ascii_case(&sender_name));
+                                if is_own {
+                                    nicks.insert(stream_server_id.clone(), new_nick.clone());
+                                }
+                            }
                         }
                         _ => {}
                     }
