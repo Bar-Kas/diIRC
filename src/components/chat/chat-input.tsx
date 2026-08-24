@@ -24,7 +24,7 @@ import { getHighestChannelRole } from "@/components/user-role-icon";
 import { uploadImage } from "@/lib/upload/services";
 import { ImageContextMenu } from "@/components/image-context-menu";
 import { isMediaUrl } from "@/lib/image-utils";
-import { commandRegistry } from "@/lib/commands/command-system";
+import { commandRegistry, expandCustomCommand, listSlashSuggestions } from "@/lib/commands/command-system";
 import { useDraftStore, AttachedImage } from "@/hooks/use-draft-store";
 
 interface ChatInputProps {
@@ -65,7 +65,6 @@ export const ChatInput = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const [commandQuery, setCommandQuery] = useState("");
   const [showCommands, setShowCommands] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [isFocused, setIsFocused] = useState(true);
@@ -171,8 +170,11 @@ export const ChatInput = ({
 
   useEffect(() => {
     if (enableCommandSuggestions && isFocused && content?.startsWith("/")) {
-      if (content.indexOf(" ") === -1) {
-        setCommandQuery(content.slice(1).toLowerCase());
+      const active = query?.serverId
+        ? servers.find((s) => s.id === query.serverId)
+        : servers[0];
+      const items = listSlashSuggestions(content, active?.customCommands);
+      if (items.length > 0) {
         setShowCommands(true);
         setSelectedCommandIndex(0);
       } else {
@@ -181,11 +183,15 @@ export const ChatInput = ({
     } else {
       setShowCommands(false);
     }
-  }, [content, enableCommandSuggestions, isFocused]);
+  }, [content, enableCommandSuggestions, isFocused, query?.serverId, servers]);
 
-  const filteredCommands = commandRegistry.getAll().filter(cmd => 
-    cmd.name.toLowerCase().includes(commandQuery)
-  );
+  const filteredCommands = (() => {
+    if (!content?.startsWith("/")) return [];
+    const active = query?.serverId
+      ? servers.find((s) => s.id === query.serverId)
+      : servers[0];
+    return listSlashSuggestions(content, active?.customCommands);
+  })();
 
   const removeAttachment = useCallback((id: string) => {
     setAttachedImages((prev) => {
@@ -415,8 +421,8 @@ export const ChatInput = ({
     }
   };
 
-  const onCommandSelect = (commandName: string) => {
-    form.setValue("content", `/${commandName} `);
+  const onCommandSelect = (insert: string) => {
+    form.setValue("content", insert);
     form.setFocus("content");
     setShowCommands(false);
   };
@@ -431,10 +437,18 @@ export const ChatInput = ({
         e.preventDefault();
         setSelectedCommandIndex((prev) => (prev - 1 + filteredCommands.length) % filteredCommands.length);
         return;
-      } else if (e.key === "Enter" || e.key === "Tab") {
+      } else if (e.key === "Tab") {
         e.preventDefault();
-        onCommandSelect(filteredCommands[selectedCommandIndex].name);
+        onCommandSelect(filteredCommands[selectedCommandIndex].insert);
         return;
+      } else if (e.key === "Enter") {
+        const selected = filteredCommands[selectedCommandIndex];
+        if (content.trim() !== selected.insert.trim()) {
+          e.preventDefault();
+          onCommandSelect(selected.insert);
+          return;
+        }
+        setShowCommands(false);
       } else if (e.key === "Escape") {
         e.preventDefault();
         setShowCommands(false);
@@ -555,6 +569,15 @@ export const ChatInput = ({
           clearAllAttachments();
           form.setFocus("content");
           return;
+        }
+
+        const expanded = expandCustomCommand(textContent, activeServer.customCommands);
+        if (expanded !== null) {
+          linesToSend.length = 0;
+          linesToSend.push(expanded);
+          readyImages.forEach((img) => {
+            if (img.url) linesToSend.push(img.url);
+          });
         }
       }
 
@@ -691,15 +714,15 @@ export const ChatInput = ({
                   {showCommands && filteredCommands.length > 0 && (
                     <div className="absolute bottom-full left-4 mb-2 w-80 bg-white dark:bg-[#2b2d31] border border-zinc-200 dark:border-zinc-800 rounded-md shadow-xl overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
                       <div className="px-3 py-2 text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider bg-zinc-50 dark:bg-[#232428] border-b border-zinc-200 dark:border-zinc-800">
-                        Commands matching /{commandQuery}
+                        Commands matching {content?.startsWith("/") ? content.split(/\s/)[0] : "/"}
                       </div>
                       <div className="max-h-60 overflow-y-auto p-1">
                         {filteredCommands.map((cmd, idx) => (
                           <div
-                            key={cmd.name}
+                            key={`${cmd.insert}-${idx}`}
                             onMouseDown={(e) => {
                               e.preventDefault();
-                              onCommandSelect(cmd.name);
+                              onCommandSelect(cmd.insert);
                             }}
                             className={`flex items-center gap-x-3 px-3 py-2 rounded-md cursor-pointer transition-colors ${
                               idx === selectedCommandIndex
@@ -712,7 +735,7 @@ export const ChatInput = ({
                             </div>
                             <div className="flex flex-col min-w-0">
                               <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                                /{cmd.name}
+                                {cmd.label}
                               </span>
                               <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
                                 {cmd.description}
