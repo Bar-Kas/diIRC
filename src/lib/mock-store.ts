@@ -251,6 +251,10 @@ interface MockState {
   conversationNotificationSettings: Record<string, NotificationOverride>;
   autoUpdateMode: "auto" | "ask" | "disabled";
   setAutoUpdateMode: (mode: "auto" | "ask" | "disabled") => void;
+  sortDmByUnread: boolean;
+  dmSortOrder: "opening" | "alphabetical";
+  setSortDmByUnread: (enabled: boolean) => void;
+  setDmSortOrder: (order: "opening" | "alphabetical") => void;
 
   // Connection Actions
   setIrcConnected: (serverId: string, isConnected: boolean, error?: string | null) => void;
@@ -426,6 +430,10 @@ export const useMockStore = create<MockState>()(
       conversationNotificationSettings: {},
       autoUpdateMode: "ask",
       setAutoUpdateMode: (mode) => set({ autoUpdateMode: mode }),
+      sortDmByUnread: true,
+      dmSortOrder: "opening",
+      setSortDmByUnread: (enabled) => set({ sortDmByUnread: enabled }),
+      setDmSortOrder: (order) => set({ dmSortOrder: order }),
 
       setIrcConnected: (serverId: string, isConnected: boolean, error: string | null = null) =>
         set((state) => ({
