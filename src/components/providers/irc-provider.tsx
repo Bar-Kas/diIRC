@@ -413,10 +413,12 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
                   // Fallback to document.hasFocus()
                 }
 
-                if (!isCurrentChat || !isWindowFocused) {
+                if (!isCurrentChat) {
                   store.markUnread(`conversation:${conversationId}`, true);
                   store.markUnread(`conversation:${senderMember.id}`, true);
+                }
 
+                if (!isCurrentChat || !isWindowFocused) {
                   const globalNotif = store.notificationSettings;
                   const serverNotif = targetServer.notificationSettings;
                   const conversationNotif = store.conversationNotificationSettings[conversationId];
@@ -532,7 +534,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               // Fallback to document.hasFocus()
             }
 
-            if (!isCurrentChat || !isWindowFocused) {
+            if (!isCurrentChat) {
               const ourNick = targetServer.nicknames?.[0] || store.currentProfile.name;
               const escapedNick = ourNick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
               const hasMention = new RegExp(`\\b${escapedNick}\\b`, "i").test(content);
@@ -540,7 +542,9 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               if (targetChannel?.id) {
                 store.markUnread(`channel:${targetChannel.id}`, hasMention);
               }
+            }
 
+            if (!isCurrentChat || !isWindowFocused) {
               const globalNotif = store.notificationSettings;
               const serverNotif = targetServer.notificationSettings;
               const channelNotif = targetChannel?.notificationSettings;
