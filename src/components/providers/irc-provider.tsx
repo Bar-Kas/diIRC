@@ -395,8 +395,12 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               store.addToHistoricalConversations(targetServer.id, senderMember.id);
 
               // Trigger notification for DM
-              const ourNick = targetServer.nicknames?.[0] || store.currentProfile.name;
-              if (sender.toLowerCase() !== ourNick.toLowerCase()) {
+              const isSelf =
+                sender.toLowerCase() === store.currentProfile.name.toLowerCase() ||
+                (targetServer.nicknames && targetServer.nicknames.some((n) => n.toLowerCase() === sender.toLowerCase())) ||
+                (currentMember.profile?.name && currentMember.profile.name.toLowerCase() === sender.toLowerCase());
+
+              if (!isSelf) {
                 const activeKey = store.activeChatKey;
                 const isCurrentChat = activeKey === `conversation:${senderMember.id}` || activeKey === `conversation:${conversationId}`;
                 let isWindowFocused = typeof document !== "undefined" && document.hasFocus();
@@ -506,8 +510,16 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
           // Trigger notification for channel message
           const store = useMockStore.getState();
-          const ourNick = targetServer.nicknames?.[0] || store.currentProfile.name;
-          if (!isSystem && sender !== "System" && sender.toLowerCase() !== ourNick.toLowerCase()) {
+          const isSelf =
+            sender.toLowerCase() === store.currentProfile.name.toLowerCase() ||
+            (targetServer.nicknames && targetServer.nicknames.some((n) => n.toLowerCase() === sender.toLowerCase())) ||
+            targetServer.members.some(
+              (m) =>
+                (m.profileId === store.currentProfile.id || m.profile?.id === store.currentProfile.id) &&
+                m.profile?.name?.toLowerCase() === sender.toLowerCase()
+            );
+
+          if (!isSystem && sender !== "System" && !isSelf) {
             const activeKey = store.activeChatKey;
             const isCurrentChat = targetChannel && activeKey === `channel:${targetChannel.id}`;
             let isWindowFocused = typeof document !== "undefined" && document.hasFocus();
@@ -521,6 +533,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             }
 
             if (!isCurrentChat || !isWindowFocused) {
+              const ourNick = targetServer.nicknames?.[0] || store.currentProfile.name;
               const escapedNick = ourNick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
               const hasMention = new RegExp(`\\b${escapedNick}\\b`, "i").test(content);
 

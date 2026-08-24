@@ -1525,11 +1525,12 @@ export const useMockStore = create<MockState>()(
         const activeMsgs = state.activeChatKey === key ? (state.messages[channelId] || []) : [];
         const lastMsg = activeMsgs[activeMsgs.length - 1];
         if (
-          isSystem &&
           lastMsg &&
-          lastMsg.isSystem &&
           lastMsg.content === content &&
-          new Date().getTime() - new Date(lastMsg.createdAt).getTime() < 3000
+          new Date().getTime() - new Date(lastMsg.createdAt).getTime() < 3000 &&
+          (isSystem
+            ? lastMsg.isSystem
+            : lastMsg.member?.profile?.name?.toLowerCase() === member.profile?.name?.toLowerCase())
         ) {
           return lastMsg;
         }
