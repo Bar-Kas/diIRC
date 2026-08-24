@@ -26,6 +26,7 @@ import { ImageContextMenu } from "@/components/image-context-menu";
 import { isMediaUrl } from "@/lib/image-utils";
 import { commandRegistry } from "@/lib/commands/command-system";
 import { useDraftStore, AttachedImage } from "@/hooks/use-draft-store";
+import { encodeLineCount } from "@/lib/markdown/multiline-steganography";
 
 interface ChatInputProps {
   query: Record<string, string>;
@@ -565,53 +566,72 @@ export const ChatInput = ({
       clearAllAttachments();
       form.setFocus("content");
 
-      for (const line of linesToSend) {
+      // Handle text content lines
+      if (textContent) {
+        const rawLines = textContent.split(/\r?\n/);
+        const targetName = type === "channel" ? (name.startsWith("#") ? name : `#${name}`) : name;
+
         if (type === "channel" && query?.channelId) {
-          addMessage(query.channelId, senderMember, line);
-          try {
-            await invoke("send_message", { 
-              serverId: activeServer.id,
-              channel: name.startsWith("#") ? name : `#${name}`, 
-              message: line 
-            });
-          } catch (err: any) {
-            console.error("Failed to send channel message via Tauri IRC:", err);
-            useMockStore.getState().removeLastMessageFromChannel(query.channelId, senderMember.id);
-            await invoke("delete_last_log_entry", {
-              serverId: activeServer.id,
-              target: name.startsWith("#") ? name : `#${name}`,
-              sender: senderMember.profile.name,
-            }).catch(() => {});
-            form.setValue("content", line);
-            return;
-          }
+          addMessage(query.channelId, senderMember, textContent);
         } else if (type === "conversation" && query?.conversationId) {
-          addDirectMessage(query.conversationId, senderMember, line);
+          addDirectMessage(query.conversationId, senderMember, textContent);
           if (query.targetMemberId) {
             useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
           }
+        }
+
+        // Prepare IRC lines with zero-width line count header if multi-line code block
+        const ircLines = [...rawLines];
+        if (ircLines.length > 1 && textContent.includes("```")) {
+          ircLines[0] = ircLines[0] + encodeLineCount(ircLines.length);
+        }
+
+        // Send lines sequentially (delay set to 0ms temporarily for testing)
+        for (let i = 0; i < ircLines.length; i++) {
+          if (i > 0) {
+            await new Promise((res) => setTimeout(res, 0));
+          }
           try {
-            await invoke("send_message", { 
+            await invoke("send_message", {
               serverId: activeServer.id,
-              channel: name, 
-              message: line 
+              channel: targetName,
+              message: ircLines[i],
             });
           } catch (err: any) {
-            console.error("Failed to send private message via Tauri IRC:", err);
-            useMockStore.getState().removeLastDirectMessageFromMember(query.conversationId, senderMember.id);
+            console.error("Failed to send line via Tauri IRC:", err);
+            if (type === "channel" && query?.channelId) {
+              useMockStore.getState().removeLastMessageFromChannel(query.channelId, senderMember.id);
+            } else if (type === "conversation" && query?.conversationId) {
+              useMockStore.getState().removeLastDirectMessageFromMember(query.conversationId, senderMember.id);
+            }
             await invoke("delete_last_log_entry", {
               serverId: activeServer.id,
-              target: name,
+              target: targetName,
               sender: senderMember.profile.name,
             }).catch(() => {});
-            try {
-              const loggedNicks = await invoke<string[]>("list_logged_conversations", {
-                serverId: activeServer.id,
-              });
-              useMockStore.getState().syncActiveConversationsWithDisk(activeServer.id, loggedNicks);
-            } catch (e) {}
-            form.setValue("content", line);
+            form.setValue("content", textContent);
             return;
+          }
+        }
+      }
+
+      // Handle image URLs after text
+      for (const img of readyImages) {
+        if (img.url) {
+          const targetName = type === "channel" ? (name.startsWith("#") ? name : `#${name}`) : name;
+          if (type === "channel" && query?.channelId) {
+            addMessage(query.channelId, senderMember, img.url);
+          } else if (type === "conversation" && query?.conversationId) {
+            addDirectMessage(query.conversationId, senderMember, img.url);
+          }
+          try {
+            await invoke("send_message", {
+              serverId: activeServer.id,
+              channel: targetName,
+              message: img.url,
+            });
+          } catch (err: any) {
+            console.error("Failed to send image URL via Tauri IRC:", err);
           }
         }
       }
