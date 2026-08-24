@@ -114,7 +114,7 @@ export const ServerChannel = ({
             <span
               className={cn(
                 "absolute left-0 w-1.5 h-4 rounded-r-full transition-all",
-                unread.hasMention ? "bg-rose-500 animate-pulse" : "bg-indigo-500 dark:bg-indigo-400"
+                unread.hasMention ? "bg-rose-500" : "bg-indigo-500 dark:bg-indigo-400"
               )}
             />
           )}
@@ -145,7 +145,7 @@ export const ServerChannel = ({
             <span
               className={cn(
                 "ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full text-white leading-none shrink-0 shadow-sm transition-transform animate-in zoom-in-50",
-                unread.hasMention ? "bg-rose-500 shadow-rose-500/30 animate-pulse" : "bg-indigo-500 shadow-indigo-500/30"
+                unread.hasMention ? "bg-rose-500 shadow-rose-500/30" : "bg-indigo-500 shadow-indigo-500/30"
               )}
             >
               {unread.hasMention ? `@${unread.count}` : unread.count}

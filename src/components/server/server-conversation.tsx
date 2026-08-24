@@ -89,7 +89,7 @@ export const ServerConversation = ({
       )}
     >
       {isUnread && (
-        <span className="absolute left-0 w-1.5 h-4 bg-rose-500 rounded-r-full animate-pulse transition-all" />
+        <span className="absolute left-0 w-1.5 h-4 bg-rose-500 rounded-r-full transition-all" />
       )}
       <div className="flex items-center gap-x-2 overflow-hidden flex-1">
         <UserAvatar
@@ -114,8 +114,8 @@ export const ServerConversation = ({
         </p>
       </div>
       {isUnread && (
-        <span className="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-rose-500 text-white leading-none shrink-0 shadow-sm shadow-rose-500/30 animate-pulse animate-in zoom-in-50">
-          @{unread.count}
+        <span className="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-rose-500 text-white leading-none shrink-0 shadow-sm shadow-rose-500/30 animate-in zoom-in-50">
+          {unread.count}
         </span>
       )}
       <div className="ml-auto flex items-center gap-x-1 shrink-0">
