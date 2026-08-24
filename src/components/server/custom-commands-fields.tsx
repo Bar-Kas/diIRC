@@ -33,16 +33,26 @@ function parseSuggestions(value: unknown): string {
   return "";
 }
 
-/** Accepts an array, or `{ customCommands: [...] }`. */
+/** Accepts an array, a single command object, or `{ customCommands: [...] }`. */
 export function parseCustomCommandsJson(raw: unknown): FormCommandRow[] {
   const list = Array.isArray(raw)
     ? raw
     : raw && typeof raw === "object" && Array.isArray((raw as any).customCommands)
     ? (raw as any).customCommands
+    : raw &&
+      typeof raw === "object" &&
+      (typeof (raw as any).trigger === "string" ||
+        typeof (raw as any).slash === "string" ||
+        typeof (raw as any).name === "string" ||
+        typeof (raw as any).message === "string" ||
+        typeof (raw as any).sends === "string")
+    ? [raw]
     : null;
 
   if (!list) {
-    throw new Error("JSON must be an array of commands or { \"customCommands\": [...] }.");
+    throw new Error(
+      'JSON must be a command object, an array of commands, or { "customCommands": [...] }.'
+    );
   }
 
   const rows = list
