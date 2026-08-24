@@ -28,7 +28,11 @@
   "bundle": {
     "createUpdaterArtifacts": true,
     "active": true,
-    "targets": ["nsis", "deb", "appimage"],
+    "targets": [
+      "nsis",
+      "deb",
+      "appimage"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -44,7 +48,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFDRDIyQTI2NzQ2MDVGQTkKUldTcFgyQjBKaXJTck9OMU11SDd2dkFjVmtUMkx3SFk2ODQwRk9mTUYzWWxyRHFWTTl4eXdWZVkK",
       "endpoints": [
-        "https://github.com/TheStami/diIRC/releases/latest/download/latest.json"
+        "https://irc-update.a15-5fc.workers.dev/"
       ]
     }
   }
