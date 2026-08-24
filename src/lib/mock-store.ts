@@ -402,6 +402,8 @@ export const useMockStore = create<MockState>()(
         dmSoundPreset: "chime",
         popupEnabled: true,
         taskbarHighlightEnabled: true,
+        channelNotifications: "mentions",
+        dmNotifications: "all",
       },
       conversationNotificationSettings: {},
       autoUpdateMode: "ask",

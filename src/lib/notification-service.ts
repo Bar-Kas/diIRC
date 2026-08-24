@@ -1,5 +1,10 @@
 import { SoundPreset, playNotificationSound } from "./notification-sound";
-import { NotificationOverride, GlobalNotificationSettings } from "@/types";
+import {
+  NotificationOverride,
+  GlobalNotificationSettings,
+  ChannelNotificationMode,
+  DmNotificationMode,
+} from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import {
   isPermissionGranted as tauriIsPermissionGranted,
@@ -19,6 +24,9 @@ export function resolveEffectiveNotificationSettings(
   soundCooldownMs: number;
   soundPreset: SoundPreset;
   customSoundUrl?: string;
+  channelNotifications: ChannelNotificationMode;
+  dmNotifications: DmNotificationMode;
+  shouldNotify: (hasMention?: boolean) => boolean;
 } {
   const globalDefaults: GlobalNotificationSettings = {
     soundEnabled: global?.soundEnabled ?? true,
@@ -27,7 +35,25 @@ export function resolveEffectiveNotificationSettings(
     soundCooldownMs: global?.soundCooldownMs ?? 2500,
     popupEnabled: global?.popupEnabled ?? true,
     taskbarHighlightEnabled: global?.taskbarHighlightEnabled ?? true,
+    channelNotifications: global?.channelNotifications ?? "mentions",
+    dmNotifications: global?.dmNotifications ?? "all",
   };
+
+  let channelNotifications: ChannelNotificationMode = globalDefaults.channelNotifications || "mentions";
+  if (serverOverride?.channelNotifications && serverOverride.channelNotifications !== "default") {
+    channelNotifications = serverOverride.channelNotifications;
+  }
+  if (channelOverride?.channelNotifications && channelOverride.channelNotifications !== "default") {
+    channelNotifications = channelOverride.channelNotifications;
+  }
+
+  let dmNotifications: DmNotificationMode = globalDefaults.dmNotifications || "all";
+  if (serverOverride?.dmNotifications && serverOverride.dmNotifications !== "default") {
+    dmNotifications = serverOverride.dmNotifications;
+  }
+  if (channelOverride?.dmNotifications && channelOverride.dmNotifications !== "default") {
+    dmNotifications = channelOverride.dmNotifications;
+  }
 
   let sound = globalDefaults.soundEnabled;
   if (serverOverride?.sound && serverOverride.sound !== "default") {
@@ -89,7 +115,30 @@ export function resolveEffectiveNotificationSettings(
     }
   }
 
-  return { sound, popup, taskbar, soundCooldownMs, soundPreset, customSoundUrl };
+  const shouldNotify = (hasMention: boolean = false): boolean => {
+    if (isDm) {
+      return dmNotifications !== "off";
+    }
+    if (channelNotifications === "off") {
+      return false;
+    }
+    if (channelNotifications === "mentions") {
+      return hasMention;
+    }
+    return true;
+  };
+
+  return {
+    sound,
+    popup,
+    taskbar,
+    soundCooldownMs,
+    soundPreset,
+    customSoundUrl,
+    channelNotifications,
+    dmNotifications,
+    shouldNotify,
+  };
 }
 
 export interface TriggerNotificationParams {
@@ -104,6 +153,9 @@ export interface TriggerNotificationParams {
     soundCooldownMs: number;
     soundPreset: SoundPreset;
     customSoundUrl?: string;
+    channelNotifications?: ChannelNotificationMode;
+    dmNotifications?: DmNotificationMode;
+    shouldNotify?: (hasMention?: boolean) => boolean;
   };
   soundPreset?: SoundPreset;
 }

@@ -430,13 +430,15 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
                     true
                   );
 
-                  triggerIncomingNotification({
-                    title: `${sender} (Private Message)`,
-                    body: content,
-                    sender,
-                    tag: `dm:${targetServer.id}:${senderMember.id}`,
-                    effectiveSettings,
-                  });
+                  if (effectiveSettings.shouldNotify()) {
+                    triggerIncomingNotification({
+                      title: `${sender} (Private Message)`,
+                      body: content,
+                      sender,
+                      tag: `dm:${targetServer.id}:${senderMember.id}`,
+                      effectiveSettings,
+                    });
+                  }
                 }
               }
             }
@@ -534,11 +536,11 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               // Fallback to document.hasFocus()
             }
 
-            if (!isCurrentChat) {
-              const ourNick = targetServer.nicknames?.[0] || store.currentProfile.name;
-              const escapedNick = ourNick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              const hasMention = new RegExp(`\\b${escapedNick}\\b`, "i").test(content);
+            const ourNick = targetServer.nicknames?.[0] || store.currentProfile.name;
+            const escapedNick = ourNick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const hasMention = new RegExp(`\\b${escapedNick}\\b`, "i").test(content);
 
+            if (!isCurrentChat) {
               if (targetChannel?.id) {
                 store.markUnread(`channel:${targetChannel.id}`, hasMention);
               }
@@ -556,15 +558,17 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
                 false
               );
 
-              const chanName = targetChannel ? `#${targetChannel.name}` : channel;
+              if (effectiveSettings.shouldNotify(hasMention)) {
+                const chanName = targetChannel ? `#${targetChannel.name}` : channel;
 
-              triggerIncomingNotification({
-                title: `${chanName} - ${sender}`,
-                body: content,
-                sender,
-                tag: `chan:${targetServer.id}:${targetChannel?.id || channel}`,
-                effectiveSettings,
-              });
+                triggerIncomingNotification({
+                  title: `${chanName} - ${sender}`,
+                  body: content,
+                  sender,
+                  tag: `chan:${targetServer.id}:${targetChannel?.id || channel}`,
+                  effectiveSettings,
+                });
+              }
             }
           }
         });

@@ -1,15 +1,17 @@
 import React, { useRef, useState } from "react";
-import { Bell, Volume2, Monitor, Clock, Play, FolderOpen, Music, AlertTriangle, AlertCircle } from "lucide-react";
+import { Bell, Volume2, Monitor, Clock, Play, FolderOpen, Music, AlertTriangle, AlertCircle, MessageSquare, Hash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { SoundPreset, NotificationOverrideValue } from "@/types";
+import { SoundPreset, NotificationOverrideValue, ChannelNotificationMode, DmNotificationMode, ChannelNotificationOverrideValue, DmNotificationOverrideValue } from "@/types";
 import { playNotificationSound } from "@/lib/notification-sound";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { readFile, stat } from "@tauri-apps/plugin-fs";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 export interface NotificationSettingsValues {
+  channelNotifications?: ChannelNotificationMode | ChannelNotificationOverrideValue;
+  dmNotifications?: DmNotificationMode | DmNotificationOverrideValue;
   sound?: boolean | NotificationOverrideValue;
   soundPreset?: SoundPreset | "default";
   dmSoundPreset?: SoundPreset | "default";
@@ -21,6 +23,8 @@ export interface NotificationSettingsValues {
 }
 
 export interface InheritedNotificationValues {
+  channelNotificationsStr?: string;
+  dmNotificationsStr?: string;
   soundStr?: string;
   soundPresetStr?: string;
   dmSoundPresetStr?: string;
@@ -58,6 +62,8 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
   const isGlobal = mode === "global";
   const isServer = mode === "server";
   const isChannelOrDm = mode === "channel" || mode === "dm";
+  const isChannelMode = mode === "channel";
+  const isDmMode = mode === "dm";
 
   const triggerFileSelection = async (
     field: "customSoundUrl" | "customDmSoundUrl",
@@ -187,10 +193,10 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
         <Bell className="w-4 h-4 text-zinc-600 dark:text-zinc-300" />
         <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
           {isGlobal
-            ? "Global Notification Settings"
+            ? "Global notification settings"
             : isServer
-            ? "Server Notification Overrides"
-            : "Notification Overrides"}
+            ? "Server notification overrides"
+            : "Notification overrides"}
         </span>
       </div>
       <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
@@ -201,11 +207,73 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
           : "Customize notification rules for this chat. Select \"Default\" to inherit from parent settings."}
       </p>
 
+      {/* CHANNEL NOTIFICATIONS CONTROL */}
+      {(isGlobal || isServer || isChannelMode) && (
+        <div className="flex items-center justify-between gap-x-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
+          <div className="flex items-center gap-x-1.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+            <Hash className="w-3.5 h-3.5 text-zinc-500" />
+            Channel notifications
+          </div>
+          {isGlobal ? (
+            <select
+              value={(values.channelNotifications as string) || "mentions"}
+              onChange={(e) => onChange("channelNotifications", e.target.value as ChannelNotificationMode)}
+              className="bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1 text-xs font-medium text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              <option value="mentions">📣 Mentions only</option>
+              <option value="all">💬 All messages</option>
+              <option value="off">🚫 Disabled</option>
+            </select>
+          ) : (
+            <select
+              value={(values.channelNotifications as string) || "default"}
+              onChange={(e) => onChange("channelNotifications", e.target.value as ChannelNotificationOverrideValue)}
+              className="bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1 text-xs font-medium text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              <option value="default">🌐 Default ({inherited.channelNotificationsStr || "Mentions only"})</option>
+              <option value="mentions">📣 Mentions only</option>
+              <option value="all">💬 All messages</option>
+              <option value="off">🚫 Disabled</option>
+            </select>
+          )}
+        </div>
+      )}
+
+      {/* PRIVATE MESSAGE NOTIFICATIONS CONTROL */}
+      {(isGlobal || isServer || isDmMode) && (
+        <div className="flex items-center justify-between gap-x-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
+          <div className="flex items-center gap-x-1.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+            <MessageSquare className="w-3.5 h-3.5 text-zinc-500" />
+            Private message notifications
+          </div>
+          {isGlobal ? (
+            <select
+              value={(values.dmNotifications as string) || "all"}
+              onChange={(e) => onChange("dmNotifications", e.target.value as DmNotificationMode)}
+              className="bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1 text-xs font-medium text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              <option value="all">✅ Enabled (all messages)</option>
+              <option value="off">🚫 Disabled</option>
+            </select>
+          ) : (
+            <select
+              value={(values.dmNotifications as string) || "default"}
+              onChange={(e) => onChange("dmNotifications", e.target.value as DmNotificationOverrideValue)}
+              className="bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1 text-xs font-medium text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              <option value="default">🌐 Default ({inherited.dmNotificationsStr || "Enabled"})</option>
+              <option value="all">✅ Enabled</option>
+              <option value="off">🚫 Disabled</option>
+            </select>
+          )}
+        </div>
+      )}
+
       {/* 1. Sound Alert Switch or Select */}
       <div className="flex items-center justify-between gap-x-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
         <div className="flex items-center gap-x-1.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
           <Volume2 className="w-3.5 h-3.5 text-zinc-500" />
-          Sound Alert
+          Sound alert
         </div>
         {isGlobal ? (
           <Switch

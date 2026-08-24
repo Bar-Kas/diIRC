@@ -192,6 +192,8 @@ export const SettingsModal = () => {
           <NotificationSettingsFields
             mode="global"
             values={{
+              channelNotifications: notificationSettings.channelNotifications || "mentions",
+              dmNotifications: notificationSettings.dmNotifications || "all",
               sound: notificationSettings.soundEnabled,
               soundPreset: notificationSettings.soundPreset || "chime",
               dmSoundPreset: notificationSettings.dmSoundPreset || "chime",
@@ -202,7 +204,9 @@ export const SettingsModal = () => {
               taskbar: notificationSettings.taskbarHighlightEnabled,
             }}
             onChange={(field, val) => {
-              if (field === "sound") setGlobalNotificationSettings({ soundEnabled: Boolean(val) });
+              if (field === "channelNotifications") setGlobalNotificationSettings({ channelNotifications: val });
+              else if (field === "dmNotifications") setGlobalNotificationSettings({ dmNotifications: val });
+              else if (field === "sound") setGlobalNotificationSettings({ soundEnabled: Boolean(val) });
               else if (field === "soundPreset") setGlobalNotificationSettings({ soundPreset: val });
               else if (field === "dmSoundPreset") setGlobalNotificationSettings({ dmSoundPreset: val });
               else if (field === "customSoundUrl") setGlobalNotificationSettings({ customSoundUrl: val });
