@@ -360,10 +360,28 @@ export const useMockStore = create<MockState>()(
       },
       clearUnread: (key: string) => {
         set((state) => {
-          if (!state.unreadState[key]) return state;
           const nextState = { ...state.unreadState };
-          delete nextState[key];
-          return { unreadState: nextState };
+          let changed = false;
+
+          if (nextState[key]) {
+            delete nextState[key];
+            changed = true;
+          }
+
+          if (key.startsWith("conversation:")) {
+            const targetId = key.replace("conversation:", "");
+            for (const uKey of Object.keys(nextState)) {
+              if (uKey.startsWith("conversation:")) {
+                const raw = uKey.replace("conversation:", "");
+                if (raw === targetId || targetId.includes(raw) || raw.includes(targetId)) {
+                  delete nextState[uKey];
+                  changed = true;
+                }
+              }
+            }
+          }
+
+          return changed ? { unreadState: nextState } : state;
         });
       },
       historyLoadToken: 0,
@@ -1293,9 +1311,15 @@ export const useMockStore = create<MockState>()(
           const nextUnreads = { ...state.unreadState };
           delete nextUnreads[requestedKey];
           if (type === "conversation") {
-            delete nextUnreads[`conversation:${chatId}`];
-            const parts = chatId.split("-");
-            parts.forEach((pId) => delete nextUnreads[`conversation:${pId}`]);
+            const convId = chatId;
+            for (const uKey of Object.keys(nextUnreads)) {
+              if (uKey.startsWith("conversation:")) {
+                const raw = uKey.replace("conversation:", "");
+                if (raw === convId || convId.includes(raw) || raw.includes(convId)) {
+                  delete nextUnreads[uKey];
+                }
+              }
+            }
           }
 
           return {

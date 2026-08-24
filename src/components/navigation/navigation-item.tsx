@@ -38,21 +38,20 @@ export const NavigationItem = ({
         if (info.hasMention) hasMention = true;
       }
     }
-    for (const member of server.members) {
-      const info = unreadState[`conversation:${member.id}`];
-      if (info && info.count > 0) {
-        totalUnread += info.count;
-        if (info.hasMention) hasMention = true;
-      }
-    }
+    const processedConvKeys = new Set<string>();
     for (const [key, info] of Object.entries(unreadState)) {
-      if (key.startsWith("conversation:") && info.count > 0) {
-        const convId = key.replace("conversation:", "");
-        const parts = convId.split("-");
-        if (parts.some((pId) => server.members.some((m) => m.id === pId))) {
-          if (!server.members.some((m) => m.id === convId)) {
-            totalUnread += info.count;
-            if (info.hasMention) hasMention = true;
+      if (key.startsWith("conversation:") && info.count > 0 && !processedConvKeys.has(key)) {
+        const rawId = key.replace("conversation:", "");
+        if (server.members.some((m) => rawId.includes(m.id) || m.id === rawId)) {
+          totalUnread += info.count;
+          if (info.hasMention) hasMention = true;
+          for (const otherKey of Object.keys(unreadState)) {
+            if (otherKey.startsWith("conversation:")) {
+              const otherRaw = otherKey.replace("conversation:", "");
+              if (otherRaw === rawId || rawId.includes(otherRaw) || otherRaw.includes(rawId)) {
+                processedConvKeys.add(otherKey);
+              }
+            }
           }
         }
       }
