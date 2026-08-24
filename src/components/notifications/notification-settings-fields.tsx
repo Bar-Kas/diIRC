@@ -505,7 +505,7 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
             <div className="flex items-center justify-between gap-x-2">
               <div className="flex items-center gap-x-1.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
                 <Clock className="w-3.5 h-3.5 text-zinc-500" />
-                Sound Cooldown / Rate Limit
+                Notification cooldown / rate limit
               </div>
               {!isGlobal && (
                 <select

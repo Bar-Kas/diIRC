@@ -185,8 +185,9 @@ const isTauriEnv =
   typeof window !== "undefined" &&
   ("__TAURI_INTERNALS__" in window || "__TAURI_IPC__" in window || "__TAURI__" in window);
 
-// --- Per-Tag Sound Throttling Map ---
+// --- Per-Tag Throttling Maps ---
 const lastSoundPlayedByTag = new Map<string, number>();
+const lastPopupPlayedByTag = new Map<string, number>();
 
 // --- Per-Channel Accumulative Notification State ---
 interface UnreadGroup {
@@ -201,6 +202,8 @@ const unreadGroupsMap = new Map<string, UnreadGroup>();
 
 export function clearNotificationGroup(tag: string) {
   unreadGroupsMap.delete(tag);
+  lastSoundPlayedByTag.delete(tag);
+  lastPopupPlayedByTag.delete(tag);
   if (isTauriEnv && isLinux) {
     invoke("clear_os_notification", { tag }).catch(() => {});
   }
@@ -245,57 +248,63 @@ export async function triggerIncomingNotification({
       unreadGroupsMap.set(tag, group);
     }
 
-    let finalTitle = group.baseTitle;
-    let finalBody = group.lastBody;
+    const now = Date.now();
+    const lastPopup = lastPopupPlayedByTag.get(tag) || 0;
+    if (now - lastPopup >= soundCooldownMs) {
+      lastPopupPlayedByTag.set(tag, now);
 
-    if (group.count > 1) {
-      const channelOrName = group.baseTitle.split(" - ")[0] || group.baseTitle;
-      finalTitle = `${channelOrName} (${group.count} new messages)`;
-      finalBody = group.lastSender ? `${group.lastSender}: ${group.lastBody}` : group.lastBody;
-    }
+      let finalTitle = group.baseTitle;
+      let finalBody = group.lastBody;
 
-    if (isTauriEnv && isLinux) {
-      try {
-        await invoke("send_os_notification", {
-          title: finalTitle,
-          body: finalBody,
-          tag: group.tag,
-        });
-      } catch (e) {
-        console.warn("[NotificationService] notify-send failed:", e);
+      if (group.count > 1) {
+        const channelOrName = group.baseTitle.split(" - ")[0] || group.baseTitle;
+        finalTitle = `${channelOrName} (${group.count} new messages)`;
+        finalBody = group.lastSender ? `${group.lastSender}: ${group.lastBody}` : group.lastBody;
       }
-    } else if (isTauriEnv && !isLinux) {
-      try {
-        let granted = await tauriIsPermissionGranted();
-        if (!granted) {
-          const perm = await tauriRequestPermission();
-          granted = perm === "granted";
-        }
-        if (granted) {
-          await tauriSendNotification({ title: finalTitle, body: finalBody });
-        }
-      } catch (e) {
-        console.warn("[NotificationService] Native Tauri notification failed:", e);
-      }
-    } else if (typeof window !== "undefined" && "Notification" in window) {
-      if (Notification.permission === "granted") {
+
+      if (isTauriEnv && isLinux) {
         try {
-          const groupTag = group.tag;
-          const notif = new Notification(finalTitle, { body: finalBody, tag: groupTag });
-          notif.onclick = () => {
-            if (typeof window !== "undefined") {
-              window.focus();
-            }
-            if (isTauriEnv) {
-              import("@tauri-apps/api/event")
-                .then(({ emit }) => {
-                  emit("notification_clicked", groupTag);
-                })
-                .catch(() => {});
-            }
-          };
+          await invoke("send_os_notification", {
+            title: finalTitle,
+            body: finalBody,
+            tag: group.tag,
+          });
         } catch (e) {
-          console.error("[NotificationService] Web Notification error:", e);
+          console.warn("[NotificationService] notify-send failed:", e);
+        }
+      } else if (isTauriEnv && !isLinux) {
+        try {
+          let granted = await tauriIsPermissionGranted();
+          if (!granted) {
+            const perm = await tauriRequestPermission();
+            granted = perm === "granted";
+          }
+          if (granted) {
+            await tauriSendNotification({ title: finalTitle, body: finalBody });
+          }
+        } catch (e) {
+          console.warn("[NotificationService] Native Tauri notification failed:", e);
+        }
+      } else if (typeof window !== "undefined" && "Notification" in window) {
+        if (Notification.permission === "granted") {
+          try {
+            const groupTag = group.tag;
+            const notif = new Notification(finalTitle, { body: finalBody, tag: groupTag });
+            notif.onclick = () => {
+              if (typeof window !== "undefined") {
+                window.focus();
+              }
+              if (isTauriEnv) {
+                import("@tauri-apps/api/event")
+                  .then(({ emit }) => {
+                    emit("notification_clicked", groupTag);
+                  })
+                  .catch(() => {});
+              }
+            };
+          } catch (e) {
+            console.error("[NotificationService] Web Notification error:", e);
+          }
         }
       }
     }
