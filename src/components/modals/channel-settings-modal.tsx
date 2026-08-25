@@ -10,7 +10,7 @@ import {
 import { useModal } from "@/hooks/use-modal-store";
 import { Button } from "@/components/ui/button";
 import { useMockStore } from "@/lib/mock-store";
-import { NotificationOverrideValue, SoundPreset } from "@/types";
+import { NotificationOverrideValue, SoundPreset, ChannelNotificationOverrideValue, DmNotificationOverrideValue } from "@/types";
 import { resolveEffectiveNotificationSettings } from "@/lib/notification-service";
 import { NotificationSettingsFields } from "@/components/notifications/notification-settings-fields";
 
@@ -38,6 +38,8 @@ export const ChannelSettingsModal = () => {
     ? currentChannel.notificationSettings
     : conversationOverrides;
 
+  const [channelNotificationsOverride, setChannelNotificationsOverride] = useState<ChannelNotificationOverrideValue>("default");
+  const [dmNotificationsOverride, setDmNotificationsOverride] = useState<DmNotificationOverrideValue>("default");
   const [soundOverride, setSoundOverride] = useState<NotificationOverrideValue>("default");
   const [popupOverride, setPopupOverride] = useState<NotificationOverrideValue>("default");
   const [taskbarOverride, setTaskbarOverride] = useState<NotificationOverrideValue>("default");
@@ -47,6 +49,8 @@ export const ChannelSettingsModal = () => {
 
   useEffect(() => {
     if (isModalOpen) {
+      setChannelNotificationsOverride(targetOverrides?.channelNotifications || "default");
+      setDmNotificationsOverride(targetOverrides?.dmNotifications || "default");
       setSoundOverride(targetOverrides?.sound || "default");
       setPopupOverride(targetOverrides?.popup || "default");
       setTaskbarOverride(targetOverrides?.taskbar || "default");
@@ -62,6 +66,8 @@ export const ChannelSettingsModal = () => {
 
   const handleSave = () => {
     const updated = {
+      channelNotifications: channelNotificationsOverride,
+      dmNotifications: dmNotificationsOverride,
       sound: soundOverride,
       popup: popupOverride,
       taskbar: taskbarOverride,
@@ -89,6 +95,13 @@ export const ChannelSettingsModal = () => {
     isDm
   );
 
+  const parentChannelNotificationsStr =
+    parentEffective.channelNotifications === "all"
+      ? "All messages"
+      : parentEffective.channelNotifications === "off"
+      ? "Disabled"
+      : "Mentions only";
+  const parentDmNotificationsStr = parentEffective.dmNotifications === "off" ? "Disabled" : "Enabled";
   const parentSoundStr = parentEffective.sound ? "Enabled" : "Muted";
   const parentPopupStr = parentEffective.popup ? "Enabled" : "Off";
   const parentTaskbarStr = parentEffective.taskbar ? "Enabled" : "Off";
@@ -124,6 +137,8 @@ export const ChannelSettingsModal = () => {
           <NotificationSettingsFields
             mode={isDm ? "dm" : "channel"}
             values={{
+              channelNotifications: channelNotificationsOverride,
+              dmNotifications: dmNotificationsOverride,
               sound: soundOverride,
               soundPreset: soundPresetOverride,
               customSoundUrl: customSoundUrlOverride,
@@ -132,6 +147,8 @@ export const ChannelSettingsModal = () => {
               taskbar: taskbarOverride,
             }}
             inherited={{
+              channelNotificationsStr: parentChannelNotificationsStr,
+              dmNotificationsStr: parentDmNotificationsStr,
               soundStr: parentSoundStr,
               soundPresetStr: parentSoundPresetStr,
               cooldownSec: parentCooldownSec,
@@ -139,7 +156,9 @@ export const ChannelSettingsModal = () => {
               taskbarStr: parentTaskbarStr,
             }}
             onChange={(field, val) => {
-              if (field === "sound") setSoundOverride(val);
+              if (field === "channelNotifications") setChannelNotificationsOverride(val);
+              else if (field === "dmNotifications") setDmNotificationsOverride(val);
+              else if (field === "sound") setSoundOverride(val);
               else if (field === "soundPreset") setSoundPresetOverride(val);
               else if (field === "customSoundUrl") setCustomSoundUrlOverride(val);
               else if (field === "soundCooldown") setSoundCooldownOverride(val);
@@ -163,7 +182,7 @@ export const ChannelSettingsModal = () => {
             onClick={handleSave}
             className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-5 py-2 rounded-lg transition shadow-md hover:shadow-indigo-500/20"
           >
-            Save Overrides
+            Save changes
           </Button>
         </div>
       </DialogContent>

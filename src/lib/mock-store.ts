@@ -25,6 +25,7 @@ import {
 } from "./mock-data";
 import { v4 as uuidv4 } from "uuid";
 import { ImageUploadConfig, UrlAuthRule } from "./upload/types";
+import { MESSAGE_DEDUPLICATION_MODE } from "./config";
 
 export const MAX_HISTORY_WINDOW = 600;
 export const MAX_PENDING_LIVE = 100;
@@ -253,6 +254,10 @@ interface MockState {
   conversationNotificationSettings: Record<string, NotificationOverride>;
   autoUpdateMode: "auto" | "ask" | "disabled";
   setAutoUpdateMode: (mode: "auto" | "ask" | "disabled") => void;
+  sortDmByUnread: boolean;
+  dmSortOrder: "opening" | "alphabetical";
+  setSortDmByUnread: (enabled: boolean) => void;
+  setDmSortOrder: (order: "opening" | "alphabetical") => void;
 
   // Connection Actions
   setIrcConnected: (serverId: string, isConnected: boolean, error?: string | null) => void;
@@ -377,10 +382,28 @@ export const useMockStore = create<MockState>()(
       },
       clearUnread: (key: string) => {
         set((state) => {
-          if (!state.unreadState[key]) return state;
           const nextState = { ...state.unreadState };
-          delete nextState[key];
-          return { unreadState: nextState };
+          let changed = false;
+
+          if (nextState[key]) {
+            delete nextState[key];
+            changed = true;
+          }
+
+          if (key.startsWith("conversation:")) {
+            const targetId = key.replace("conversation:", "");
+            for (const uKey of Object.keys(nextState)) {
+              if (uKey.startsWith("conversation:")) {
+                const raw = uKey.replace("conversation:", "");
+                if (raw === targetId || targetId.includes(raw) || raw.includes(targetId)) {
+                  delete nextState[uKey];
+                  changed = true;
+                }
+              }
+            }
+          }
+
+          return changed ? { unreadState: nextState } : state;
         });
       },
       historyLoadToken: 0,
@@ -419,10 +442,16 @@ export const useMockStore = create<MockState>()(
         dmSoundPreset: "chime",
         popupEnabled: true,
         taskbarHighlightEnabled: true,
+        channelNotifications: "mentions",
+        dmNotifications: "all",
       },
       conversationNotificationSettings: {},
       autoUpdateMode: "ask",
       setAutoUpdateMode: (mode) => set({ autoUpdateMode: mode }),
+      sortDmByUnread: true,
+      dmSortOrder: "opening",
+      setSortDmByUnread: (enabled) => set({ sortDmByUnread: enabled }),
+      setDmSortOrder: (order) => set({ dmSortOrder: order }),
 
       setIrcConnected: (serverId: string, isConnected: boolean, error: string | null = null) =>
         set((state) => ({
@@ -1308,9 +1337,15 @@ export const useMockStore = create<MockState>()(
           const nextUnreads = { ...state.unreadState };
           delete nextUnreads[requestedKey];
           if (type === "conversation") {
-            delete nextUnreads[`conversation:${chatId}`];
-            const parts = chatId.split("-");
-            parts.forEach((pId) => delete nextUnreads[`conversation:${pId}`]);
+            const convId = chatId;
+            for (const uKey of Object.keys(nextUnreads)) {
+              if (uKey.startsWith("conversation:")) {
+                const raw = uKey.replace("conversation:", "");
+                if (raw === convId || convId.includes(raw) || raw.includes(convId)) {
+                  delete nextUnreads[uKey];
+                }
+              }
+            }
           }
 
           return {
@@ -1689,14 +1724,16 @@ export const useMockStore = create<MockState>()(
         const state = get();
         const activeMsgs = state.activeChatKey === key ? (state.messages[channelId] || []) : [];
         const lastMsg = activeMsgs[activeMsgs.length - 1];
-        if (
-          isSystem &&
-          lastMsg &&
-          lastMsg.isSystem &&
-          lastMsg.content === content &&
-          new Date().getTime() - new Date(lastMsg.createdAt).getTime() < 3000
-        ) {
-          return lastMsg;
+        if (MESSAGE_DEDUPLICATION_MODE === "A") {
+          if (
+            isSystem &&
+            lastMsg &&
+            lastMsg.isSystem &&
+            lastMsg.content === content &&
+            new Date().getTime() - new Date(lastMsg.createdAt).getTime() < 3000
+          ) {
+            return lastMsg;
+          }
         }
 
         const newMessage: Message = {

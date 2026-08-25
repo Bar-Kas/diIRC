@@ -3,13 +3,14 @@ import {
   ChannelType, 
   Server
 } from "@/types";
-import { Hash, X, Lock, Sliders, Settings } from "lucide-react";
+import { Hash, X, Lock, Sliders, Settings, Bell, BellOff } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
 import { ActionTooltip } from "@/components/action-tooltip";
 import { ModalType, useModal } from "@/hooks/use-modal-store";
 import { useMockStore } from "@/lib/mock-store";
+import { resolveEffectiveNotificationSettings } from "@/lib/notification-service";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -46,6 +47,8 @@ export const ServerChannel = ({
   const channelUserModesMap = useMockStore((state) => state.channelUserModes);
   const deleteChannel = useMockStore((state) => state.deleteChannel);
   const confirmLeaveChannel = useMockStore((state) => state.confirmLeaveChannel ?? true);
+  const globalNotificationSettings = useMockStore((state) => state.notificationSettings);
+  const setChannelNotificationSettings = useMockStore((state) => state.setChannelNotificationSettings);
 
   const ourNick = server?.nicknames?.[0] || currentProfile.name;
 
@@ -56,6 +59,14 @@ export const ServerChannel = ({
     ourModes.some((m) => ["o", "a", "q"].includes(m.toLowerCase()));
 
   const Icon = iconMap[channel.type];
+
+  const effectiveSettings = resolveEffectiveNotificationSettings(
+    globalNotificationSettings,
+    server.notificationSettings,
+    channel.notificationSettings,
+    false
+  );
+  const isMuted = effectiveSettings.channelNotifications === "off";
 
   const onClick = () => {
     navigate(`/servers/${params?.serverId}/channels/${channel.id}`);
@@ -68,7 +79,7 @@ export const ServerChannel = ({
 
   const isSelected = params?.channelId === channel.id;
   const unread = useMockStore((state) => state.unreadState[`channel:${channel.id}`]);
-  const isUnread = !isSelected && !!unread && unread.count > 0;
+  const isUnread = !!unread && unread.count > 0;
 
   const handleLeaveChannel = (e?: React.MouseEvent) => {
     if (e) {
@@ -82,6 +93,13 @@ export const ServerChannel = ({
         navigate(`/servers/${server.id}`);
       }
     }
+  };
+
+  const handleToggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setChannelNotificationSettings(server.id, channel.id, {
+      channelNotifications: isMuted ? "default" : "off",
+    });
   };
 
   const onMouseDown = (e: React.MouseEvent) => {
@@ -114,7 +132,7 @@ export const ServerChannel = ({
             <span
               className={cn(
                 "absolute left-0 w-1.5 h-4 rounded-r-full transition-all",
-                unread.hasMention ? "bg-rose-500 animate-pulse" : "bg-indigo-500 dark:bg-indigo-400"
+                unread.hasMention ? "bg-rose-500" : "bg-indigo-500 dark:bg-indigo-400"
               )}
             />
           )}
@@ -124,6 +142,8 @@ export const ServerChannel = ({
               ? "text-primary dark:text-zinc-200"
               : isUnread
               ? "text-indigo-600 dark:text-indigo-400 font-bold"
+              : isMuted
+              ? "text-zinc-400/60 dark:text-zinc-500/60"
               : "text-zinc-500 dark:text-zinc-400"
           )} />
           <p className={cn(
@@ -132,6 +152,8 @@ export const ServerChannel = ({
               ? "font-semibold text-primary dark:text-zinc-200 dark:group-hover:text-white"
               : isUnread
               ? "font-bold text-zinc-900 dark:text-white drop-shadow-sm"
+              : isMuted
+              ? "font-medium text-zinc-400 dark:text-zinc-500 group-hover:text-zinc-500 dark:group-hover:text-zinc-400"
               : "font-semibold text-zinc-500 group-hover:text-zinc-600 dark:text-zinc-400 dark:group-hover:text-zinc-300"
           )}>
             {channel.name}
@@ -145,21 +167,28 @@ export const ServerChannel = ({
             <span
               className={cn(
                 "ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full text-white leading-none shrink-0 shadow-sm transition-transform animate-in zoom-in-50",
-                unread.hasMention ? "bg-rose-500 shadow-rose-500/30 animate-pulse" : "bg-indigo-500 shadow-indigo-500/30"
+                unread.hasMention ? "bg-rose-500 shadow-rose-500/30" : "bg-indigo-500 shadow-indigo-500/30"
               )}
             >
               {unread.hasMention ? `@${unread.count}` : unread.count}
             </span>
           )}
           <div className="ml-auto flex items-center gap-x-2">
-            {isChannelOp && (
-              <ActionTooltip label="Channel settings (operator)">
-                <Sliders
-                  onClick={(e) => onAction(e, "channelOperatorSettings")}
-                  className="hidden group-hover:block w-4 h-4 text-zinc-500 hover:text-indigo-500 dark:text-zinc-400 dark:hover:text-indigo-400 transition cursor-pointer"
-                />
-              </ActionTooltip>
-            )}
+            <ActionTooltip label={isMuted ? "Unmute channel" : "Mute channel"}>
+              <span
+                onClick={handleToggleMute}
+                className={cn(
+                  "p-0.5 rounded transition cursor-pointer text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300",
+                  isMuted ? "block text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300" : "hidden group-hover:block"
+                )}
+              >
+                {isMuted ? (
+                  <BellOff className="w-4 h-4" />
+                ) : (
+                  <Bell className="w-4 h-4" />
+                )}
+              </span>
+            </ActionTooltip>
             <ActionTooltip label="Leave">
               <X
                 onClick={handleLeaveChannel}

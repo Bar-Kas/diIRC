@@ -114,6 +114,18 @@ export const ChatInput = ({
   const attachedImagesRef = useRef(attachedImages);
   attachedImagesRef.current = attachedImages;
 
+  const isIrcConnected = activeServer ? !!ircConnectedServers[activeServer.id] : true;
+  const isUploading = attachedImages.some((img) => img.isUploading);
+  const isLoading = isUploading || !isIrcConnected || isMuted;
+
+  const focusInput = useCallback(() => {
+    textareaRef.current?.focus();
+    setTimeout(() => {
+      textareaRef.current?.focus();
+      form.setFocus("content");
+    }, 0);
+  }, [form]);
+
   useEffect(() => {
     if (!activeId) return;
 
@@ -134,14 +146,13 @@ export const ChatInput = ({
 
     prevActiveIdRef.current = activeId;
 
-    form.setFocus("content");
-    setIsFocused(true);
+    focusInput();
 
     const timer = setTimeout(() => {
       isSwitchingRef.current = false;
     }, 0);
     return () => clearTimeout(timer);
-  }, [activeId, form, getDraft, setDraft]);
+  }, [activeId, form, getDraft, setDraft, focusInput]);
 
   const content = form.watch("content");
 
@@ -160,14 +171,14 @@ export const ChatInput = ({
       const customEvent = e as CustomEvent<{ id: string; content: string }>;
       if (customEvent.detail && customEvent.detail.id === activeId) {
         form.setValue("content", customEvent.detail.content);
-        form.setFocus("content");
+        focusInput();
       }
     };
     window.addEventListener("restore_unsent_message", handleRestore);
     return () => {
       window.removeEventListener("restore_unsent_message", handleRestore);
     };
-  }, [activeId, form]);
+  }, [activeId, form, focusInput]);
 
   useEffect(() => {
     if (enableCommandSuggestions && isFocused && content?.startsWith("/")) {
@@ -213,7 +224,6 @@ export const ChatInput = ({
   // loses keyboard focus after every sent message.
   const isLoading = isUploading || !isIrcConnected || isMuted;
   const isInputDisabled = !isIrcConnected || isMuted;
-
   const processFileUpload = useCallback(async (file: File) => {
     if (uploadConfig.provider === "disabled") {
       setUploadError("Uploading is disabled in settings. Enable an upload provider in Settings.");
@@ -240,7 +250,7 @@ export const ChatInput = ({
       setAttachedImages((prev) =>
         prev.map((item) => (item.id === id ? { ...item, url, isUploading: false } : item))
       );
-      form.setFocus("content");
+      focusInput();
     } catch (err: any) {
       console.error("Upload error:", err);
       setUploadError(err?.message || "Failed to upload file.");
@@ -248,7 +258,7 @@ export const ChatInput = ({
       URL.revokeObjectURL(previewUrl);
       setTimeout(() => setUploadError(null), 5000);
     }
-  }, [uploadConfig, form]);
+  }, [uploadConfig, focusInput]);
 
   const processFilePathUpload = useCallback(async (filePath: string) => {
     if (uploadConfig.provider === "disabled") {
@@ -557,7 +567,7 @@ export const ChatInput = ({
           }
           form.reset({ content: "" });
           clearAllAttachments();
-          form.setFocus("content");
+          focusInput();
           return;
         }
       }
@@ -567,7 +577,7 @@ export const ChatInput = ({
       }
       form.reset({ content: "" });
       clearAllAttachments();
-      form.setFocus("content");
+      focusInput();
 
       for (const line of linesToSend) {
         if (type === "channel" && query?.channelId) {
@@ -587,7 +597,7 @@ export const ChatInput = ({
               sender: senderMember.profile.name,
             }).catch(() => {});
             form.setValue("content", line);
-            form.setFocus("content");
+            focusInput();
             return;
           }
         } else if (type === "conversation" && query?.conversationId) {
@@ -616,7 +626,7 @@ export const ChatInput = ({
               useMockStore.getState().syncActiveConversationsWithDisk(activeServer.id, loggedNicks);
             } catch (e) {}
             form.setValue("content", line);
-            form.setFocus("content");
+            focusInput();
             return;
           }
         }

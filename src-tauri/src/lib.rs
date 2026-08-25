@@ -3,7 +3,7 @@ use chrono::Local;
 use futures::prelude::*;
 use irc::client::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -199,6 +199,8 @@ struct IrcConnectParams {
 struct IrcState {
     senders: Arc<Mutex<HashMap<String, Sender>>>,
     nicknames: Arc<Mutex<HashMap<String, String>>>,
+    /// Key: "server_id\x00channel_lowercase" → set of lowercase nicks
+    channel_members: Arc<Mutex<HashMap<String, HashSet<String>>>>,
 }
 
 #[derive(Clone)]
@@ -1032,6 +1034,7 @@ async fn connect_irc(
     let stream_server_id = server_id.clone();
     let senders_clone = state.senders.clone();
     let nicknames_clone = state.nicknames.clone();
+    let channel_members_clone = state.channel_members.clone();
     let app_clone = app.clone();
     let log_state_clone = LogState {
         writers: log_state.writers.clone(),
@@ -1148,6 +1151,13 @@ async fn connect_irc(
                                 };
                                 let _ = app_clone.emit("irc_user_event", payload_users);
 
+                                // Track membership for QUIT routing
+                                let cm_key = format!("{}\x00{}", stream_server_id, channel.to_lowercase());
+                                channel_members_clone.lock().await
+                                    .entry(cm_key)
+                                    .or_default()
+                                    .insert(sender_name.to_lowercase());
+
                                 let my_nick = nicknames_clone.lock().await.get(&stream_server_id).cloned();
                                 if let Some(ref nick) = my_nick {
                                     if nick.eq_ignore_ascii_case(&sender_name) {
@@ -1158,27 +1168,111 @@ async fn connect_irc(
                                 }
                             }
                         }
-                        Command::PART(channel, _) => {
+                        Command::PART(channel, ref comment_opt) => {
                             if let Some(source) = message.prefix {
                                 let sender_name = match source.clone() {
                                     Prefix::Nickname(nick, _, _) => nick,
                                     Prefix::ServerName(name) => name,
                                 };
+                                let full_source = match source {
+                                    Prefix::Nickname(nick, user, host) => {
+                                        format!("{} ({}@{})", nick, user, host)
+                                    }
+                                    Prefix::ServerName(name) => name,
+                                };
+                                let sys_content = match comment_opt {
+                                    Some(reason) if !reason.trim().is_empty() => {
+                                        format!("{} has left ({})", full_source, reason.trim())
+                                    }
+                                    _ => format!("{} has left", full_source),
+                                };
+                                let payload = IrcMessage {
+                                    server_id: stream_server_id.clone(),
+                                    sender: sender_name.clone(),
+                                    content: sys_content,
+                                    channel: channel.clone(),
+                                    is_system: true,
+                                };
+                                let _ = app_clone.emit("irc_message", payload);
+
                                 let payload_users = IrcUserEvent {
                                     server_id: stream_server_id.clone(),
-                                    channel,
-                                    users: vec![sender_name],
+                                    channel: channel.clone(),
+                                    users: vec![sender_name.clone()],
                                     event_type: "PART".to_string(),
                                 };
                                 let _ = app_clone.emit("irc_user_event", payload_users);
-                            }
+
+                                // Remove from membership tracking
+                                let cm_key = format!("{}\x00{}", stream_server_id, channel.to_lowercase());
+                                if let Some(set) = channel_members_clone.lock().await.get_mut(&cm_key) {
+                                    set.remove(&sender_name.to_lowercase());
+                                }
+                }
                         }
-                        Command::QUIT(_) => {
+                        Command::QUIT(ref comment_opt) => {
                             if let Some(source) = message.prefix {
                                 let sender_name = match source.clone() {
                                     Prefix::Nickname(nick, _, _) => nick,
                                     Prefix::ServerName(name) => name,
                                 };
+                                let full_source = match source {
+                                    Prefix::Nickname(nick, user, host) => {
+                                        format!("{} ({}@{})", nick, user, host)
+                                    }
+                                    Prefix::ServerName(name) => name,
+                                };
+                                let sys_content = match comment_opt {
+                                    Some(reason) if !reason.trim().is_empty() => {
+                                        format!("{} has quit ({})", full_source, reason.trim())
+                                    }
+                                    _ => format!("{} has quit", full_source),
+                                };
+
+                                // Find all channels the user was in and emit a message per channel
+                                let sender_lower = sender_name.to_lowercase();
+                                let prefix = format!("{}\x00", stream_server_id);
+                                let mut matched_channels: Vec<String> = Vec::new();
+                                {
+                                    let mut cm = channel_members_clone.lock().await;
+                                    let keys_to_update: Vec<String> = cm.keys()
+                                        .filter(|k| k.starts_with(&prefix))
+                                        .cloned()
+                                        .collect();
+                                    for key in keys_to_update {
+                                        if let Some(set) = cm.get_mut(&key) {
+                                            if set.remove(&sender_lower) {
+                                                // key is "server_id\x00channel_lower"
+                                                let chan = key[prefix.len()..].to_string();
+                                                matched_channels.push(chan);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if matched_channels.is_empty() {
+                                    // Fallback: emit with empty channel so frontend can handle
+                                    let payload = IrcMessage {
+                                        server_id: stream_server_id.clone(),
+                                        sender: sender_name.clone(),
+                                        content: sys_content.clone(),
+                                        channel: "".to_string(),
+                                        is_system: true,
+                                    };
+                                    let _ = app_clone.emit("irc_message", payload);
+                                } else {
+                                    for chan in &matched_channels {
+                                        let payload = IrcMessage {
+                                            server_id: stream_server_id.clone(),
+                                            sender: sender_name.clone(),
+                                            content: sys_content.clone(),
+                                            channel: chan.clone(),
+                                            is_system: true,
+                                        };
+                                        let _ = app_clone.emit("irc_message", payload);
+                                    }
+                                }
+
                                 let payload_users = IrcUserEvent {
                                     server_id: stream_server_id.clone(),
                                     channel: "".to_string(),
@@ -1211,6 +1305,15 @@ async fn connect_irc(
                                 };
                                 let _ = app_clone.emit("irc_user_event", payload);
 
+                                // Populate backend membership tracking from NAMES list
+                                let cm_key = format!("{}\x00{}", stream_server_id, channel.to_lowercase());
+                                let mut cm = channel_members_clone.lock().await;
+                                let set = cm.entry(cm_key).or_default();
+                                for token in users_str.split_whitespace() {
+                                    let nick = token.trim_start_matches(&['@', '+', '%', '~', '&'][..]).to_lowercase();
+                                    set.insert(nick);
+                                }
+
                                 let ops_payload = IrcOpsEvent {
                                     server_id: stream_server_id.clone(),
                                     channel: channel.to_string(),
@@ -1219,7 +1322,13 @@ async fn connect_irc(
                                 let _ = app_clone.emit("irc_ops_event", ops_payload);
                             }
                         }
-                        Command::Response(Response::RPL_WELCOME, ref _args) => {
+                        Command::Response(Response::RPL_WELCOME, ref args) => {
+                            if let Some(welcome_nick) = args.first() {
+                                nicknames_clone
+                                    .lock()
+                                    .await
+                                    .insert(stream_server_id.clone(), welcome_nick.clone());
+                            }
                             let _ = app_clone.emit(
                                 "irc_status",
                                 IrcStatusEvent {
@@ -1786,6 +1895,30 @@ async fn connect_irc(
                                 inviter: sender_name,
                             };
                             let _ = app_clone.emit("irc_invited", invite_payload);
+                        }
+                        Command::NICK(ref new_nick) => {
+                            if let Some(source) = message.prefix {
+                                let sender_name = match source {
+                                    Prefix::Nickname(nick, _, _) => nick,
+                                    Prefix::ServerName(name) => name,
+                                };
+                                let msg_payload = IrcMessage {
+                                    server_id: stream_server_id.clone(),
+                                    sender: sender_name.clone(),
+                                    content: format!("{} is now known as {}", sender_name, new_nick),
+                                    channel: "".to_string(),
+                                    is_system: true,
+                                };
+                                let _ = app_clone.emit("irc_message", msg_payload);
+
+                                let mut nicks = nicknames_clone.lock().await;
+                                let is_own = nicks
+                                    .get(&stream_server_id)
+                                    .map_or(false, |own_nick| own_nick.eq_ignore_ascii_case(&sender_name));
+                                if is_own {
+                                    nicks.insert(stream_server_id.clone(), new_nick.clone());
+                                }
+                            }
                         }
                         _ => {}
                     }
@@ -2395,6 +2528,7 @@ pub fn run() {
         .manage(IrcState {
             senders: Arc::new(Mutex::new(HashMap::new())),
             nicknames: Arc::new(Mutex::new(HashMap::new())),
+            channel_members: Arc::new(Mutex::new(HashMap::new())),
         })
         .manage(LogState {
             writers: Arc::new(Mutex::new(HashMap::new())),

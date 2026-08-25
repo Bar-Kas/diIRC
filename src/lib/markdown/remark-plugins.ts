@@ -120,3 +120,80 @@ export function remarkUnderline() {
     });
   };
 }
+
+function createMentionNode(value: string, isMyMention: boolean) {
+  return {
+    type: "mention",
+    children: [{ type: "text", value }],
+    data: {
+      hName: "mention",
+      hProperties: {
+        isMyMention: isMyMention ? "true" : "false",
+      },
+    },
+  } as any;
+}
+
+/**
+ * Remark plugin for mention syntax (`@nickname`, `nickname:`, `nickname,` or direct nickname match).
+ */
+export function remarkMention(options?: { myNicks?: string[]; allMemberNicks?: string[] }) {
+  const myNicks = options?.myNicks || [];
+  const allMemberNicks = options?.allMemberNicks || [];
+
+  return (tree: Root) => {
+    const myNicksLower = new Set(myNicks.map((n) => n.toLowerCase()));
+    const allNicksLower = new Set(allMemberNicks.map((n) => n.toLowerCase()));
+
+    const escapedMyNicks = myNicks
+      .filter(Boolean)
+      .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+
+    const regexPattern =
+      `(@[a-zA-Z0-9_\\-\\[\\]\\\`^{}|]+)` +
+      (escapedMyNicks.length > 0
+        ? `|(\\b(?:${escapedMyNicks.join("|")})(?:[:,]?(?=\\s|$)|\\b))`
+        : "");
+
+    if (!regexPattern) return;
+
+    visit(tree, "text", (node: Text, index: number | undefined, parent: Parent | undefined) => {
+      if (!parent || index === undefined) return;
+      if (parent.type === "inlineCode" || parent.type === "code" || parent.type === "mention") return;
+
+      const value = node.value;
+      if (!value) return;
+
+      const regex = new RegExp(regexPattern, "gi");
+      let match: RegExpExecArray | null;
+      let lastIndex = 0;
+      const newNodes: any[] = [];
+      let hasMatch = false;
+
+      while ((match = regex.exec(value)) !== null) {
+        const matchedStr = match[0];
+        const cleanNick = matchedStr.replace(/^@/, "").replace(/[:,]$/, "").toLowerCase();
+        const isMyMention = myNicksLower.has(cleanNick);
+        const isMemberMention = isMyMention || allNicksLower.has(cleanNick) || matchedStr.startsWith("@");
+
+        if (!isMemberMention) continue;
+
+        hasMatch = true;
+        const before = value.slice(lastIndex, match.index);
+        if (before) newNodes.push({ type: "text", value: before });
+
+        newNodes.push(createMentionNode(matchedStr, isMyMention));
+        lastIndex = match.index + matchedStr.length;
+      }
+
+      if (!hasMatch) return;
+
+      const after = value.slice(lastIndex);
+      if (after) newNodes.push({ type: "text", value: after });
+
+      parent.children.splice(index, 1, ...newNodes);
+      return index + newNodes.length;
+    });
+  };
+}
+
