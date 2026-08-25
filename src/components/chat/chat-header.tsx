@@ -4,6 +4,7 @@ import { MobileToggle } from "@/components/mobile-toggle";
 import { UserAvatar } from "@/components/user-avatar";
 import { UserHoverCard } from "@/components/user-hover-card";
 import { ActionTooltip } from "@/components/action-tooltip";
+import { ChatSearchInput } from "@/components/chat/search/chat-search-input";
 import { useUIStore } from "@/hooks/use-ui-store";
 import { useModal } from "@/hooks/use-modal-store";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,15 @@ interface ChatHeaderProps {
   channel?: Channel;
   server?: ServerType;
   targetMember?: Member & { profile: Profile };
+  /** Context for the Discord-style message search; omit to hide the search box. */
+  searchContext?: {
+    type: "channel" | "conversation";
+    chatId: string;
+    serverId: string;
+    target: string;
+  };
+  /** Member nicknames for the search input's from:/mentions: autocompletion. */
+  searchMembers?: { name: string; realname?: string }[];
 }
 
 export const ChatHeader = ({
@@ -29,6 +39,8 @@ export const ChatHeader = ({
   channel,
   server,
   targetMember,
+  searchContext,
+  searchMembers,
 }: ChatHeaderProps) => {
   const { 
     showNavigationSidebar, 
@@ -154,7 +166,11 @@ export const ChatHeader = ({
       <div className="ml-auto flex items-center gap-x-3 shrink-0">
         <ConnectionStatus />
 
-        <ActionTooltip 
+        {searchContext && (
+          <ChatSearchInput context={searchContext} members={searchMembers} />
+        )}
+
+        <ActionTooltip
           side="bottom" 
           label={showMembersSidebar ? "Hide user list" : "Show user list"}
         >

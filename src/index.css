@@ -249,3 +249,23 @@ body,
   scrollbar-width: none !important;
 }
 
+
+/* ── Search jump-to-message flash highlight (Discord-style yellow flash) ── */
+@keyframes search-highlight-flash {
+  0%, 55% {
+    background-color: rgba(250, 204, 21, 0.28);
+    box-shadow: inset 2px 0 0 0 rgba(234, 179, 8, 0.9);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: inset 2px 0 0 0 rgba(234, 179, 8, 0);
+  }
+}
+
+.search-highlight-flash {
+  animation: search-highlight-flash 2.1s ease-out forwards;
+}
+
+.dark .search-highlight-flash {
+  animation-name: search-highlight-flash;
+}

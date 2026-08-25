@@ -2,10 +2,12 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useRef } from "react";
 import { useMockStore } from "@/lib/mock-store";
 import { useUIStore } from "@/hooks/use-ui-store";
+import { useSearchStore } from "@/hooks/use-search-store";
 import { ChatHeader } from "@/components/chat/chat-header";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatMessages } from "@/components/chat/chat-messages";
 import { ChatMembersSidebar } from "@/components/chat/chat-members-sidebar";
+import { ChatSearchResultsPanel } from "@/components/chat/search/search-results-panel";
 import { getMemberDisplayName } from "@/components/user-hover-card";
 
 export const ConversationPage = () => {
@@ -16,6 +18,7 @@ export const ConversationPage = () => {
   const currentProfile = useMockStore((state) => state.currentProfile);
   const showMembersSidebar = useUIStore((state) => state.showMembersSidebar);
   const setMembersSidebar = useUIStore((state) => state.setMembersSidebar);
+  const searchOpen = useSearchStore((state) => state.open);
 
   const server = servers.find((s) => s.id === serverId);
   const targetMember = server?.members.find((m) => m.id === memberId);
@@ -64,6 +67,15 @@ export const ConversationPage = () => {
         type="conversation"
         targetMember={targetMember}
         server={server}
+        searchContext={{
+          type: "conversation",
+          chatId: conversationId,
+          serverId: server.id,
+          target: displayName,
+        }}
+        searchMembers={server.members.flatMap((m) =>
+          m.profile?.name ? [{ name: m.profile.name, realname: m.profile?.realname }] : []
+        )}
       />
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-col flex-1 h-full min-w-0">
@@ -86,7 +98,18 @@ export const ConversationPage = () => {
             }}
           />
         </div>
-        <ChatMembersSidebar server={server} />
+        {searchOpen ? (
+          <ChatSearchResultsPanel
+            context={{
+              type: "conversation",
+              chatId: conversationId,
+              serverId: server.id,
+              target: displayName,
+            }}
+          />
+        ) : (
+          showMembersSidebar && <ChatMembersSidebar server={server} />
+        )}
       </div>
     </div>
   );

@@ -1,0 +1,7 @@
+# Szybsze linkowanie na Windows: wbudowany w toolchain Rust linker LLVM
+# (rust-lld) zamiast wolniejszego link.exe z Visual Studio Build Tools.
+# Odwrócenie: usuń ten plik.
+# rust-lld jest częścią instalacji rustup (lib\rustlib\x86_64-pc-windows-msvc\bin) —
+# brak dodatkowych komponentów do instalowania.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"

@@ -149,6 +149,12 @@ export interface HistoryWindow {
   loadingNewer: boolean;
   /** Offsetless live messages received while reading history (bounded). */
   pendingLive: (Message | DirectMessage)[];
+  /** Event-driven unread total for the active chat; survives window sliding/trimming. */
+  unreadCount: number;
+  /** Id of the newest message the user has actually seen at the bottom. */
+  lastSeenTailId: string | null;
+  /** Live flag mirrored from ChatMessages: is the user currently following the tail? */
+  tailPinned: boolean;
   /** True once the initial tail page is loaded or failed. */
   ready: boolean;
 }

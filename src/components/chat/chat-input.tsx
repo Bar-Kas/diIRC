@@ -136,6 +136,7 @@ export const ChatInput = ({
   const isIrcConnected = activeServer ? !!ircConnectedServers[activeServer.id] : true;
   const isUploading = attachedImages.some((img) => img.isUploading);
   const isLoading = isUploading || !isIrcConnected || isMuted;
+  const isInputDisabled = !isIrcConnected || isMuted;
 
   const focusInput = useCallback(() => {
     textareaRef.current?.focus();
@@ -757,6 +758,10 @@ export const ChatInput = ({
           return;
         }
       }
+
+      // Safety net: make sure the composer regains keyboard focus once the
+      // async send finishes (e.g. if anything grabbed focus mid-send).
+      form.setFocus("content");
     } catch (error) {
       console.error(error);
     }
@@ -868,7 +873,7 @@ export const ChatInput = ({
 
                   <div className="relative flex flex-col">
                     <Textarea
-                      disabled={!isIrcConnected || isMuted}
+                      disabled={isInputDisabled}
                       autoFocus
                       className="min-h-[44px] max-h-[120px] w-full bg-zinc-200/90 dark:bg-zinc-700/75 border-none focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200 placeholder:text-zinc-500 dark:placeholder:text-zinc-400 py-3 pr-36 resize-none overflow-y-auto disabled:opacity-60 disabled:cursor-not-allowed"
                       placeholder={

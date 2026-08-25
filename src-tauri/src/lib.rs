@@ -113,6 +113,65 @@ struct LogPage {
     next_after: Option<u64>,
 }
 
+/// Structured search criteria produced by the frontend query parser
+/// (`src/lib/search/search-query.ts`). All text matching is case-insensitive.
+#[derive(Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+struct SearchCriteria {
+    /// Every term must appear in the lowercased content (`foo bar`).
+    #[serde(default)]
+    terms: Vec<String>,
+    /// Exact multi-word phrases that must appear verbatim (`"quoted phrase"`).
+    #[serde(default)]
+    phrases: Vec<String>,
+    /// Terms that must NOT appear in the content (`-term`).
+    #[serde(default)]
+    exclude_terms: Vec<String>,
+    /// Exact phrases that must NOT appear (`-"quoted phrase"`).
+    #[serde(default)]
+    exclude_phrases: Vec<String>,
+    /// `from:` — resolved by the frontend into a list of nicks (nick OR realname
+    /// match against the member list). Case-insensitive ANY-of match.
+    #[serde(default)]
+    senders: Vec<String>,
+    /// `mentions:` — case-insensitive substring match in content.
+    #[serde(default)]
+    mention: Option<String>,
+    /// Inclusive lower bound, local time formatted `YYYY-MM-DD HH:MM:SS`.
+    #[serde(default)]
+    after: Option<String>,
+    /// Inclusive upper bound, local time formatted `YYYY-MM-DD HH:MM:SS`.
+    #[serde(default)]
+    before: Option<String>,
+    /// `/pattern/` regex literals the content must match (patterns carry inline `(?i)`).
+    #[serde(default)]
+    regexes: Vec<String>,
+    /// Negated regex literals (`-/pattern/`).
+    #[serde(default)]
+    exclude_regexes: Vec<String>,
+    /// Maximum number of hits returned per page (default 200).
+    #[serde(default)]
+    limit: Option<usize>,
+    /// Sort order: "newest" (default) or "oldest".
+    #[serde(default)]
+    order: Option<String>,
+    /// For pagination / lazy loading when order == "newest": only matches with offset < before_offset.
+    #[serde(default)]
+    before_offset: Option<u64>,
+    /// For pagination / lazy loading when order == "oldest": only matches with offset > after_offset.
+    #[serde(default)]
+    after_offset: Option<u64>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct SearchHit {
+    timestamp: String,
+    sender: String,
+    content: String,
+    offset: u64,
+}
+
 #[derive(Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct ChannelConfig {
@@ -352,7 +411,7 @@ async fn read_log_page(
 
     let end = position;
     let mut page = Vec::new();
-    const CHUNK_SIZE: u64 = 8192;
+    const CHUNK_SIZE: u64 = 16384;
 
     while position > 0 {
         let read_size = position.min(CHUNK_SIZE);
@@ -367,7 +426,7 @@ async fn read_log_page(
         chunk.extend_from_slice(&page);
         page = chunk;
 
-        if page.iter().filter(|byte| **byte == b'\n').count() > 100 || position == 0 {
+        if page.iter().filter(|byte| **byte == b'\n').count() > 200 || position == 0 {
             break;
         }
     }
@@ -395,7 +454,7 @@ async fn read_log_page(
         }
     }
 
-    const PAGE_LINES: usize = 100;
+    const PAGE_LINES: usize = 200;
     let start = lines.len().saturating_sub(PAGE_LINES);
     let selected = &lines[start..];
     let next_offset = selected
@@ -442,7 +501,7 @@ async fn load_log_page(
     }
 }
 
-/// Reads up to 100 log lines *strictly after* the given byte offset (line start),
+/// Reads up to 200 log lines *strictly after* the given byte offset (line start),
 /// continuing forward. Returns `next_after` so the next page can continue from
 /// where this one stopped.
 async fn read_log_page_forward(
@@ -481,8 +540,8 @@ async fn read_log_page_forward(
     file.seek(SeekFrom::Start(after)).await
         .map_err(|error| format!("Failed to seek log file: {error}"))?;
 
-    const PAGE_LINES: usize = 100;
-    const CHUNK_SIZE: usize = 8192;
+    const PAGE_LINES: usize = 200;
+    const CHUNK_SIZE: usize = 16384;
     let mut lines: Vec<(u64, String)> = Vec::new();
     let mut partial: Vec<u8> = Vec::new();
     let mut line_offset = after;
@@ -553,6 +612,273 @@ async fn read_log_page_forward(
         next_offset: None,
         next_after,
     })
+}
+
+/// Criteria with case-normalized text fields so per-line matching avoids repeated allocations.
+struct PreparedSearch {
+    terms: Vec<String>,
+    phrases: Vec<String>,
+    exclude_terms: Vec<String>,
+    exclude_phrases: Vec<String>,
+    senders: Vec<String>,
+    mention: Option<String>,
+    after: Option<String>,
+    before: Option<String>,
+    regexes: Vec<regex::Regex>,
+    exclude_regexes: Vec<regex::Regex>,
+}
+
+impl PreparedSearch {
+    fn new(criteria: &SearchCriteria) -> Self {
+        Self {
+            terms: criteria.terms.iter().map(|t| t.to_lowercase()).collect(),
+            phrases: criteria.phrases.iter().map(|t| t.to_lowercase()).collect(),
+            exclude_terms: criteria.exclude_terms.iter().map(|t| t.to_lowercase()).collect(),
+            exclude_phrases: criteria.exclude_phrases.iter().map(|t| t.to_lowercase()).collect(),
+            senders: criteria.senders.clone(),
+            mention: criteria.mention.as_ref().map(|m| m.to_lowercase()),
+            after: criteria.after.clone(),
+            before: criteria.before.clone(),
+            regexes: criteria
+                .regexes
+                .iter()
+                .filter_map(|pattern| regex::Regex::new(pattern).ok())
+                .collect(),
+            exclude_regexes: criteria
+                .exclude_regexes
+                .iter()
+                .filter_map(|pattern| regex::Regex::new(pattern).ok())
+                .collect(),
+        }
+    }
+}
+
+fn line_matches(
+    timestamp: &str,
+    sender: &str,
+    content: &str,
+    content_lower: &str,
+    search: &PreparedSearch,
+) -> bool {
+    // Log timestamps are fixed-width `YYYY-MM-DD HH:MM:SS`, so lexicographic compare is chronological.
+    if let Some(after) = &search.after {
+        if timestamp < after.as_str() {
+            return false;
+        }
+    }
+    if let Some(before) = &search.before {
+        if timestamp > before.as_str() {
+            return false;
+        }
+    }
+    if !search.senders.is_empty() {
+        // ANY-of match (the frontend resolves realname queries into nick lists).
+        if !search.senders.iter().any(|candidate| sender.eq_ignore_ascii_case(candidate)) {
+            return false;
+        }
+    }
+    if let Some(mention) = &search.mention {
+        if !content_lower.contains(mention.as_str()) {
+            return false;
+        }
+    }
+    for term in &search.terms {
+        if !content_lower.contains(term.as_str()) {
+            return false;
+        }
+    }
+    for phrase in &search.phrases {
+        if !content_lower.contains(phrase.as_str()) {
+            return false;
+        }
+    }
+    for excluded in &search.exclude_terms {
+        if content_lower.contains(excluded.as_str()) {
+            return false;
+        }
+    }
+    for excluded in &search.exclude_phrases {
+        if content_lower.contains(excluded.as_str()) {
+            return false;
+        }
+    }
+    // Regex literals run against the ORIGINAL-case content; their inline `(?i)` flag
+    // handles case-insensitivity without relying on the pre-lowercased copy.
+    for re in &search.regexes {
+        if !re.is_match(content) {
+            return false;
+        }
+    }
+    for re in &search.exclude_regexes {
+        if re.is_match(content) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Streams the whole channel log oldest → newest and returns up to `criteria.limit`
+/// NEWEST matches ordered newest-first. Each hit carries the byte offset of its log
+/// line so the frontend can jump straight to it via the windowed pagination.
+async fn search_log_entries(
+    app: &AppHandle,
+    server_id: &str,
+    target: &str,
+    criteria: &SearchCriteria,
+) -> Result<Vec<SearchHit>, String> {
+    let (_, path) = log_path(app, server_id, target)?;
+    let mut file = match File::open(path).await {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Vec::new())
+        }
+        Err(error) => return Err(format!("Failed to open log file: {error}")),
+    };
+
+    const CHUNK_SIZE: usize = 65536;
+    let limit = criteria.limit.unwrap_or(100).clamp(1, 1000);
+    let search = PreparedSearch::new(criteria);
+    let is_oldest_first = criteria.order.as_deref() == Some("oldest");
+
+    if is_oldest_first {
+        let mut hits: Vec<SearchHit> = Vec::with_capacity(limit.min(1024));
+        let start_offset = criteria.after_offset.unwrap_or(0);
+        if start_offset > 0 {
+            file.seek(SeekFrom::Start(start_offset))
+                .await
+                .map_err(|error| format!("Failed to seek log file: {error}"))?;
+        }
+
+        let mut partial: Vec<u8> = Vec::new();
+        let mut line_offset: u64 = start_offset;
+        let mut cursor: u64 = start_offset;
+        let mut chunk = vec![0u8; CHUNK_SIZE];
+        let mut skip_first_line = start_offset > 0;
+
+        'outer: loop {
+            let n = file
+                .read(&mut chunk)
+                .await
+                .map_err(|error| format!("Failed to read log file: {error}"))?;
+            if n == 0 {
+                break 'outer;
+            }
+            let mut i = 0usize;
+            while i < n {
+                let byte = chunk[i];
+                i += 1;
+                if byte == b'\n' {
+                    if skip_first_line {
+                        skip_first_line = false;
+                    } else if !partial.is_empty() {
+                        if let Ok(line) = std::str::from_utf8(&partial) {
+                            let line_str = line.trim_end_matches('\r');
+                            if let Some(entry) = parse_log_line(line_str) {
+                                let content_lower = entry.content.to_lowercase();
+                                if line_matches(
+                                    &entry.timestamp,
+                                    &entry.sender,
+                                    &entry.content,
+                                    &content_lower,
+                                    &search,
+                                ) {
+                                    hits.push(SearchHit {
+                                        timestamp: entry.timestamp,
+                                        sender: entry.sender,
+                                        content: entry.content,
+                                        offset: line_offset,
+                                    });
+                                    if hits.len() >= limit {
+                                        break 'outer;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    partial.clear();
+                    line_offset = cursor + i as u64;
+                } else {
+                    partial.push(byte);
+                }
+            }
+            cursor += n as u64;
+        }
+
+        Ok(hits)
+    } else {
+        // "newest" order (default)
+        let max_bound = criteria.before_offset;
+        let mut newest_hits: std::collections::VecDeque<SearchHit> =
+            std::collections::VecDeque::with_capacity(limit.min(1024));
+        let mut partial: Vec<u8> = Vec::new();
+        let mut line_offset: u64 = 0;
+        let mut cursor: u64 = 0;
+        let mut chunk = vec![0u8; CHUNK_SIZE];
+
+        'outer: loop {
+            let n = file
+                .read(&mut chunk)
+                .await
+                .map_err(|error| format!("Failed to read log file: {error}"))?;
+            if n == 0 {
+                break 'outer;
+            }
+            let mut i = 0usize;
+            while i < n {
+                let byte = chunk[i];
+                i += 1;
+                if byte == b'\n' {
+                    if let Some(bound) = max_bound {
+                        if line_offset >= bound {
+                            break 'outer;
+                        }
+                    }
+                    if !partial.is_empty() {
+                        if let Ok(line) = std::str::from_utf8(&partial) {
+                            let line_str = line.trim_end_matches('\r');
+                            if let Some(entry) = parse_log_line(line_str) {
+                                let content_lower = entry.content.to_lowercase();
+                                if line_matches(
+                                    &entry.timestamp,
+                                    &entry.sender,
+                                    &entry.content,
+                                    &content_lower,
+                                    &search,
+                                ) {
+                                    if newest_hits.len() >= limit {
+                                        newest_hits.pop_front();
+                                    }
+                                    newest_hits.push_back(SearchHit {
+                                        timestamp: entry.timestamp,
+                                        sender: entry.sender,
+                                        content: entry.content,
+                                        offset: line_offset,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    partial.clear();
+                    line_offset = cursor + i as u64;
+                } else {
+                    partial.push(byte);
+                }
+            }
+            cursor += n as u64;
+        }
+
+        Ok(newest_hits.into_iter().rev().collect())
+    }
+}
+
+#[tauri::command]
+async fn search_log(
+    app: AppHandle,
+    server_id: String,
+    channel: String,
+    criteria: SearchCriteria,
+) -> Result<Vec<SearchHit>, String> {
+    search_log_entries(&app, &server_id, &channel, &criteria).await
 }
 
 #[tauri::command]
@@ -2221,6 +2547,7 @@ pub fn run() {
             load_log_page,
             list_logged_conversations,
             delete_last_log_entry,
+            search_log,
             disconnect_irc,
             join_channel,
             part_channel,

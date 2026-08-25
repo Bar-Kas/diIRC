@@ -7,6 +7,8 @@ import { Member, Message } from "@/types";
 import { useChatQuery } from "@/hooks/use-chat-query";
 import { useChatSocket } from "@/hooks/use-chat-socket";
 import { useMockStore, formatMessageDate } from "@/lib/mock-store";
+import { useSearchStore } from "@/hooks/use-search-store";
+import { cn } from "@/lib/utils";
 
 import { ChatWelcome } from "./chat-welcome";
 import { ChatItem } from "./chat-item";
@@ -16,6 +18,17 @@ const DATE_FORMAT = "d MMM yyyy, HH:mm";
 const TIME_FORMAT = "HH:mm";
 const HISTORY_EDGE_TRIGGER_PX = 150;
 const HISTORY_LOAD_COOLDOWN_MS = 600;
+// Hysteresis for the "at bottom" state (unread-counter safety): entering the
+// bottom zone requires getting within 10px, leaving requires exceeding 60px,
+// so touchpad jitter around a single threshold cannot wipe the unread counter.
+const BOTTOM_ENTER_THRESHOLD_PX = 10;
+const BOTTOM_EXIT_THRESHOLD_PX = 60;
+// Deliberate upward-wheel amount required to detach from the bottom. Filters
+// single-event trackpad noise (natural-scrolling reversal, diagonal swipes,
+// tilt-wheel ticks) that popped the "Jump to latest" pill without any real
+// scroll movement.
+const WHEEL_UNSTICK_DELTA_PX = 24;
+const WHEEL_GESTURE_GAP_MS = 400;
 
 interface ChatMessagesProps {
   name: string;
@@ -49,6 +62,9 @@ export const ChatMessages = ({
   const lastNewerLoadTimeRef = useRef(0);
   const programmaticScrollUntilRef = useRef(0);
   const jumpingToLatestRef = useRef(false);
+  const lastScrollTopRef = useRef(0);
+  const wheelUpAccumRef = useRef(0);
+  const lastWheelUpTimeRef = useRef(0);
   const anchorRef = useRef<{
     id: string;
     screenY: number;
@@ -66,6 +82,9 @@ export const ChatMessages = ({
   const loadNewerHistory = useMockStore((state) => state.loadNewerHistory);
   const jumpToLatest = useMockStore((state) => state.jumpToLatest);
   const clearHistoryLoading = useMockStore((state) => state.clearHistoryLoading);
+  const markTailSeen = useMockStore((state) => state.markTailSeen);
+  const setTailPinned = useMockStore((state) => state.setTailPinned);
+  const unreadCount = useMockStore((state) => state.historyWindow.unreadCount);
   const windowReady = useMockStore((state) => state.historyWindow.ready);
   const hasOlder = useMockStore((state) => state.historyWindow.hasOlder);
   const olderCursor = useMockStore((state) => state.historyWindow.olderCursor);
@@ -77,10 +96,12 @@ export const ChatMessages = ({
   const dateFormatPreset = useMockStore((state) => state.dateFormatPreset) || "d MMM yyyy, HH:mm";
   const customDateFormat = useMockStore((state) => state.customDateFormat) || "yyyy/MM/dd HH:mm";
   const [atBottom, setAtBottom] = useState(true);
-  const lastSeenBottomMessageIdRef = useRef<string | null>(null);
-  const lastSeenTimestampRef = useRef<number>(0);
-  const lastCountedTailIdRef = useRef<string | null>(null);
-  const unreadAccumulatorRef = useRef<number>(0);
+
+  // Search jump-to-message: pending target queued by the search results panel.
+  const pendingJumpMessageId = useSearchStore((state) => state.pendingJumpMessageId);
+  const clearPendingJump = useSearchStore((state) => state.clearPendingJump);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const highlightTimeoutRef = useRef<number | null>(null);
 
   const {
     data,
@@ -98,65 +119,19 @@ export const ChatMessages = ({
   const totalCount = items.length + (hasWelcome ? 1 : 0);
 
   useEffect(() => {
-    if (atBottom && !hasNewer && items.length > 0) {
-      const lastMsg = items[items.length - 1];
-      const newId = lastMsg.id;
-      const prevId = lastSeenBottomMessageIdRef.current;
-      if (prevId !== newId) {
-        lastSeenBottomMessageIdRef.current = newId;
-        lastSeenTimestampRef.current = new Date(lastMsg.createdAt).getTime();
-        lastCountedTailIdRef.current = newId;
-        unreadAccumulatorRef.current = 0;
-      }
-    }
-  }, [items, atBottom, hasNewer, chatId]);
+    if (!(atBottom && !hasNewer && items.length > 0)) return;
+    // Directional guard (Fix A): while the viewport is still moving away from
+    // the bottom, freshly arrived messages must remain unread instead of being
+    // silently stamped as seen by the at-bottom watcher.
+    const element = chatRef.current;
+    if (element && element.scrollTop < lastScrollTopRef.current - 1) return;
+    markTailSeen(items[items.length - 1].id);
+  }, [items, atBottom, hasNewer, markTailSeen, chatId]);
 
-  const newMessagesAtTail = useMemo(() => {
-    if (atBottom || !lastSeenBottomMessageIdRef.current || items.length === 0) return 0;
-    // When reading history, preserve the accumulated count from the tail.
-    if (hasNewer) {
-      return unreadAccumulatorRef.current;
-    }
-
-    const currentTailId = items[items.length - 1].id;
-
-    // 1. Check if lastSeen message is still in the items window
-    const lastSeenIndex = items.findIndex((m) => m.id === lastSeenBottomMessageIdRef.current);
-    if (lastSeenIndex !== -1) {
-      const count = Math.max(0, items.length - 1 - lastSeenIndex);
-      unreadAccumulatorRef.current = count;
-      lastCountedTailIdRef.current = currentTailId;
-      return count;
-    }
-
-    // 2. lastSeen message was trimmed off the top. Incremental delta addition since lastCountedTailId:
-    if (lastCountedTailIdRef.current) {
-      const lastCountedIndex = items.findIndex((m) => m.id === lastCountedTailIdRef.current);
-      if (lastCountedIndex !== -1) {
-        const delta = Math.max(0, items.length - 1 - lastCountedIndex);
-        if (delta > 0) {
-          unreadAccumulatorRef.current += delta;
-          lastCountedTailIdRef.current = currentTailId;
-        }
-        return unreadAccumulatorRef.current;
-      }
-    }
-
-    // 3. If neither lastSeen nor lastCountedTail is in items (e.g. waking from sleep with >600 new messages),
-    // check if items[0] is newer than lastSeen timestamp:
-    const firstMsgTimestamp = new Date(items[0].createdAt).getTime();
-    if (lastSeenTimestampRef.current > 0 && firstMsgTimestamp > lastSeenTimestampRef.current) {
-      if (lastCountedTailIdRef.current !== currentTailId) {
-        unreadAccumulatorRef.current = Math.max(unreadAccumulatorRef.current + items.length, items.length);
-        lastCountedTailIdRef.current = currentTailId;
-      }
-      return unreadAccumulatorRef.current;
-    }
-
-    return unreadAccumulatorRef.current;
-  }, [items, atBottom, hasNewer, chatId]);
-
-  const newMessagesCount = newMessagesAtTail + pendingLiveCount;
+  // Unread counter (Model v2): event-driven, stored in historyWindow.unreadCount.
+  // Arrivals while away-from-bottom increment it inside addMessage/addDirectMessage;
+  // genuine "seen" stamps below zero it. Window trimming/chunk loads never touch it,
+  // so long inactivity cannot freeze it and chunk moves cannot reset it.
   const showJumpToLatest = (items.length > 0 && !atBottom) || hasNewer || pendingLiveCount > 0;
 
   const virtualizer = useVirtualizer({
@@ -346,44 +321,90 @@ export const ChatMessages = ({
       return;
     }
 
+    const scrollTop = element.scrollTop;
     const canScroll = element.scrollHeight > element.clientHeight + 5;
-    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
-    const isAtBottom = !hasNewer && (!canScroll || distanceFromBottom < 30);
+    const distanceFromBottom = element.scrollHeight - scrollTop - element.clientHeight;
 
+    // Direction tracking runs on EVERY event (programmatic ones included) so the
+    // seen-stamp here and the at-bottom watcher effect can tell "leaving the
+    // bottom" apart from "sitting at / returning to the bottom".
+    const movingUp = scrollTop < lastScrollTopRef.current - 1;
+    lastScrollTopRef.current = scrollTop;
+
+    // Programmatic scrolls (anchor restore, pin-to-bottom) are position-neutral:
+    // estimated row sizes can transiently land them inside the bottom grace zone,
+    // which must never flip the at-bottom state nor mark messages as seen (Fix B).
+    const isProgrammatic = performance.now() < programmaticScrollUntilRef.current;
+
+    // Hysteresis (Fix C): enter the bottom state below 10px, leave it above 60px.
+    const prevAtBottom = shouldStickToBottomRef.current;
+    const isAtBottom = isProgrammatic
+      ? prevAtBottom
+      : prevAtBottom
+        ? !hasNewer && (!canScroll || distanceFromBottom < BOTTOM_EXIT_THRESHOLD_PX)
+        : !hasNewer && !movingUp && (!canScroll || distanceFromBottom < BOTTOM_ENTER_THRESHOLD_PX);
+
+    if (prevAtBottom !== isAtBottom) {
+      setTailPinned(isAtBottom);
+    }
     shouldStickToBottomRef.current = isAtBottom;
     setAtBottom((prev) => (prev === isAtBottom ? prev : isAtBottom));
 
     if (isAtBottom) {
       anchorRef.current = null;
-      if (items.length > 0) {
-        const lastMsg = items[items.length - 1];
-        lastSeenBottomMessageIdRef.current = lastMsg.id;
-        lastSeenTimestampRef.current = new Date(lastMsg.createdAt).getTime();
-        lastCountedTailIdRef.current = lastMsg.id;
-        unreadAccumulatorRef.current = 0;
+      // Never stamp messages as seen while scrolling AWAY from the bottom (Fix A):
+      // slow upward scrolling passes through the grace zone over many events and
+      // used to wipe the unread counter.
+      if (!movingUp && items.length > 0) {
+        markTailSeen(items[items.length - 1].id);
+        // Fresh baseline: pending upward-wheel intent must not survive into the
+        // next gesture once the user is genuinely back at the bottom.
+        wheelUpAccumRef.current = 0;
       }
     }
 
-    const programmaticRemaining = Math.max(0, programmaticScrollUntilRef.current - performance.now());
-    const isProgrammatic = programmaticRemaining > 0;
-
     if (!isProgrammatic && canScroll) {
-      if (element.scrollTop <= HISTORY_EDGE_TRIGGER_PX) {
+      if (scrollTop <= HISTORY_EDGE_TRIGGER_PX) {
         triggerLoadOlder();
       } else if (distanceFromBottom <= HISTORY_EDGE_TRIGGER_PX) {
         triggerLoadNewer();
       }
     }
-  }, [triggerLoadOlder, triggerLoadNewer, items, chatId, hasNewer]);
+  }, [triggerLoadOlder, triggerLoadNewer, items, chatId, hasNewer, markTailSeen, setTailPinned]);
 
   const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     const element = chatRef.current;
     if (!element) return;
 
+    // Normalize line/page wheel modes to pixels so the noise gate behaves the
+    // same across devices.
+    const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 100 : e.deltaY;
+
+    // Horizontal-dominant gestures (tilt wheel, diagonal trackpad swipes) must
+    // not touch the vertical follow/unread logic at all.
+    if (Math.abs(e.deltaX) > Math.abs(dy)) return;
+
     const canScroll = element.scrollHeight > element.clientHeight + 5;
     const wasSticking = shouldStickToBottomRef.current;
-    if (e.deltaY < 0 && wasSticking && canScroll) {
+
+    // Accumulate upward intent: a single tiny negative deltaY (trackpad jitter,
+    // natural-scrolling reversal on "down" gestures) must not detach the tail —
+    // only a deliberate sustained upward amount does. Downward deltas cancel it.
+    if (dy < 0) {
+      const now = performance.now();
+      if (now - lastWheelUpTimeRef.current > WHEEL_GESTURE_GAP_MS) {
+        wheelUpAccumRef.current = 0;
+      }
+      lastWheelUpTimeRef.current = now;
+      wheelUpAccumRef.current += dy;
+    } else {
+      wheelUpAccumRef.current = Math.min(0, wheelUpAccumRef.current + dy);
+    }
+
+    if (dy < 0 && wasSticking && canScroll && wheelUpAccumRef.current <= -WHEEL_UNSTICK_DELTA_PX) {
+      wheelUpAccumRef.current = 0;
       shouldStickToBottomRef.current = false;
+      setTailPinned(false);
       setAtBottom(false);
       jumpingToLatestRef.current = false;
       programmaticScrollUntilRef.current = 0;
@@ -395,13 +416,13 @@ export const ChatMessages = ({
     const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
 
     if (!isProgrammatic && canScroll) {
-      if (e.deltaY < 0 && element.scrollTop <= HISTORY_EDGE_TRIGGER_PX) {
+      if (dy < 0 && element.scrollTop <= HISTORY_EDGE_TRIGGER_PX) {
         triggerLoadOlder();
-      } else if (e.deltaY > 0 && distanceFromBottom <= HISTORY_EDGE_TRIGGER_PX) {
+      } else if (dy > 0 && distanceFromBottom <= HISTORY_EDGE_TRIGGER_PX) {
         triggerLoadNewer();
       }
     }
-  }, [triggerLoadOlder, triggerLoadNewer, items.length, chatId]);
+  }, [triggerLoadOlder, triggerLoadNewer, items.length, chatId, setTailPinned]);
 
   useEffect(() => {
     hasInitializedRef.current = false;
@@ -409,10 +430,7 @@ export const ChatMessages = ({
     isLoadingOlderRef.current = false;
     isLoadingNewerRef.current = false;
     anchorRef.current = null;
-    lastSeenBottomMessageIdRef.current = null;
-    lastSeenTimestampRef.current = 0;
-    lastCountedTailIdRef.current = null;
-    unreadAccumulatorRef.current = 0;
+    lastScrollTopRef.current = 0;
     rowElementsRef.current.clear();
     remeasureCallbacksRef.current.clear();
     setAtBottom(true);
@@ -431,8 +449,10 @@ export const ChatMessages = ({
 
     const canScroll = element.scrollHeight > element.clientHeight + 5;
     if (!canScroll && !hasNewer) {
+      const wasSticking = shouldStickToBottomRef.current;
       shouldStickToBottomRef.current = true;
       setAtBottom(true);
+      if (!wasSticking) setTailPinned(true);
     }
 
     if (shouldStickToBottomRef.current && totalCount > 0) {
@@ -586,6 +606,10 @@ export const ChatMessages = ({
     shouldStickToBottomRef.current = true;
     anchorRef.current = null;
     setAtBottom(true);
+    if (items.length > 0) {
+      markTailSeen(items[items.length - 1].id);
+    }
+    setTailPinned(true);
     if (hasNewer || pendingLiveCount > 0) {
       void jumpToLatest(type, chatId, serverId, historyTarget).then(() => {
         shouldStickToBottomRef.current = true;
@@ -603,7 +627,70 @@ export const ChatMessages = ({
         programmaticScrollUntilRef.current = 0;
       }, 500);
     }
-  }, [hasNewer, pendingLiveCount, jumpToLatest, type, chatId, serverId, historyTarget, pinToBottom]);
+  }, [hasNewer, pendingLiveCount, items, jumpToLatest, type, chatId, serverId, historyTarget, pinToBottom, markTailSeen, setTailPinned]);
+
+  // ── Search jump-to-message (Discord-style) ──────────────────────────────
+  // When the search panel queues a hit, scroll the virtualizer to it (with a
+  // few rAF retries until the jumped window actually renders the row), detach
+  // from the bottom so autoscroll does not fight the jump, and flash-highlight
+  // the row for ~2s.
+  useEffect(() => {
+    if (!pendingJumpMessageId) return;
+
+    let rafId: number | null = null;
+    let attempts = 0;
+    let cancelled = false;
+
+    const tryScroll = () => {
+      if (cancelled) return;
+      const messageIndex = items.findIndex((m) => m.id === pendingJumpMessageId);
+      if (messageIndex === -1) {
+        attempts += 1;
+        if (attempts <= 20) {
+          rafId = requestAnimationFrame(tryScroll);
+        } else {
+          clearPendingJump();
+        }
+        return;
+      }
+
+      const virtualIndex = messageIndex + (hasWelcome ? 1 : 0);
+      shouldStickToBottomRef.current = false;
+      setTailPinned(false);
+      setAtBottom(false);
+      anchorRef.current = null;
+      markProgrammaticScroll(400);
+      virtualizer.scrollToIndex(virtualIndex, { align: "center" });
+      // Second pass after layout settles (dynamic row heights around the target).
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        markProgrammaticScroll(400);
+        virtualizer.scrollToIndex(virtualIndex, { align: "center" });
+      });
+
+      setHighlightedMessageId(pendingJumpMessageId);
+      if (highlightTimeoutRef.current !== null) {
+        window.clearTimeout(highlightTimeoutRef.current);
+      }
+      highlightTimeoutRef.current = window.setTimeout(() => {
+        setHighlightedMessageId(null);
+      }, 2200);
+
+      clearPendingJump();
+    };
+
+    tryScroll();
+    return () => {
+      cancelled = true;
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [pendingJumpMessageId, items, hasWelcome, virtualizer, clearPendingJump, markProgrammaticScroll, setTailPinned]);
+
+  useEffect(() => () => {
+    if (highlightTimeoutRef.current !== null) {
+      window.clearTimeout(highlightTimeoutRef.current);
+    }
+  }, []);
 
   if (status === "loading") {
     return (
@@ -672,7 +759,10 @@ export const ChatMessages = ({
                 key={message.id}
                 data-index={virtualRow.index}
                 ref={(element) => registerRowElement(element, message.id)}
-                className="absolute left-0 top-0 w-full flow-root"
+                className={cn(
+                  "absolute left-0 top-0 w-full flow-root rounded-md transition-colors",
+                  highlightedMessageId === message.id && "search-highlight-flash"
+                )}
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
               >
                 <ChatItem
@@ -717,9 +807,9 @@ export const ChatMessages = ({
         >
           <ArrowDownToLine className="h-4 w-4" />
           <span>Jump to latest</span>
-          {newMessagesCount > 0 && (
+          {unreadCount > 0 && (
             <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] font-bold leading-none">
-              {newMessagesCount}
+              {unreadCount}
             </span>
           )}
         </button>

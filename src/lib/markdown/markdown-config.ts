@@ -3,7 +3,7 @@ type SanitizeOptions = any;
 /**
  * Sanitize schema for Markdown rendering in diIRC.
  * - Allows common GFM markdown elements
- * - Disables tables (decyzja 3: Wyłącz)
+ * - Disables tables
  * - Allows custom `spoiler` and `underline` via span/u but mapped to React components
  * - Blocks dangerous protocols (javascript:, data: except image proxy which is handled separately)
  * - No raw HTML (rehype-raw not used)

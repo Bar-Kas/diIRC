@@ -54,7 +54,7 @@ export function useIntersectionObserver(
     return () => {
       observer.disconnect();
     };
-  }, [root, rootMargin, threshold, freezeOnceVisible, isVisible]);
+  }, [root, rootMargin, threshold, freezeOnceVisible]);
 
   return { ref, isVisible };
 }
