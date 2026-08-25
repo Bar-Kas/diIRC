@@ -46,7 +46,7 @@ const CodeBlock: React.FC<{ language: string; code: string; onContentSizeChange?
   const displayLanguage = language ? language.toLowerCase() : "text";
 
   return (
-    <div className="rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-950 dark:bg-[#18191c] overflow-hidden my-2 group">
+    <div className="rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-950 dark:bg-[#18191c] overflow-hidden my-2 group w-full max-w-full min-w-0">
       <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-900 dark:bg-[#1e1f22] border-b border-zinc-800 text-zinc-400 text-xs font-mono select-none">
         <span className="uppercase tracking-wider font-semibold text-[11px] text-zinc-400">
           {displayLanguage}
@@ -70,7 +70,7 @@ const CodeBlock: React.FC<{ language: string; code: string; onContentSizeChange?
           )}
         </button>
       </div>
-      <div className="overflow-x-auto p-3 text-[13px] font-mono leading-5">
+      <div className="overflow-x-auto p-3 text-[13px] font-mono leading-5 w-full min-w-0">
         <SyntaxHighlighter
           language={displayLanguage}
           style={vscDarkPlus}
@@ -256,7 +256,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     <div
       ref={containerRef}
       className={cn(
-        "markdown-root text-sm leading-6 break-words",
+        "markdown-root text-sm leading-6 break-words min-w-0 w-full max-w-full",
         compact ? "space-y-0" : "space-y-1",
         className
       )}

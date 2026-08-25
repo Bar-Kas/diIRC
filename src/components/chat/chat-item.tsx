@@ -306,7 +306,7 @@ const ChatItemInner = ({
         ? "bg-amber-500/10 hover:bg-amber-500/15 dark:bg-amber-500/15 dark:hover:bg-amber-500/20 border-amber-500"
         : "hover:bg-black/5 border-transparent"
     )}>
-      <div className="group flex gap-x-2 items-start w-full">
+      <div className="group flex gap-x-2 items-start w-full min-w-0">
         {!compactMode && !compact ? (
           <UserHoverCard member={member} server={activeServer} side="right">
             <div onClick={onMemberClick} className="cursor-pointer hover:drop-shadow-md transition shrink-0">
@@ -320,7 +320,7 @@ const ChatItemInner = ({
             </span>
           </div>
         ) : null}
-        <div className="flex flex-col w-full">
+        <div className="flex flex-col w-full min-w-0">
           {!compact && (
             <div className="flex items-center gap-x-2">
               {!isAction && (
@@ -347,7 +347,7 @@ const ChatItemInner = ({
           )}
 
           {!fileUrl && (
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-0 w-full">
               {(hasVisibleText || deleted) && (
                 hasBrokenHeader ? (
                   <div className="flex items-center gap-x-2 my-0.5">
@@ -370,7 +370,7 @@ const ChatItemInner = ({
                   </p>
                 ) : shouldUseMarkdown ? (
                   <div className={cn(
-                    "text-sm text-zinc-600 dark:text-zinc-300",
+                    "text-sm text-zinc-600 dark:text-zinc-300 min-w-0 w-full",
                     deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
                   )}>
                     <MarkdownRenderer
