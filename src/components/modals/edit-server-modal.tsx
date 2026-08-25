@@ -79,6 +79,7 @@ export const EditServerModal = () => {
   const globalMotdPolicy = useMockStore((state) => state.globalMotdPolicy) || "on_change";
   const serverMotdPolicies = useMockStore((state) => state.serverMotdPolicies);
   const setServerMotdPolicy = useMockStore((state) => state.setServerMotdPolicy);
+  const setGlobalMotdPolicy = useMockStore((state) => state.setGlobalMotdPolicy);
 
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
   const [motdPolicyOverride, setMotdPolicyOverride] = useState<ServerMotdDisplayPolicy>("default");
@@ -569,15 +570,24 @@ export const EditServerModal = () => {
                 </p>
                 <select
                   value={motdPolicyOverride}
-                  onChange={(e) => setMotdPolicyOverride(e.target.value as ServerMotdDisplayPolicy)}
+                  onChange={(e) => {
+                    const val = e.target.value as ServerMotdDisplayPolicy;
+                    if (val === "never_globally") {
+                      setGlobalMotdPolicy("never");
+                      setMotdPolicyOverride("never_globally");
+                    } else {
+                      setMotdPolicyOverride(val);
+                    }
+                  }}
                   className="w-full bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
                 >
                   <option value="default">
-                    Default (Use global setting: {globalMotdPolicy === "always" ? "Always" : globalMotdPolicy === "never" ? "Never" : "When changed"})
+                    Default (Use global setting: {globalMotdPolicy === "always" ? "Always" : globalMotdPolicy === "never" ? "Don't show again (all servers)" : "When changed"})
                   </option>
                   <option value="on_change">Only when changed</option>
                   <option value="always">Always show on connect</option>
-                  <option value="never">Never show automatically</option>
+                  <option value="never">Don't show again (this server)</option>
+                  <option value="never_globally">Don't show again (all servers)</option>
                 </select>
               </div>
 

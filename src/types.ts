@@ -177,7 +177,7 @@ export interface CustomCommand {
 }
 
 export type MotdDisplayPolicy = "always" | "on_change" | "never";
-export type ServerMotdDisplayPolicy = "default" | "always" | "on_change" | "never";
+export type ServerMotdDisplayPolicy = "default" | "always" | "on_change" | "never" | "never_globally";
 
 export interface Server {
   id: string;

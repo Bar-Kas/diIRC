@@ -511,10 +511,15 @@ export const useMockStore = create<MockState>()(
       shouldAutoShowMotd: (serverId: string, motd: string[]) => {
         if (!motd || !motd.length) return false;
         const state = get();
+        if (state.globalMotdPolicy === "never") return false;
+
         const server = state.servers.find((s) => s.id === serverId);
         const serverPolicy = state.serverMotdPolicies[serverId] || server?.motdPolicy || "default";
+
+        if (serverPolicy === "never" || serverPolicy === "never_globally") return false;
+
         const effectivePolicy: MotdDisplayPolicy =
-          serverPolicy === "default" ? state.globalMotdPolicy || "on_change" : serverPolicy;
+          serverPolicy === "default" ? state.globalMotdPolicy || "on_change" : (serverPolicy as MotdDisplayPolicy);
 
         if (effectivePolicy === "never") return false;
         if (effectivePolicy === "always") return true;

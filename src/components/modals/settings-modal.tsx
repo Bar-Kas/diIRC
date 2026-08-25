@@ -517,26 +517,36 @@ export const SettingsModal = () => {
             </select>
           </div>
 
-          {/* Message of the Day (MOTD) */}
+          {/* Message of the day (MOTD) */}
           <div className="flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-3 shadow-sm transition">
-            <div className="flex items-center gap-x-2">
-              <ScrollText className="w-4 h-4 text-indigo-500" />
-              <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Message of the day (MOTD)
-              </label>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-x-2">
+                <ScrollText className="w-4 h-4 text-indigo-500" />
+                <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                  Message of the day (MOTD)
+                </label>
+              </div>
+              <Switch
+                checked={globalMotdPolicy !== "never"}
+                onCheckedChange={(checked) => {
+                  setGlobalMotdPolicy(checked ? "on_change" : "never");
+                }}
+              />
             </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-              Choose when to automatically display the server MOTD upon connecting or joining.
+              Choose when to automatically display server MOTD popups upon connecting or joining.
             </p>
-            <select
-              value={globalMotdPolicy}
-              onChange={(e) => setGlobalMotdPolicy(e.target.value as MotdDisplayPolicy)}
-              className="w-full bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-            >
-              <option value="on_change">Only when changed (recommended)</option>
-              <option value="always">Always show on connect</option>
-              <option value="never">Never show automatically</option>
-            </select>
+            {globalMotdPolicy !== "never" && (
+              <select
+                value={globalMotdPolicy}
+                onChange={(e) => setGlobalMotdPolicy(e.target.value as MotdDisplayPolicy)}
+                className="w-full bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              >
+                <option value="on_change">Only when changed (recommended)</option>
+                <option value="always">Always show on connect</option>
+                <option value="never">Never show automatically (all servers)</option>
+              </select>
+            )}
           </div>
 
           {/* Date Display Format */}

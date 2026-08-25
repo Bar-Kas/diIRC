@@ -49,6 +49,7 @@ export const MotdModal = () => {
   const globalMotdPolicy = useMockStore((state) => state.globalMotdPolicy);
   const serverMotdPolicies = useMockStore((state) => state.serverMotdPolicies);
   const setServerMotdPolicy = useMockStore((state) => state.setServerMotdPolicy);
+  const setGlobalMotdPolicy = useMockStore((state) => state.setGlobalMotdPolicy);
   const markServerMotdSeen = useMockStore((state) => state.markServerMotdSeen);
   const enableLinkPreviews = useMockStore((state) => state.enableLinkPreviews ?? true);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -126,16 +127,25 @@ export const MotdModal = () => {
 
   const serverDisplayName = activeServer?.name || activeServer?.host || "Server";
 
+  const rawServerPolicy = (activeServerId && serverMotdPolicies[activeServerId]) || activeServer?.motdPolicy;
   const currentPolicy: ServerMotdDisplayPolicy =
-    (activeServerId && serverMotdPolicies[activeServerId]) ||
-    activeServer?.motdPolicy ||
-    "default";
+    rawServerPolicy || (globalMotdPolicy === "never" ? "never_globally" : "default");
 
   const handlePolicyChange = (newPolicy: ServerMotdDisplayPolicy) => {
-    if (activeServerId) {
-      setServerMotdPolicy(activeServerId, newPolicy);
-      if (rawMotdLines.length > 0) {
-        markServerMotdSeen(activeServerId, rawMotdLines);
+    if (newPolicy === "never_globally") {
+      setGlobalMotdPolicy("never");
+      if (activeServerId) {
+        setServerMotdPolicy(activeServerId, "never_globally");
+        if (rawMotdLines.length > 0) {
+          markServerMotdSeen(activeServerId, rawMotdLines);
+        }
+      }
+    } else {
+      if (activeServerId) {
+        setServerMotdPolicy(activeServerId, newPolicy);
+        if (rawMotdLines.length > 0) {
+          markServerMotdSeen(activeServerId, rawMotdLines);
+        }
       }
     }
   };
@@ -144,7 +154,7 @@ export const MotdModal = () => {
     globalMotdPolicy === "always"
       ? "Always"
       : globalMotdPolicy === "never"
-      ? "Never"
+      ? "Don't show again (all servers)"
       : "When changed";
 
   return (
@@ -292,7 +302,8 @@ export const MotdModal = () => {
                 <SelectItem value="default">Default ({globalPolicyLabel})</SelectItem>
                 <SelectItem value="on_change">Only when changed</SelectItem>
                 <SelectItem value="always">Always show</SelectItem>
-                <SelectItem value="never">Don't show again</SelectItem>
+                <SelectItem value="never">Don't show again (this server)</SelectItem>
+                <SelectItem value="never_globally">Don't show again (all servers)</SelectItem>
               </SelectContent>
             </Select>
           </div>
