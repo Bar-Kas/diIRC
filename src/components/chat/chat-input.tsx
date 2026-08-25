@@ -114,6 +114,18 @@ export const ChatInput = ({
   const attachedImagesRef = useRef(attachedImages);
   attachedImagesRef.current = attachedImages;
 
+  const isIrcConnected = activeServer ? !!ircConnectedServers[activeServer.id] : true;
+  const isUploading = attachedImages.some((img) => img.isUploading);
+  const isLoading = isUploading || !isIrcConnected || isMuted;
+
+  const focusInput = useCallback(() => {
+    textareaRef.current?.focus();
+    setTimeout(() => {
+      textareaRef.current?.focus();
+      form.setFocus("content");
+    }, 0);
+  }, [form]);
+
   useEffect(() => {
     if (!activeId) return;
 
@@ -134,14 +146,13 @@ export const ChatInput = ({
 
     prevActiveIdRef.current = activeId;
 
-    form.setFocus("content");
-    setIsFocused(true);
+    focusInput();
 
     const timer = setTimeout(() => {
       isSwitchingRef.current = false;
     }, 0);
     return () => clearTimeout(timer);
-  }, [activeId, form, getDraft, setDraft]);
+  }, [activeId, form, getDraft, setDraft, focusInput]);
 
   const content = form.watch("content");
 
@@ -160,14 +171,14 @@ export const ChatInput = ({
       const customEvent = e as CustomEvent<{ id: string; content: string }>;
       if (customEvent.detail && customEvent.detail.id === activeId) {
         form.setValue("content", customEvent.detail.content);
-        form.setFocus("content");
+        focusInput();
       }
     };
     window.addEventListener("restore_unsent_message", handleRestore);
     return () => {
       window.removeEventListener("restore_unsent_message", handleRestore);
     };
-  }, [activeId, form]);
+  }, [activeId, form, focusInput]);
 
   useEffect(() => {
     if (enableCommandSuggestions && isFocused && content?.startsWith("/")) {
@@ -206,10 +217,6 @@ export const ChatInput = ({
     });
   }, []);
 
-  const isIrcConnected = activeServer ? !!ircConnectedServers[activeServer.id] : true;
-  const isUploading = attachedImages.some((img) => img.isUploading);
-  const isLoading = form.formState.isSubmitting || isUploading || !isIrcConnected || isMuted;
-
   const processFileUpload = useCallback(async (file: File) => {
     if (uploadConfig.provider === "disabled") {
       setUploadError("Uploading is disabled in settings. Enable an upload provider in Settings.");
@@ -236,7 +243,7 @@ export const ChatInput = ({
       setAttachedImages((prev) =>
         prev.map((item) => (item.id === id ? { ...item, url, isUploading: false } : item))
       );
-      form.setFocus("content");
+      focusInput();
     } catch (err: any) {
       console.error("Upload error:", err);
       setUploadError(err?.message || "Failed to upload file.");
@@ -244,7 +251,7 @@ export const ChatInput = ({
       URL.revokeObjectURL(previewUrl);
       setTimeout(() => setUploadError(null), 5000);
     }
-  }, [uploadConfig, form]);
+  }, [uploadConfig, focusInput]);
 
   const processFilePathUpload = useCallback(async (filePath: string) => {
     if (uploadConfig.provider === "disabled") {
@@ -553,7 +560,7 @@ export const ChatInput = ({
           }
           form.reset({ content: "" });
           clearAllAttachments();
-          form.setFocus("content");
+          focusInput();
           return;
         }
       }
@@ -563,7 +570,7 @@ export const ChatInput = ({
       }
       form.reset({ content: "" });
       clearAllAttachments();
-      form.setFocus("content");
+      focusInput();
 
       for (const line of linesToSend) {
         if (type === "channel" && query?.channelId) {
@@ -583,6 +590,7 @@ export const ChatInput = ({
               sender: senderMember.profile.name,
             }).catch(() => {});
             form.setValue("content", line);
+            focusInput();
             return;
           }
         } else if (type === "conversation" && query?.conversationId) {
@@ -611,6 +619,7 @@ export const ChatInput = ({
               useMockStore.getState().syncActiveConversationsWithDisk(activeServer.id, loggedNicks);
             } catch (e) {}
             form.setValue("content", line);
+            focusInput();
             return;
           }
         }
@@ -726,7 +735,7 @@ export const ChatInput = ({
 
                   <div className="relative flex flex-col">
                     <Textarea
-                      disabled={(isLoading && attachedImages.length === 0) || !isIrcConnected || isMuted}
+                      disabled={!isIrcConnected || isMuted}
                       autoFocus
                       className="min-h-[44px] max-h-[120px] w-full bg-zinc-200/90 dark:bg-zinc-700/75 border-none focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200 placeholder:text-zinc-500 dark:placeholder:text-zinc-400 py-3 pr-24 resize-none overflow-y-auto disabled:opacity-60 disabled:cursor-not-allowed"
                       placeholder={
