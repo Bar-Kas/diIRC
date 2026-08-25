@@ -986,6 +986,36 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
     setupModeErrorListener();
 
+    let unlistenMotdFn: (() => void) | null = null;
+    const setupMotdListener = async () => {
+      try {
+        const unlistenMotd = await listen<{ server_id: string; motd: string[] }>(
+          "irc_motd_event",
+          (event) => {
+            const { server_id, motd } = event.payload;
+            const store = useMockStore.getState();
+            store.setServerMotd(server_id, motd);
+
+            if (motd && motd.length > 0 && store.shouldAutoShowMotd(server_id, motd)) {
+              const server = store.servers.find((s) => s.id === server_id);
+              useModalStore.getState().onOpen("motd", { server, serverId: server_id, motd });
+              store.markServerMotdSeen(server_id, motd);
+            }
+          }
+        );
+
+        if (isCancelled) {
+          unlistenMotd();
+        } else {
+          unlistenMotdFn = unlistenMotd;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC MOTD listener:", error);
+      }
+    };
+
+    setupMotdListener();
+
     let unlistenAwayFn: (() => void) | null = null;
     const setupAwayListener = async () => {
       try {
@@ -1050,6 +1080,9 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
       }
       if (unlistenModeErrorFn) {
         unlistenModeErrorFn();
+      }
+      if (unlistenMotdFn) {
+        unlistenMotdFn();
       }
       if (unlistenAwayFn) {
         unlistenAwayFn();

@@ -1,7 +1,8 @@
 import { ChannelType } from "@/types";
-import { Hash, User, Check, X, Sparkles, Plus } from "lucide-react";
+import { Hash, User, Check, X, Sparkles, Plus, ScrollText } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { invoke } from "@tauri-apps/api/core";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useMockStore } from "@/lib/mock-store";
@@ -153,7 +154,21 @@ export const ServerSidebar = ({
         {/* Top Section: Channels */}
         <div style={{ height: `${splitPercent}%` }} className="flex flex-col min-h-0">
           <ScrollArea className="flex-1 px-3">
-            <div className="mt-2">
+            <div className="mt-2 space-y-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  invoke("request_motd", { serverId: server.id }).catch(() => {});
+                  onOpen("motd", { server, serverId: server.id });
+                }}
+                className="group px-2 py-1.5 rounded-md flex items-center gap-x-2 w-full hover:bg-zinc-700/10 dark:hover:bg-zinc-700/50 transition text-zinc-600 dark:text-zinc-300"
+              >
+                <ScrollText className="w-4 h-4 text-zinc-500 dark:text-zinc-400 group-hover:text-zinc-700 dark:group-hover:text-zinc-200 transition shrink-0" />
+                <span className="font-semibold text-xs text-zinc-600 dark:text-zinc-300 group-hover:text-zinc-800 dark:group-hover:text-zinc-100 transition truncate">
+                  Message of the day
+                </span>
+              </button>
+
               <ServerSearch
                 serverId={server.id}
                 data={[

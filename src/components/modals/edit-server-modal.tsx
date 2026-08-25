@@ -24,10 +24,16 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ChannelInput } from "@/components/ui/channel-input";
-import { Plus, Trash, Bell, Volume2, Monitor, Clock } from "lucide-react";
+import { Plus, Trash, Bell, Volume2, Monitor, Clock, ScrollText } from "lucide-react";
 import { useModal } from "@/hooks/use-modal-store";
 import { useMockStore } from "@/lib/mock-store";
-import { NotificationOverrideValue, SoundPreset, ChannelNotificationOverrideValue, DmNotificationOverrideValue } from "@/types";
+import {
+  NotificationOverrideValue,
+  SoundPreset,
+  ChannelNotificationOverrideValue,
+  DmNotificationOverrideValue,
+  ServerMotdDisplayPolicy,
+} from "@/types";
 import { NotificationSettingsFields } from "@/components/notifications/notification-settings-fields";
 import { CustomCommandsFields, normalizeCustomCommandsFromForm } from "@/components/server/custom-commands-fields";
 
@@ -70,8 +76,13 @@ export const EditServerModal = () => {
   ) || initialServer;
 
   const globalNotif = useMockStore((state) => state.notificationSettings);
+  const globalMotdPolicy = useMockStore((state) => state.globalMotdPolicy) || "on_change";
+  const serverMotdPolicies = useMockStore((state) => state.serverMotdPolicies);
+  const setServerMotdPolicy = useMockStore((state) => state.setServerMotdPolicy);
+  const setGlobalMotdPolicy = useMockStore((state) => state.setGlobalMotdPolicy);
 
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
+  const [motdPolicyOverride, setMotdPolicyOverride] = useState<ServerMotdDisplayPolicy>("default");
   const [channelNotificationsOverride, setChannelNotificationsOverride] = useState<ChannelNotificationOverrideValue>("default");
   const [dmNotificationsOverride, setDmNotificationsOverride] = useState<DmNotificationOverrideValue>("default");
   const [soundOverride, setSoundOverride] = useState<NotificationOverrideValue>("default");
@@ -144,6 +155,11 @@ export const EditServerModal = () => {
       setDmSoundPresetOverride(server.notificationSettings?.dmSoundPreset || "default");
       setCustomSoundUrlOverride(server.notificationSettings?.customSoundUrl);
       setCustomDmSoundUrlOverride(server.notificationSettings?.customDmSoundUrl);
+      setMotdPolicyOverride(
+        server.id && serverMotdPolicies[server.id]
+          ? serverMotdPolicies[server.id]
+          : server.motdPolicy || "default"
+      );
 
       form.reset({
         name: server.name || "",
@@ -191,6 +207,7 @@ export const EditServerModal = () => {
         autoReconnect: values.autoReconnect,
         autoJoinChannels: channelArray,
         customCommands: normalizeCustomCommandsFromForm(values.customCommands),
+        motdPolicy: motdPolicyOverride,
         notificationSettings: {
           channelNotifications: channelNotificationsOverride,
           dmNotifications: dmNotificationsOverride,
@@ -204,6 +221,8 @@ export const EditServerModal = () => {
           customDmSoundUrl: customDmSoundUrlOverride,
         },
       });
+
+      setServerMotdPolicy(server.id, motdPolicyOverride);
 
       // Join the channels on IRC in case new ones were added
       for (const channel of channelArray) {
@@ -537,6 +556,40 @@ export const EditServerModal = () => {
                   </FormItem>
                 )}
               />
+
+              {/* SECTION: MOTD POLICY */}
+              <div className="flex flex-col rounded-xl border border-zinc-300/80 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-3.5 space-y-2.5 shadow-sm">
+                <div className="flex items-center gap-x-2">
+                  <ScrollText className="w-4 h-4 text-indigo-500" />
+                  <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-200">
+                    Message of the day (MOTD)
+                  </label>
+                </div>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                  Configure when to automatically display this server's MOTD on connect or join.
+                </p>
+                <select
+                  value={motdPolicyOverride}
+                  onChange={(e) => {
+                    const val = e.target.value as ServerMotdDisplayPolicy;
+                    if (val === "never_globally") {
+                      setGlobalMotdPolicy("never");
+                      setMotdPolicyOverride("never_globally");
+                    } else {
+                      setMotdPolicyOverride(val);
+                    }
+                  }}
+                  className="w-full bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  <option value="default">
+                    Default (Use global setting: {globalMotdPolicy === "always" ? "Always" : globalMotdPolicy === "never" ? "Don't show again (all servers)" : "When changed"})
+                  </option>
+                  <option value="on_change">Only when changed</option>
+                  <option value="always">Always show on connect</option>
+                  <option value="never">Don't show again (this server)</option>
+                  <option value="never_globally">Don't show again (all servers)</option>
+                </select>
+              </div>
 
               {/* SECTION: SERVER NOTIFICATION OVERRIDES */}
               <NotificationSettingsFields

@@ -19,6 +19,7 @@ import { ConnectionDetailsModal } from "@/components/modals/connection-details-m
 import { RoleIconsModal } from "@/components/modals/role-icons-modal";
 import { PrivateMessagesModal } from "@/components/modals/private-messages-modal";
 import { UpdateModal } from "@/components/modals/update-modal";
+import { MotdModal } from "@/components/modals/motd-modal";
 import { AlreadyAwayModal } from "@/components/modals/already-away-modal";
 
 export const ModalProvider = () => {
@@ -53,6 +54,7 @@ export const ModalProvider = () => {
       <RoleIconsModal />
       <PrivateMessagesModal />
       <UpdateModal />
+      <MotdModal />
       <AlreadyAwayModal />
     </>
   );

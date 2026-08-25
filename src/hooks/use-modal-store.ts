@@ -22,6 +22,7 @@ export type ModalType =
   | "roleIcons"
   | "privateMessages"
   | "updateAvailable"
+  | "motd"
   | "alreadyAway";
 
 interface ModalData {
@@ -39,6 +40,7 @@ interface ModalData {
   description?: string;
   errorMessage?: string;
   flag?: string;
+  motd?: string[];
   updateInfo?: {
     currentVersion: string;
     version: string;

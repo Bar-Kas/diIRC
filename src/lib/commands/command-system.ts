@@ -454,6 +454,24 @@ commandRegistry.register({
 });
 
 commandRegistry.register({
+  name: "motd",
+  description: "Displays the server's Message of the Day (MOTD): /motd",
+  execute: async (_args: string, ctx: CommandContext) => {
+    try {
+      invoke("request_motd", { serverId: ctx.serverId }).catch(() => {});
+      const { useModalStore } = await import("@/hooks/use-modal-store");
+      useModalStore.getState().onOpen("motd", {
+        serverId: ctx.serverId,
+        server: ctx.activeServer,
+      });
+    } catch (err) {
+      console.error("Failed to execute /motd command:", err);
+    }
+    return true;
+  },
+});
+
+commandRegistry.register({
   name: "away",
   description: "Sets away status or displays error if already away: /away [reason]",
   execute: async (args: string, ctx: CommandContext) => {

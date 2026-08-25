@@ -130,6 +130,12 @@ struct IrcInvitedEvent {
 }
 
 #[derive(Serialize, Clone)]
+struct IrcMotdEvent {
+    server_id: String,
+    motd: Vec<String>,
+}
+
+#[derive(Serialize, Clone)]
 struct IrcAwayEvent {
     server_id: String,
     nick: String,
@@ -1115,6 +1121,7 @@ async fn connect_irc(
         };
 
         let mut last_error: Option<String> = None;
+        let mut motd_buffer: Vec<String> = Vec::new();
 
         while let Some(message_res) = stream.next().await {
             match message_res {
@@ -1978,6 +1985,54 @@ async fn connect_irc(
                                 }
                             }
                         }
+                        Command::Response(Response::RPL_MOTDSTART, _) => {
+                            motd_buffer.clear();
+                        }
+                        Command::Raw(ref cmd, _) if cmd == "375" => {
+                            motd_buffer.clear();
+                        }
+                        Command::Response(Response::RPL_MOTD, ref args) => {
+                            if let Some(text) = args.get(1).or_else(|| args.last()) {
+                                let clean_text = text.strip_prefix(":- ").or_else(|| text.strip_prefix("- ")).unwrap_or(text);
+                                motd_buffer.push(clean_text.to_string());
+                            }
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "372" => {
+                            if let Some(text) = args.get(1).or_else(|| args.last()) {
+                                let clean_text = text.strip_prefix(":- ").or_else(|| text.strip_prefix("- ")).unwrap_or(text);
+                                motd_buffer.push(clean_text.to_string());
+                            }
+                        }
+                        Command::Response(Response::RPL_ENDOFMOTD, _) => {
+                            let payload = IrcMotdEvent {
+                                server_id: stream_server_id.clone(),
+                                motd: motd_buffer.clone(),
+                            };
+                            let _ = app_clone.emit("irc_motd_event", payload);
+                        }
+                        Command::Raw(ref cmd, _) if cmd == "376" => {
+                            let payload = IrcMotdEvent {
+                                server_id: stream_server_id.clone(),
+                                motd: motd_buffer.clone(),
+                            };
+                            let _ = app_clone.emit("irc_motd_event", payload);
+                        }
+                        Command::Response(Response::ERR_NOMOTD, _) => {
+                            motd_buffer.clear();
+                            let payload = IrcMotdEvent {
+                                server_id: stream_server_id.clone(),
+                                motd: Vec::new(),
+                            };
+                            let _ = app_clone.emit("irc_motd_event", payload);
+                        }
+                        Command::Raw(ref cmd, _) if cmd == "422" => {
+                            motd_buffer.clear();
+                            let payload = IrcMotdEvent {
+                                server_id: stream_server_id.clone(),
+                                motd: Vec::new(),
+                            };
+                            let _ = app_clone.emit("irc_motd_event", payload);
+                        }
                         Command::Response(Response::RPL_NOWAWAY, ref _args) => {
                             let own_nick = nicknames_clone.lock().await.get(&stream_server_id).cloned().unwrap_or_default();
                             let _ = app_clone.emit(
@@ -2769,9 +2824,28 @@ async fn clear_os_notification(tag: String) -> Result<(), String> {
         })
         .await
         .map_err(|e| format!("spawn_blocking failed: {e}"))?;
+        return Ok(());
     }
-    let _ = tag;
-    Ok(())
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = tag;
+        Ok(())
+    }
+}
+
+#[tauri::command]
+async fn request_motd(
+    state: State<'_, IrcState>,
+    server_id: String,
+) -> Result<(), String> {
+    let senders = state.senders.lock().await;
+    if let Some(sender) = senders.get(&server_id) {
+        sender
+            .send(Command::Raw("MOTD".to_string(), vec![]))
+            .map_err(|e| e.to_string())
+    } else {
+        Err(format!("Not connected to server {}", server_id))
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2812,6 +2886,7 @@ pub fn run() {
             toggle_devtools,
             send_os_notification,
             clear_os_notification,
+            request_motd,
             send_away
         ])
         .setup(|app| {

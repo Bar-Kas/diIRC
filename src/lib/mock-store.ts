@@ -17,6 +17,8 @@ import {
   NotificationOverride,
   GlobalNotificationSettings,
   CustomCommand,
+  MotdDisplayPolicy,
+  ServerMotdDisplayPolicy,
 } from "@/types";
 import { 
   INITIAL_SERVERS, 
@@ -30,6 +32,16 @@ import { MESSAGE_DEDUPLICATION_MODE } from "./config";
 
 export const MAX_HISTORY_WINDOW = 600;
 export const MAX_PENDING_LIVE = 100;
+
+export function computeMotdHash(lines: string[]): string {
+  if (!lines || !lines.length) return "";
+  const joined = lines.join("\n");
+  let hash = 5381;
+  for (let i = 0; i < joined.length; i++) {
+    hash = ((hash << 5) + hash) ^ joined.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(16);
+}
 
 const EMPTY_HISTORY_WINDOW: HistoryWindow = {
   key: null,
@@ -222,6 +234,7 @@ export interface UpdateServerOptions {
   autoReconnect?: boolean;
   customCommands?: CustomCommand[];
   notificationSettings?: NotificationOverride;
+  motdPolicy?: ServerMotdDisplayPolicy;
 }
 
 export type { StatusDisplayMode };
@@ -258,6 +271,15 @@ interface MockState {
   conversationNotificationSettings: Record<string, NotificationOverride>;
   autoUpdateMode: "auto" | "ask" | "disabled";
   setAutoUpdateMode: (mode: "auto" | "ask" | "disabled") => void;
+  serverMotds: Record<string, string[]>;
+  setServerMotd: (serverId: string, motd: string[]) => void;
+  globalMotdPolicy: MotdDisplayPolicy;
+  setGlobalMotdPolicy: (policy: MotdDisplayPolicy) => void;
+  serverMotdPolicies: Record<string, ServerMotdDisplayPolicy>;
+  setServerMotdPolicy: (serverId: string, policy: ServerMotdDisplayPolicy) => void;
+  serverMotdSeenHashes: Record<string, string>;
+  markServerMotdSeen: (serverId: string, motd: string[]) => void;
+  shouldAutoShowMotd: (serverId: string, motd: string[]) => boolean;
   sortDmByUnread: boolean;
   dmSortOrder: "opening" | "alphabetical";
   setSortDmByUnread: (enabled: boolean) => void;
@@ -457,6 +479,56 @@ export const useMockStore = create<MockState>()(
       conversationNotificationSettings: {},
       autoUpdateMode: "ask",
       setAutoUpdateMode: (mode) => set({ autoUpdateMode: mode }),
+      serverMotds: {},
+      setServerMotd: (serverId: string, motd: string[]) =>
+        set((state) => ({
+          serverMotds: {
+            ...state.serverMotds,
+            [serverId]: motd,
+          },
+        })),
+      globalMotdPolicy: "on_change",
+      setGlobalMotdPolicy: (policy: MotdDisplayPolicy) => set({ globalMotdPolicy: policy }),
+      serverMotdPolicies: {},
+      setServerMotdPolicy: (serverId: string, policy: ServerMotdDisplayPolicy) =>
+        set((state) => ({
+          serverMotdPolicies: {
+            ...state.serverMotdPolicies,
+            [serverId]: policy,
+          },
+        })),
+      serverMotdSeenHashes: {},
+      markServerMotdSeen: (serverId: string, motd: string[]) => {
+        const hash = computeMotdHash(motd);
+        if (!hash) return;
+        set((state) => ({
+          serverMotdSeenHashes: {
+            ...state.serverMotdSeenHashes,
+            [serverId]: hash,
+          },
+        }));
+      },
+      shouldAutoShowMotd: (serverId: string, motd: string[]) => {
+        if (!motd || !motd.length) return false;
+        const state = get();
+        if (state.globalMotdPolicy === "never") return false;
+
+        const server = state.servers.find((s) => s.id === serverId);
+        const serverPolicy = state.serverMotdPolicies[serverId] || server?.motdPolicy || "default";
+
+        if (serverPolicy === "never" || serverPolicy === "never_globally") return false;
+
+        const effectivePolicy: MotdDisplayPolicy =
+          serverPolicy === "default" ? state.globalMotdPolicy || "on_change" : (serverPolicy as MotdDisplayPolicy);
+
+        if (effectivePolicy === "never") return false;
+        if (effectivePolicy === "always") return true;
+
+        // on_change: compare current hash with stored seen hash
+        const currentHash = computeMotdHash(motd);
+        const lastSeenHash = state.serverMotdSeenHashes[serverId];
+        return !lastSeenHash || lastSeenHash !== currentHash;
+      },
       sortDmByUnread: true,
       dmSortOrder: "opening",
       setSortDmByUnread: (enabled) => set({ sortDmByUnread: enabled }),
@@ -731,6 +803,7 @@ export const useMockStore = create<MockState>()(
                 channels: updatedChannels,
                 members: updatedMembers,
                 notificationSettings: optionsOrName.notificationSettings ?? s.notificationSettings,
+                motdPolicy: optionsOrName.motdPolicy ?? s.motdPolicy,
               };
             } else {
               return {
