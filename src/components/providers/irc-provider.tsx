@@ -12,6 +12,7 @@ import {
   triggerIncomingNotification,
   clearNotificationGroup,
 } from "@/lib/notification-service";
+import { IrcMultilineAccumulator } from "@/lib/irc-multiline-accumulator";
 
 interface IrcMessagePayload {
   serverId?: string;
@@ -296,223 +297,45 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     return () => clearInterval(interval);
   }, [attemptConnect]);
 
-  // Listen for incoming messages across all connected IRC servers
-  useEffect(() => {
-    let isCancelled = false;
-    let unlistenFn: (() => void) | null = null;
+  const multilineAccumulatorRef = useRef<IrcMultilineAccumulator | null>(null);
 
-    const setupListener = async () => {
-      try {
-        const unlisten = await listen<IrcMessagePayload>("irc_message", async (event) => {
-          const { sender, content, channel } = event.payload;
-          const serverId = event.payload.serverId || event.payload.server_id;
-          const isSystem = event.payload.isSystem ?? event.payload.is_system;
+  const processIncomingPayload = useCallback(async (payload: IrcMessagePayload) => {
+    const { sender, channel } = payload;
+    const rawContent = payload.content;
+    const content = rawContent ? rawContent.replace(/\u0085/g, "\n") : "";
+    const serverId = payload.serverId || payload.server_id;
+    const isSystem = payload.isSystem ?? payload.is_system;
 
-          if (!serverId) return;
+    if (!serverId) return;
 
-          const activeServers = useMockStore.getState().servers;
-          const targetServer = activeServers.find((s) => s.id === serverId) || activeServers[0];
-          
-          if (!targetServer) return;
+    const activeServers = useMockStore.getState().servers;
+    const targetServer = activeServers.find((s) => s.id === serverId) || activeServers[0];
+    
+    if (!targetServer) return;
 
-          const isChannelMsg = channel.startsWith("#") || channel.startsWith("&");
+    const isChannelMsg = channel.startsWith("#") || channel.startsWith("&");
 
-          if (!isChannelMsg) {
-            // Private Message (PM)
-            const store = useMockStore.getState();
-            if (isSystem || sender === "System") {
-              const targetNick = channel;
-              const targetMember = store.addServerMember(targetServer.id, targetNick);
-              const currentMember = targetServer.members.find(
-                (m) => m.profileId === store.currentProfile.id
-              ) || targetServer.members[0];
+    if (!isChannelMsg) {
+      // Private Message (PM)
+      const store = useMockStore.getState();
+      if (isSystem || sender === "System") {
+        const targetNick = channel;
+        const targetMember = store.addServerMember(targetServer.id, targetNick);
+        const currentMember = targetServer.members.find(
+          (m) => m.profileId === store.currentProfile.id
+        ) || targetServer.members[0];
 
-              if (targetMember && currentMember) {
-                const conversationId = [currentMember.id, targetMember.id].sort().join("-");
-                const systemMember = {
-                  id: "system",
-                  profileId: "system",
-                  profile: {
-                    id: "system",
-                    userId: "system",
-                    name: "System",
-                    imageUrl: "",
-                    email: "system@irc.local",
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                  },
-                  serverId: targetServer.id,
-                  createdAt: new Date().toISOString(),
-                  updatedAt: new Date().toISOString(),
-                };
-
-                const lowerContent = content.toLowerCase();
-                const isSendError =
-                  lowerContent.includes("cannot send message") ||
-                  lowerContent.startsWith("error:") ||
-                  lowerContent.includes("no such nick") ||
-                  lowerContent.includes("cannot send to user") ||
-                  lowerContent.includes("user not online");
-
-                if (isSendError) {
-                  const restoredContent = store.removeLastDirectMessageFromMember(
-                    conversationId,
-                    currentMember.id
-                  );
-                  if (restoredContent) {
-                    useDraftStore.getState().setDraft(conversationId, {
-                      content: restoredContent,
-                      attachedImages: [],
-                    });
-                    window.dispatchEvent(
-                      new CustomEvent("restore_unsent_message", {
-                        detail: { id: conversationId, content: restoredContent },
-                      })
-                    );
-                  }
-
-                  invoke("delete_last_log_entry", {
-                    serverId: targetServer.id,
-                    target: targetNick,
-                    sender: currentMember.profile.name,
-                  })
-                    .then(() => {
-                      invoke<string[]>("list_logged_conversations", {
-                        serverId: targetServer.id,
-                      })
-                        .then((loggedNicks) => {
-                          store.syncActiveConversationsWithDisk(targetServer.id, loggedNicks);
-                        })
-                        .catch(console.error);
-                    })
-                    .catch(console.error);
-                }
-
-                store.addDirectMessage(conversationId, systemMember as any, content, null, true);
-                store.openConversation(targetServer.id, targetMember.id);
-                if (!isSendError) {
-                  store.addToHistoricalConversations(targetServer.id, targetMember.id);
-                }
-              }
-              return;
-            }
-
-            let senderMember = store.addServerMember(targetServer.id, sender);
-
-            const currentMember = targetServer.members.find(
-              (m) => m.profileId === store.currentProfile.id
-            ) || targetServer.members[0];
-
-            if (senderMember && currentMember) {
-              const conversationId = [currentMember.id, senderMember.id].sort().join("-");
-              store.addDirectMessage(conversationId, senderMember, content, null);
-              store.openConversation(targetServer.id, senderMember.id);
-              store.addToHistoricalConversations(targetServer.id, senderMember.id);
-
-              // Trigger notification for DM
-              const isSelf =
-                sender.toLowerCase() === store.currentProfile.name.toLowerCase() ||
-                (targetServer.nicknames && targetServer.nicknames.some((n) => n.toLowerCase() === sender.toLowerCase())) ||
-                (currentMember.profile?.name && currentMember.profile.name.toLowerCase() === sender.toLowerCase());
-
-              if (!isSelf) {
-                const activeKey = store.activeChatKey;
-                const isCurrentChat = activeKey === `conversation:${senderMember.id}` || activeKey === `conversation:${conversationId}`;
-                let isWindowFocused = typeof document !== "undefined" && document.hasFocus();
-                
-                try {
-                  const { getCurrentWindow } = await import("@tauri-apps/api/window");
-                  const appWindow = getCurrentWindow();
-                  isWindowFocused = await appWindow.isFocused();
-                } catch (e) {
-                  // Fallback to document.hasFocus()
-                }
-
-                if (!isCurrentChat || !isWindowFocused) {
-                  store.markUnread(`conversation:${conversationId}`, true);
-                  store.markUnread(`conversation:${senderMember.id}`, true);
-                }
-
-                if (!isCurrentChat || !isWindowFocused) {
-                  const globalNotif = store.notificationSettings;
-                  const serverNotif = targetServer.notificationSettings;
-                  const conversationNotif = store.conversationNotificationSettings[conversationId];
-
-                  const effectiveSettings = resolveEffectiveNotificationSettings(
-                    globalNotif,
-                    serverNotif,
-                    conversationNotif,
-                    true
-                  );
-
-                  if (effectiveSettings.shouldNotify()) {
-                    triggerIncomingNotification({
-                      title: `${sender} (Private Message)`,
-                      body: content,
-                      sender,
-                      tag: `dm:${targetServer.id}:${senderMember.id}`,
-                      effectiveSettings,
-                    });
-                  }
-                }
-              }
-            }
-            return;
-          }
-
-          const cleanName = channel.replace(/^#/, "").toLowerCase();
-          const targetChannel = targetServer.channels.find(
-            (c) => c.name.toLowerCase() === cleanName
-          );
-
-          if (isSystem || sender === "System") {
-            const lowerContent = content.toLowerCase();
-            const isSendError =
-              lowerContent.includes("cannot send") ||
-              lowerContent.startsWith("error:") ||
-              lowerContent.includes("permission denied") ||
-              lowerContent.includes("banned");
-
-            if (isSendError && targetChannel) {
-              const store = useMockStore.getState();
-              const currentMember = targetServer.members.find(
-                (m) => m.profileId === store.currentProfile.id
-              ) || targetServer.members[0];
-
-              if (currentMember) {
-                const restoredContent = store.removeLastMessageFromChannel(
-                  targetChannel.id,
-                  currentMember.id
-                );
-                if (restoredContent) {
-                  useDraftStore.getState().setDraft(targetChannel.id, {
-                    content: restoredContent,
-                    attachedImages: [],
-                  });
-                  window.dispatchEvent(
-                    new CustomEvent("restore_unsent_message", {
-                      detail: { id: targetChannel.id, content: restoredContent },
-                    })
-                  );
-                }
-                invoke("delete_last_log_entry", {
-                  serverId: targetServer.id,
-                  target: targetChannel.name.startsWith("#") ? targetChannel.name : `#${targetChannel.name}`,
-                  sender: currentMember.profile.name,
-                }).catch(console.error);
-              }
-            }
-          }
-
-          const mockMember = {
-            id: `irc-${sender}`,
-            profileId: `profile-${sender}`,
+        if (targetMember && currentMember) {
+          const conversationId = [currentMember.id, targetMember.id].sort().join("-");
+          const systemMember = {
+            id: "system",
+            profileId: "system",
             profile: {
-              id: `profile-${sender}`,
-              userId: `user-${sender}`,
-              name: sender,
+              id: "system",
+              userId: "system",
+              name: "System",
               imageUrl: "",
-              email: `${sender}@irc.local`,
+              email: "system@irc.local",
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             },
@@ -521,81 +344,279 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             updatedAt: new Date().toISOString(),
           };
 
-          if (targetChannel) {
-            addMessage(targetChannel.id, mockMember as any, content, null, isSystem);
-          } else if (isSystem && (!channel || channel.trim() === "")) {
-            const store = useMockStore.getState();
-            const channelsWithSender = targetServer.channels.filter((c) => {
-              const members = store.channelMembers[c.id] || [];
-              return members.some((m) => m.toLowerCase() === sender.toLowerCase());
-            });
-            const channelsToNotify = channelsWithSender.length > 0 ? channelsWithSender : targetServer.channels;
-            channelsToNotify.forEach((c) => {
-              addMessage(c.id, mockMember as any, content, null, isSystem);
-            });
-          } else if (targetServer.channels.length > 0) {
-            addMessage(targetServer.channels[0].id, mockMember as any, content, null, isSystem);
+          const lowerContent = content.toLowerCase();
+          const isSendError =
+            lowerContent.includes("cannot send message") ||
+            lowerContent.startsWith("error:") ||
+            lowerContent.includes("no such nick") ||
+            lowerContent.includes("cannot send to user") ||
+            lowerContent.includes("user not online");
+
+          if (isSendError) {
+            const restoredContent = store.removeLastDirectMessageFromMember(
+              conversationId,
+              currentMember.id
+            );
+            if (restoredContent) {
+              useDraftStore.getState().setDraft(conversationId, {
+                content: restoredContent,
+                attachedImages: [],
+              });
+              window.dispatchEvent(
+                new CustomEvent("restore_unsent_message", {
+                  detail: { id: conversationId, content: restoredContent },
+                })
+              );
+            }
+
+            invoke("delete_last_log_entry", {
+              serverId: targetServer.id,
+              target: targetNick,
+              sender: currentMember.profile.name,
+            })
+              .then(() => {
+                invoke<string[]>("list_logged_conversations", {
+                  serverId: targetServer.id,
+                })
+                  .then((loggedNicks) => {
+                    store.syncActiveConversationsWithDisk(targetServer.id, loggedNicks);
+                  })
+                  .catch(console.error);
+              })
+              .catch(console.error);
           }
 
-          // Trigger notification for channel message
-          const store = useMockStore.getState();
-          const isSelf =
-            sender.toLowerCase() === store.currentProfile.name.toLowerCase() ||
-            (targetServer.nicknames && targetServer.nicknames.some((n) => n.toLowerCase() === sender.toLowerCase())) ||
-            targetServer.members.some(
-              (m) =>
-                (m.profileId === store.currentProfile.id || m.profile?.id === store.currentProfile.id) &&
-                m.profile?.name?.toLowerCase() === sender.toLowerCase()
+          store.addDirectMessage(conversationId, systemMember as any, content, null, true);
+          store.openConversation(targetServer.id, targetMember.id);
+          if (!isSendError) {
+            store.addToHistoricalConversations(targetServer.id, targetMember.id);
+          }
+        }
+        return;
+      }
+
+      let senderMember = store.addServerMember(targetServer.id, sender);
+
+      const currentMember = targetServer.members.find(
+        (m) => m.profileId === store.currentProfile.id
+      ) || targetServer.members[0];
+
+      if (senderMember && currentMember) {
+        const conversationId = [currentMember.id, senderMember.id].sort().join("-");
+        store.addDirectMessage(conversationId, senderMember, content, null);
+        store.openConversation(targetServer.id, senderMember.id);
+        store.addToHistoricalConversations(targetServer.id, senderMember.id);
+
+        // Trigger notification for DM
+        const isSelf =
+          sender.toLowerCase() === store.currentProfile.name.toLowerCase() ||
+          (targetServer.nicknames && targetServer.nicknames.some((n) => n.toLowerCase() === sender.toLowerCase())) ||
+          (currentMember.profile?.name && currentMember.profile.name.toLowerCase() === sender.toLowerCase());
+
+        if (!isSelf) {
+          const activeKey = store.activeChatKey;
+          const isCurrentChat = activeKey === `conversation:${senderMember.id}` || activeKey === `conversation:${conversationId}`;
+          let isWindowFocused = typeof document !== "undefined" && document.hasFocus();
+          
+          try {
+            const { getCurrentWindow } = await import("@tauri-apps/api/window");
+            const appWindow = getCurrentWindow();
+            isWindowFocused = await appWindow.isFocused();
+          } catch (e) {
+            // Fallback to document.hasFocus()
+          }
+
+          if (!isCurrentChat || !isWindowFocused) {
+            store.markUnread(`conversation:${conversationId}`, true);
+            store.markUnread(`conversation:${senderMember.id}`, true);
+          }
+
+          if (!isCurrentChat || !isWindowFocused) {
+            const globalNotif = store.notificationSettings;
+            const serverNotif = targetServer.notificationSettings;
+            const conversationNotif = store.conversationNotificationSettings[conversationId];
+
+            const effectiveSettings = resolveEffectiveNotificationSettings(
+              globalNotif,
+              serverNotif,
+              conversationNotif,
+              true
             );
 
-          if (!isSystem && sender !== "System" && !isSelf) {
-            const activeKey = store.activeChatKey;
-            const isCurrentChat = targetChannel && activeKey === `channel:${targetChannel.id}`;
-            let isWindowFocused = typeof document !== "undefined" && document.hasFocus();
-            
-            try {
-              const { getCurrentWindow } = await import("@tauri-apps/api/window");
-              const appWindow = getCurrentWindow();
-              isWindowFocused = await appWindow.isFocused();
-            } catch (e) {
-              // Fallback to document.hasFocus()
-            }
-
-            const ourNick = targetServer.nicknames?.[0] || store.currentProfile.name;
-            const escapedNick = ourNick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const hasMention = new RegExp(`\\b${escapedNick}\\b`, "i").test(content);
-
-            if (!isCurrentChat || !isWindowFocused) {
-              if (targetChannel?.id) {
-                store.markUnread(`channel:${targetChannel.id}`, hasMention);
-              }
-            }
-
-            if (!isCurrentChat || !isWindowFocused) {
-              const globalNotif = store.notificationSettings;
-              const serverNotif = targetServer.notificationSettings;
-              const channelNotif = targetChannel?.notificationSettings;
-
-              const effectiveSettings = resolveEffectiveNotificationSettings(
-                globalNotif,
-                serverNotif,
-                channelNotif,
-                false
-              );
-
-              if (effectiveSettings.shouldNotify(hasMention)) {
-                const chanName = targetChannel ? `#${targetChannel.name}` : channel;
-
-                triggerIncomingNotification({
-                  title: `${chanName} - ${sender}`,
-                  body: content,
-                  sender,
-                  tag: `chan:${targetServer.id}:${targetChannel?.id || channel}`,
-                  effectiveSettings,
-                });
-              }
+            if (effectiveSettings.shouldNotify()) {
+              triggerIncomingNotification({
+                title: `${sender} (Private Message)`,
+                body: content,
+                sender,
+                tag: `dm:${targetServer.id}:${senderMember.id}`,
+                effectiveSettings,
+              });
             }
           }
+        }
+      }
+      return;
+    }
+
+    const cleanName = channel.replace(/^#/, "").toLowerCase();
+    const targetChannel = targetServer.channels.find(
+      (c) => c.name.toLowerCase() === cleanName
+    );
+
+    if (isSystem || sender === "System") {
+      const lowerContent = content.toLowerCase();
+      const isSendError =
+        lowerContent.includes("cannot send") ||
+        lowerContent.startsWith("error:") ||
+        lowerContent.includes("permission denied") ||
+        lowerContent.includes("banned");
+
+      if (isSendError && targetChannel) {
+        const store = useMockStore.getState();
+        const currentMember = targetServer.members.find(
+          (m) => m.profileId === store.currentProfile.id
+        ) || targetServer.members[0];
+
+        if (currentMember) {
+          const restoredContent = store.removeLastMessageFromChannel(
+            targetChannel.id,
+            currentMember.id
+          );
+          if (restoredContent) {
+            useDraftStore.getState().setDraft(targetChannel.id, {
+              content: restoredContent,
+              attachedImages: [],
+            });
+            window.dispatchEvent(
+              new CustomEvent("restore_unsent_message", {
+                detail: { id: targetChannel.id, content: restoredContent },
+              })
+            );
+          }
+          invoke("delete_last_log_entry", {
+            serverId: targetServer.id,
+            target: targetChannel.name.startsWith("#") ? targetChannel.name : `#${targetChannel.name}`,
+            sender: currentMember.profile.name,
+          }).catch(console.error);
+        }
+      }
+    }
+
+    const mockMember = {
+      id: `irc-${sender}`,
+      profileId: `profile-${sender}`,
+      profile: {
+        id: `profile-${sender}`,
+        userId: `user-${sender}`,
+        name: sender,
+        imageUrl: "",
+        email: `${sender}@irc.local`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      serverId: targetServer.id,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (targetChannel) {
+      addMessage(targetChannel.id, mockMember as any, content, null, isSystem);
+    } else if (targetServer.channels.length > 0) {
+      addMessage(targetServer.channels[0].id, mockMember as any, content, null, isSystem);
+    }
+
+    // Trigger notification for channel message
+    const store = useMockStore.getState();
+    const isSelf =
+      sender.toLowerCase() === store.currentProfile.name.toLowerCase() ||
+      (targetServer.nicknames && targetServer.nicknames.some((n) => n.toLowerCase() === sender.toLowerCase())) ||
+      targetServer.members.some(
+        (m) =>
+          (m.profileId === store.currentProfile.id || m.profile?.id === store.currentProfile.id) &&
+          m.profile?.name?.toLowerCase() === sender.toLowerCase()
+      );
+
+    if (!isSystem && sender !== "System" && !isSelf) {
+      const activeKey = store.activeChatKey;
+      const isCurrentChat = targetChannel && activeKey === `channel:${targetChannel.id}`;
+      let isWindowFocused = typeof document !== "undefined" && document.hasFocus();
+      
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const appWindow = getCurrentWindow();
+        isWindowFocused = await appWindow.isFocused();
+      } catch (e) {
+        // Fallback to document.hasFocus()
+      }
+
+      const ourNick = targetServer.nicknames?.[0] || store.currentProfile.name;
+      const escapedNick = ourNick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const hasMention = new RegExp(`\\b${escapedNick}\\b`, "i").test(content);
+
+      if (!isCurrentChat || !isWindowFocused) {
+        if (targetChannel?.id) {
+          store.markUnread(`channel:${targetChannel.id}`, hasMention);
+        }
+      }
+
+      if (!isCurrentChat || !isWindowFocused) {
+        const globalNotif = store.notificationSettings;
+        const serverNotif = targetServer.notificationSettings;
+        const channelNotif = targetChannel?.notificationSettings;
+
+        const effectiveSettings = resolveEffectiveNotificationSettings(
+          globalNotif,
+          serverNotif,
+          channelNotif,
+          false
+        );
+
+        if (effectiveSettings.shouldNotify(hasMention)) {
+          triggerIncomingNotification({
+            title: `${sender} (${targetChannel?.name || channel})`,
+            body: content,
+            sender,
+            tag: `chan:${targetServer.id}:${targetChannel?.id || channel}`,
+            effectiveSettings,
+          });
+        }
+      }
+    }
+  }, [addMessage]);
+
+  if (!multilineAccumulatorRef.current) {
+    multilineAccumulatorRef.current = new IrcMultilineAccumulator((sId, target, senderNick, lines, isValid) => {
+      if (isValid) {
+        processIncomingPayload({
+          serverId: sId,
+          channel: target,
+          sender: senderNick,
+          content: lines.join("\n"),
+          isSystem: false,
+        });
+      } else {
+        for (const line of lines) {
+          processIncomingPayload({
+            serverId: sId,
+            channel: target,
+            sender: senderNick,
+            content: line,
+            isSystem: false,
+          });
+        }
+      }
+    });
+  }
+
+  // Listen for incoming messages across all connected IRC servers
+  useEffect(() => {
+    let isCancelled = false;
+    let unlistenFn: (() => void) | null = null;
+
+    const setupListener = async () => {
+      try {
+        const unlisten = await listen<IrcMessagePayload>("irc_message", async (event) => {
+          processIncomingPayload(event.payload);
         });
 
         if (isCancelled) {

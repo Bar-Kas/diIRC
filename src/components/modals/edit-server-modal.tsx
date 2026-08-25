@@ -29,6 +29,7 @@ import { useModal } from "@/hooks/use-modal-store";
 import { useMockStore } from "@/lib/mock-store";
 import { NotificationOverrideValue, SoundPreset, ChannelNotificationOverrideValue, DmNotificationOverrideValue } from "@/types";
 import { NotificationSettingsFields } from "@/components/notifications/notification-settings-fields";
+import { CustomCommandsFields, normalizeCustomCommandsFromForm } from "@/components/server/custom-commands-fields";
 
 const formSchema = z.object({
   name: z.string().min(1, { message: "Server name is required." }),
@@ -47,6 +48,14 @@ const formSchema = z.object({
   useTls: z.boolean().default(false),
   autoConnect: z.boolean().default(true),
   autoReconnect: z.boolean().default(true),
+  customCommands: z.array(
+    z.object({
+      trigger: z.string(),
+      message: z.string(),
+      description: z.string().optional().default(""),
+      suggestions: z.string().optional().default(""),
+    })
+  ).default([]),
 });
 
 export const EditServerModal = () => {
@@ -101,6 +110,7 @@ export const EditServerModal = () => {
       useTls: false,
       autoConnect: true,
       autoReconnect: true,
+      customCommands: [],
     }
   });
 
@@ -146,6 +156,12 @@ export const EditServerModal = () => {
         useTls: server.useTls ?? false,
         autoConnect: server.autoConnect ?? true,
         autoReconnect: server.autoReconnect ?? true,
+        customCommands: (server.customCommands || []).map((c) => ({
+          trigger: c.trigger,
+          message: c.message,
+          description: c.description || "",
+          suggestions: (c.suggestions || []).join(", "),
+        })),
       });
     }
   }, [server, isModalOpen, form]);
@@ -174,6 +190,7 @@ export const EditServerModal = () => {
         autoConnect: values.autoConnect,
         autoReconnect: values.autoReconnect,
         autoJoinChannels: channelArray,
+        customCommands: normalizeCustomCommandsFromForm(values.customCommands),
         notificationSettings: {
           channelNotifications: channelNotificationsOverride,
           dmNotifications: dmNotificationsOverride,
@@ -442,6 +459,8 @@ export const EditServerModal = () => {
                   />
                 ))}
               </div>
+
+              <CustomCommandsFields control={form.control} disabled={isLoading} />
 
               <FormField
                 control={form.control}

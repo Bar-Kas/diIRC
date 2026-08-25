@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Member, Server } from "@/types";
+import { CustomCommand, Member, Server } from "@/types";
 import { inviteUserToChannel } from "@/lib/irc-actions";
 
 export interface CommandContext {
@@ -14,12 +14,141 @@ export interface CommandContext {
   addMessage: (channelId: string, member: Member, content: string) => void;
   addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean) => void;
   navigate?: (path: string) => void;
+  setInputContent?: (content: string, cursorPosition?: number) => void;
 }
 
 export interface SlashCommand {
   name: string;
   description: string;
   execute: (args: string, ctx: CommandContext) => Promise<boolean | void> | boolean | void;
+}
+
+export function normalizeCommandTrigger(trigger: string): string {
+  return trigger.trim().replace(/^\//, "").toLowerCase();
+}
+
+export function expandCustomCommand(
+  input: string,
+  customs: CustomCommand[] | undefined
+): string | null {
+  if (!customs?.length) return null;
+
+  const trimmed = input.trim();
+  if (!trimmed.startsWith("/")) return null;
+
+  const withoutSlash = trimmed.slice(1);
+  const spaceIdx = withoutSlash.search(/\s/);
+  const name = normalizeCommandTrigger(spaceIdx === -1 ? withoutSlash : withoutSlash.slice(0, spaceIdx));
+  const args = spaceIdx === -1 ? "" : withoutSlash.slice(spaceIdx + 1).trim();
+
+  if (!name) return null;
+
+  const match = customs.find(
+    (c) => normalizeCommandTrigger(c.trigger) === name && c.message.trim()
+  );
+  if (!match) return null;
+
+  const template = match.message.trim();
+  if (/\$\*|\$args/i.test(template)) {
+    return template.replace(/\$\*|\$args/gi, args).replace(/[ \t]+/g, " ").trim();
+  }
+  return args ? `${template} ${args}` : template;
+}
+
+export interface CommandSuggestionItem {
+  insert: string;
+  label: string;
+  description: string;
+}
+
+export function listSlashSuggestions(
+  input: string,
+  customs: CustomCommand[] | undefined
+): CommandSuggestionItem[] {
+  if (!input.startsWith("/")) return [];
+
+  const rest = input.slice(1);
+  const spaceIdx = rest.search(/\s/);
+  const reserved = new Set(commandRegistry.getAll().map((c) => c.name.toLowerCase()));
+
+  if (spaceIdx === -1) {
+    const q = rest.toLowerCase();
+    const items: CommandSuggestionItem[] = [];
+
+    for (const cmd of commandRegistry.getAll()) {
+      if (q && !cmd.name.toLowerCase().includes(q)) continue;
+      items.push({
+        insert: `/${cmd.name} `,
+        label: `/${cmd.name}`,
+        description: cmd.description,
+      });
+    }
+
+    for (const c of customs || []) {
+      const name = normalizeCommandTrigger(c.trigger);
+      const message = c.message.trim();
+      if (!name || !message || reserved.has(name)) continue;
+      if (q && !name.includes(q)) continue;
+
+      const presets = (c.suggestions || []).map((s) => s.trim()).filter(Boolean);
+      const userDescription = (c.description || "").trim();
+
+      if (q === name && presets.length > 0) {
+        for (const arg of presets) {
+          const slashLine = `/${name} ${arg}`;
+          const sent = expandCustomCommand(slashLine, [c]) || `${message} ${arg}`;
+          items.push({
+            insert: slashLine,
+            label: slashLine,
+            description: userDescription
+              ? `${userDescription} · Sends: ${sent}`
+              : `Sends: ${sent}`,
+          });
+        }
+        continue;
+      }
+
+      const hint = userDescription
+        ? userDescription
+        : presets.length > 0
+        ? `Sends: ${message} · ${presets.slice(0, 3).join(", ")}${presets.length > 3 ? "…" : ""}`
+        : `Sends: ${message}`;
+      items.push({
+        insert: `/${name} `,
+        label: `/${name}`,
+        description: hint,
+      });
+    }
+
+    return items;
+  }
+
+  const cmdName = normalizeCommandTrigger(rest.slice(0, spaceIdx));
+  const argQuery = rest.slice(spaceIdx + 1);
+
+  const custom = (customs || []).find(
+    (c) => normalizeCommandTrigger(c.trigger) === cmdName && !reserved.has(cmdName)
+  );
+  if (!custom) return [];
+
+  const presets = (custom.suggestions || []).map((s) => s.trim()).filter(Boolean);
+  if (!presets.length) return [];
+
+  const aq = argQuery.toLowerCase();
+  const userDescription = (custom.description || "").trim();
+  return presets
+    .filter((arg) => !aq || arg.toLowerCase().startsWith(aq) || arg.toLowerCase().includes(aq))
+    .map((arg) => {
+      const slashLine = `/${cmdName} ${arg}`;
+      const sent = expandCustomCommand(slashLine, [custom]) || `${custom.message.trim()} ${arg}`;
+      return {
+        insert: slashLine,
+        label: slashLine,
+        description: userDescription
+          ? `${userDescription} · Sends: ${sent}`
+          : `Sends: ${sent}`,
+      };
+    });
 }
 
 class CommandRegistry {
@@ -67,7 +196,7 @@ commandRegistry.register({
     const actionText = args.trim();
     if (!actionText) return;
 
-    const ctcpAction = `\x01ACTION ${actionText}\x01`;
+    const ctcpAction = `\x01ACTION ${actionText.replace(/\r?\n/g, "\u0085")}\x01`;
 
     if (ctx.type === "channel" && ctx.channelId) {
       const channelTarget = ctx.channelName.startsWith("#") ? ctx.channelName : `#${ctx.channelName}`;
@@ -288,11 +417,12 @@ commandRegistry.register({
 
     if (initialMessage) {
       const conversationId = [ctx.currentMember.id, targetMember.id].sort().join("-");
+      const ircMessage = initialMessage.replace(/\r?\n/g, "\u0085");
       try {
         await invoke("send_message", {
           serverId: ctx.serverId,
           channel: cleanNick,
-          message: initialMessage,
+          message: ircMessage,
         });
         ctx.addDirectMessage(conversationId, ctx.currentMember, initialMessage);
       } catch (err) {
@@ -307,5 +437,21 @@ commandRegistry.register({
     return true;
   },
 });
+
+commandRegistry.register({
+  name: "code",
+  description: "Inserts a markdown code block template",
+  execute: (args: string, ctx: CommandContext) => {
+    const lang = args.trim();
+    const template = `\`\`\`${lang}\n\n\`\`\``;
+    const cursorPosition = 3 + lang.length + 1;
+
+    if (ctx.setInputContent) {
+      ctx.setInputContent(template, cursorPosition);
+    }
+    return true;
+  },
+});
+
 
 

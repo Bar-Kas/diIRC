@@ -15,7 +15,8 @@ import {
   HistoryWindow,
   PendingInvite,
   NotificationOverride,
-  GlobalNotificationSettings
+  GlobalNotificationSettings,
+  CustomCommand,
 } from "@/types";
 import { 
   INITIAL_SERVERS, 
@@ -178,7 +179,7 @@ const mapLogEntries = (
   return {
     id: stableId,
     offset: entry.offset,
-    content: entry.content,
+    content: entry.content ? entry.content.replace(/\u0085/g, "\n") : "",
     fileUrl: null,
     memberId: member.id,
     member,
@@ -202,6 +203,7 @@ export interface AddServerOptions {
   imageUrl?: string;
   autoConnect?: boolean;
   autoReconnect?: boolean;
+  customCommands?: CustomCommand[];
   notificationSettings?: NotificationOverride;
 }
 
@@ -217,6 +219,7 @@ export interface UpdateServerOptions {
   imageUrl?: string;
   autoConnect?: boolean;
   autoReconnect?: boolean;
+  customCommands?: CustomCommand[];
   notificationSettings?: NotificationOverride;
 }
 
@@ -557,6 +560,7 @@ export const useMockStore = create<MockState>()(
         let autoReconnect = true;
         let autoJoinChannels: string[] = ["general", "test"];
         let imageUrl = imageUrlParam || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80";
+        let customCommands: CustomCommand[] = [];
 
         if (typeof optionsOrName === "object") {
           name = optionsOrName.name;
@@ -573,6 +577,9 @@ export const useMockStore = create<MockState>()(
           }
           if (optionsOrName.imageUrl) {
             imageUrl = optionsOrName.imageUrl;
+          }
+          if (optionsOrName.customCommands) {
+            customCommands = optionsOrName.customCommands;
           }
         } else {
           name = optionsOrName;
@@ -613,6 +620,7 @@ export const useMockStore = create<MockState>()(
           autoConnect,
           autoReconnect,
           autoJoinChannels,
+          customCommands,
           imageUrl,
           inviteCode: `invite-${uuidv4().slice(0, 8)}`,
           profileId: get().currentProfile.id,
@@ -712,6 +720,7 @@ export const useMockStore = create<MockState>()(
                 autoConnect: optionsOrName.autoConnect ?? s.autoConnect ?? true,
                 autoReconnect: optionsOrName.autoReconnect ?? s.autoReconnect ?? true,
                 autoJoinChannels: optionsOrName.autoJoinChannels || s.autoJoinChannels,
+                customCommands: optionsOrName.customCommands ?? s.customCommands,
                 imageUrl: optionsOrName.imageUrl || s.imageUrl,
                 channels: updatedChannels,
                 members: updatedMembers,
@@ -2192,6 +2201,23 @@ export const useMockStore = create<MockState>()(
             members,
             useTls: s.useTls ?? false,
             autoJoinChannels: Array.isArray(s.autoJoinChannels) ? s.autoJoinChannels : ["general", "test"],
+            customCommands: Array.isArray(s.customCommands)
+              ? s.customCommands
+                  .map((c: any) => ({
+                    trigger: String(c?.trigger || "").replace(/^\//, "").trim(),
+                    message: String(c?.message || "").trim(),
+                    description: String(c?.description || "").trim() || undefined,
+                    suggestions: Array.isArray(c?.suggestions)
+                      ? c.suggestions.map((x: any) => String(x || "").trim()).filter(Boolean)
+                      : typeof c?.suggestions === "string"
+                      ? String(c.suggestions)
+                          .split(",")
+                          .map((x: string) => x.trim())
+                          .filter(Boolean)
+                      : [],
+                  }))
+                  .filter((c: CustomCommand) => c.trigger && c.message)
+              : [],
           };
         });
         return {

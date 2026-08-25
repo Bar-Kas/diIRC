@@ -24,8 +24,28 @@ import { getHighestChannelRole } from "@/components/user-role-icon";
 import { uploadImage } from "@/lib/upload/services";
 import { ImageContextMenu } from "@/components/image-context-menu";
 import { isMediaUrl } from "@/lib/image-utils";
-import { commandRegistry } from "@/lib/commands/command-system";
+import { commandRegistry, expandCustomCommand, listSlashSuggestions } from "@/lib/commands/command-system";
 import { useDraftStore, AttachedImage } from "@/hooks/use-draft-store";
+
+export const getIrcByteCount = (text: string): number => {
+  if (!text) return 0;
+  const ircMessage = text.replace(/\r?\n/g, "\u0085");
+  return new TextEncoder().encode(ircMessage).length;
+};
+
+export const getIrcMaxMessageBytes = (
+  target: string,
+  nick?: string,
+  username?: string,
+  host?: string
+): number => {
+  const defaultNick = nick || "user";
+  const defaultUser = username || defaultNick;
+  const defaultHost = host || "localhost";
+  const rawPrefix = `:${defaultNick}!${defaultUser}@${defaultHost} PRIVMSG ${target} :\r\n`;
+  const overhead = new TextEncoder().encode(rawPrefix).length;
+  return Math.max(0, 512 - overhead);
+};
 
 interface ChatInputProps {
   query: Record<string, string>;
@@ -65,7 +85,6 @@ export const ChatInput = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const [commandQuery, setCommandQuery] = useState("");
   const [showCommands, setShowCommands] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [isFocused, setIsFocused] = useState(true);
@@ -155,7 +174,36 @@ export const ChatInput = ({
     return () => clearTimeout(timer);
   }, [activeId, form, getDraft, setDraft, focusInput]);
 
-  const content = form.watch("content");
+  const content = form.watch("content") || "";
+
+  const targetName = type === "channel" ? (name.startsWith("#") ? name : `#${name}`) : name;
+  const currentNick = primaryNick || currentMember?.profile?.name || "You";
+  const serverHost = activeServer?.host || "localhost";
+  const serverUser = activeServer?.realname || currentNick;
+
+  const maxBytes = getIrcMaxMessageBytes(targetName, currentNick, serverUser, serverHost);
+  const currentBytes = getIrcByteCount(content);
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const pasteText = e.clipboardData.getData("text");
+    if (!pasteText) return;
+
+    const textarea = e.currentTarget;
+    const selectionStart = textarea.selectionStart ?? 0;
+    const selectionEnd = textarea.selectionEnd ?? 0;
+    const currentVal = form.getValues("content") || "";
+
+    const nextVal = currentVal.slice(0, selectionStart) + pasteText + currentVal.slice(selectionEnd);
+    const nextBytes = getIrcByteCount(nextVal);
+
+    if (nextBytes > maxBytes) {
+      e.preventDefault();
+      onOpen("ircError", {
+        title: "Message length limit exceeded",
+        description: `Pasted message exceeds the maximum allowed limit of ${maxBytes} bytes (attempted paste size: ${nextBytes} bytes).`,
+      });
+    }
+  };
 
   useEffect(() => {
     if (!activeId || isSwitchingRef.current) return;
@@ -183,8 +231,11 @@ export const ChatInput = ({
 
   useEffect(() => {
     if (enableCommandSuggestions && isFocused && content?.startsWith("/")) {
-      if (content.indexOf(" ") === -1) {
-        setCommandQuery(content.slice(1).toLowerCase());
+      const active = query?.serverId
+        ? servers.find((s) => s.id === query.serverId)
+        : servers[0];
+      const items = listSlashSuggestions(content, active?.customCommands);
+      if (items.length > 0) {
         setShowCommands(true);
         setSelectedCommandIndex(0);
       } else {
@@ -193,11 +244,15 @@ export const ChatInput = ({
     } else {
       setShowCommands(false);
     }
-  }, [content, enableCommandSuggestions, isFocused]);
+  }, [content, enableCommandSuggestions, isFocused, query?.serverId, servers]);
 
-  const filteredCommands = commandRegistry.getAll().filter(cmd => 
-    cmd.name.toLowerCase().includes(commandQuery)
-  );
+  const filteredCommands = (() => {
+    if (!content?.startsWith("/")) return [];
+    const active = query?.serverId
+      ? servers.find((s) => s.id === query.serverId)
+      : servers[0];
+    return listSlashSuggestions(content, active?.customCommands);
+  })();
 
   const removeAttachment = useCallback((id: string) => {
     setAttachedImages((prev) => {
@@ -423,8 +478,94 @@ export const ChatInput = ({
     }
   };
 
-  const onCommandSelect = (commandName: string) => {
-    form.setValue("content", `/${commandName} `);
+  const autoResize = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    const newHeight = Math.min(ta.scrollHeight, 120);
+    ta.style.height = `${newHeight}px`;
+  }, []);
+
+  const createCommandContext = useCallback((onInputUpdated?: () => void) => {
+    const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : (servers[0] || null);
+    if (!activeServer) return null;
+
+    const senderMember: Member = currentMember
+      ? {
+          ...currentMember,
+          profile: {
+            ...currentMember.profile,
+            name: primaryNick || currentMember.profile.name,
+          },
+        }
+      : {
+          id: `self-${activeServer.id}`,
+          profileId: currentProfile.id,
+          profile: {
+            ...currentProfile,
+            name: primaryNick || currentProfile.name,
+          },
+          serverId: activeServer.id,
+        };
+
+    return {
+      serverId: activeServer.id,
+      channelName: name,
+      channelId: query?.channelId,
+      conversationId: query?.conversationId,
+      targetMemberId: query?.targetMemberId,
+      type,
+      currentMember: senderMember,
+      activeServer,
+      addMessage,
+      addDirectMessage,
+      navigate,
+      setInputContent: (newContent: string, cursorPosition?: number) => {
+        if (onInputUpdated) onInputUpdated();
+        form.setValue("content", newContent);
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+            if (typeof cursorPosition === "number") {
+              textareaRef.current.setSelectionRange(cursorPosition, cursorPosition);
+            }
+          }
+          autoResize();
+        }, 0);
+      },
+    };
+  }, [
+    query,
+    servers,
+    currentMember,
+    primaryNick,
+    currentProfile,
+    name,
+    type,
+    addMessage,
+    addDirectMessage,
+    navigate,
+    form,
+    autoResize,
+  ]);
+
+  const onCommandSelect = (insert: string) => {
+    const trimmedInsert = insert.trim();
+    if (trimmedInsert === "/code") {
+      const currentContent = form.getValues("content") || "";
+      let args = "";
+      if (currentContent.toLowerCase().startsWith(`/code`)) {
+        args = currentContent.slice(5).trim();
+      }
+      const ctx = createCommandContext();
+      if (ctx) {
+        commandRegistry.execute(`/code ${args}`, ctx);
+      }
+      setShowCommands(false);
+      return;
+    }
+
+    form.setValue("content", insert);
     form.setFocus("content");
     setShowCommands(false);
   };
@@ -439,10 +580,18 @@ export const ChatInput = ({
         e.preventDefault();
         setSelectedCommandIndex((prev) => (prev - 1 + filteredCommands.length) % filteredCommands.length);
         return;
-      } else if (e.key === "Enter" || e.key === "Tab") {
+      } else if (e.key === "Tab") {
         e.preventDefault();
-        onCommandSelect(filteredCommands[selectedCommandIndex].name);
+        onCommandSelect(filteredCommands[selectedCommandIndex].insert);
         return;
+      } else if (e.key === "Enter") {
+        const selected = filteredCommands[selectedCommandIndex];
+        if (content.trim() !== selected.insert.trim()) {
+          e.preventDefault();
+          onCommandSelect(selected.insert);
+          return;
+        }
+        setShowCommands(false);
       } else if (e.key === "Escape") {
         e.preventDefault();
         setShowCommands(false);
@@ -462,14 +611,6 @@ export const ChatInput = ({
       return;
     }
   };
-
-  const autoResize = useCallback(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    const newHeight = Math.min(ta.scrollHeight, 120);
-    ta.style.height = `${newHeight}px`;
-  }, []);
 
   useEffect(() => {
     autoResize();
@@ -519,50 +660,57 @@ export const ChatInput = ({
           };
 
       if (textContent.startsWith("/")) {
-        const isHandled = await commandRegistry.execute(textContent, {
-          serverId: activeServer.id,
-          channelName: name,
-          channelId: query?.channelId,
-          conversationId: query?.conversationId,
-          targetMemberId: query?.targetMemberId,
-          type,
-          currentMember: senderMember,
-          activeServer,
-          addMessage,
-          addDirectMessage,
-          navigate,
+        let inputUpdated = false;
+        const ctx = createCommandContext(() => {
+          inputUpdated = true;
         });
 
-        if (isHandled) {
-          for (const img of readyImages) {
-            if (img.url) {
-              if (type === "channel" && query?.channelId) {
-                await invoke("send_message", {
-                  serverId: activeServer.id,
-                  channel: name.startsWith("#") ? name : `#${name}`,
-                  message: img.url,
-                }).catch((e) => console.error(e));
-                addMessage(query.channelId, senderMember, img.url);
-              } else if (type === "conversation" && query?.conversationId) {
-                await invoke("send_message", {
-                  serverId: activeServer.id,
-                  channel: name,
-                  message: img.url,
-                }).catch((e) => console.error(e));
-                addDirectMessage(query.conversationId, senderMember, img.url);
-                if (query.targetMemberId) {
-                  useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
+        if (ctx) {
+          const isHandled = await commandRegistry.execute(textContent, ctx);
+
+          if (isHandled) {
+            for (const img of readyImages) {
+              if (img.url) {
+                if (type === "channel" && query?.channelId) {
+                  await invoke("send_message", {
+                    serverId: activeServer.id,
+                    channel: name.startsWith("#") ? name : `#${name}`,
+                    message: img.url,
+                  }).catch((e) => console.error(e));
+                  addMessage(query.channelId, senderMember, img.url);
+                } else if (type === "conversation" && query?.conversationId) {
+                  await invoke("send_message", {
+                    serverId: activeServer.id,
+                    channel: name,
+                    message: img.url,
+                  }).catch((e) => console.error(e));
+                  addDirectMessage(query.conversationId, senderMember, img.url);
+                  if (query.targetMemberId) {
+                    useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
+                  }
                 }
               }
             }
+            if (!inputUpdated) {
+              if (activeId) {
+                clearDraft(activeId);
+              }
+              form.reset({ content: "" });
+              clearAllAttachments();
+              form.setFocus("content");
+            }
+            return;
           }
-          if (activeId) {
-            clearDraft(activeId);
-          }
-          form.reset({ content: "" });
-          clearAllAttachments();
-          focusInput();
-          return;
+
+        }
+
+        const expanded = expandCustomCommand(textContent, activeServer.customCommands);
+        if (expanded !== null) {
+          linesToSend.length = 0;
+          linesToSend.push(expanded);
+          readyImages.forEach((img) => {
+            if (img.url) linesToSend.push(img.url);
+          });
         }
       }
 
@@ -574,55 +722,40 @@ export const ChatInput = ({
       focusInput();
 
       for (const line of linesToSend) {
+        const targetName = type === "channel" ? (name.startsWith("#") ? name : `#${name}`) : name;
+
         if (type === "channel" && query?.channelId) {
           addMessage(query.channelId, senderMember, line);
-          try {
-            await invoke("send_message", { 
-              serverId: activeServer.id,
-              channel: name.startsWith("#") ? name : `#${name}`, 
-              message: line 
-            });
-          } catch (err: any) {
-            console.error("Failed to send channel message via Tauri IRC:", err);
-            useMockStore.getState().removeLastMessageFromChannel(query.channelId, senderMember.id);
-            await invoke("delete_last_log_entry", {
-              serverId: activeServer.id,
-              target: name.startsWith("#") ? name : `#${name}`,
-              sender: senderMember.profile.name,
-            }).catch(() => {});
-            form.setValue("content", line);
-            focusInput();
-            return;
-          }
         } else if (type === "conversation" && query?.conversationId) {
           addDirectMessage(query.conversationId, senderMember, line);
           if (query.targetMemberId) {
             useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
           }
-          try {
-            await invoke("send_message", { 
-              serverId: activeServer.id,
-              channel: name, 
-              message: line 
-            });
-          } catch (err: any) {
-            console.error("Failed to send private message via Tauri IRC:", err);
+        }
+
+        // Format message for IRC: replace newlines with NEL character (ASCII C1 Hex 85 / \u0085)
+        const ircMessage = line.replace(/\r?\n/g, "\u0085");
+
+        try {
+          await invoke("send_message", {
+            serverId: activeServer.id,
+            channel: targetName,
+            message: ircMessage,
+          });
+        } catch (err: any) {
+          console.error("Failed to send message via Tauri IRC:", err);
+          if (type === "channel" && query?.channelId) {
+            useMockStore.getState().removeLastMessageFromChannel(query.channelId, senderMember.id);
+          } else if (type === "conversation" && query?.conversationId) {
             useMockStore.getState().removeLastDirectMessageFromMember(query.conversationId, senderMember.id);
-            await invoke("delete_last_log_entry", {
-              serverId: activeServer.id,
-              target: name,
-              sender: senderMember.profile.name,
-            }).catch(() => {});
-            try {
-              const loggedNicks = await invoke<string[]>("list_logged_conversations", {
-                serverId: activeServer.id,
-              });
-              useMockStore.getState().syncActiveConversationsWithDisk(activeServer.id, loggedNicks);
-            } catch (e) {}
-            form.setValue("content", line);
-            focusInput();
-            return;
           }
+          await invoke("delete_last_log_entry", {
+            serverId: activeServer.id,
+            target: targetName,
+            sender: senderMember.profile.name,
+          }).catch(() => {});
+          form.setValue("content", textContent);
+          return;
         }
       }
 
@@ -705,15 +838,15 @@ export const ChatInput = ({
                   {showCommands && filteredCommands.length > 0 && (
                     <div className="absolute bottom-full left-4 mb-2 w-80 bg-white dark:bg-[#2b2d31] border border-zinc-200 dark:border-zinc-800 rounded-md shadow-xl overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
                       <div className="px-3 py-2 text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider bg-zinc-50 dark:bg-[#232428] border-b border-zinc-200 dark:border-zinc-800">
-                        Commands matching /{commandQuery}
+                        Commands matching {content?.startsWith("/") ? content.split(/\s/)[0] : "/"}
                       </div>
                       <div className="max-h-60 overflow-y-auto p-1">
                         {filteredCommands.map((cmd, idx) => (
                           <div
-                            key={cmd.name}
+                            key={`${cmd.insert}-${idx}`}
                             onMouseDown={(e) => {
                               e.preventDefault();
-                              onCommandSelect(cmd.name);
+                              onCommandSelect(cmd.insert);
                             }}
                             className={`flex items-center gap-x-3 px-3 py-2 rounded-md cursor-pointer transition-colors ${
                               idx === selectedCommandIndex
@@ -726,7 +859,7 @@ export const ChatInput = ({
                             </div>
                             <div className="flex flex-col min-w-0">
                               <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                                /{cmd.name}
+                                {cmd.label}
                               </span>
                               <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
                                 {cmd.description}
@@ -742,7 +875,7 @@ export const ChatInput = ({
                     <Textarea
                       disabled={isInputDisabled}
                       autoFocus
-                      className="min-h-[44px] max-h-[120px] w-full bg-zinc-200/90 dark:bg-zinc-700/75 border-none focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200 placeholder:text-zinc-500 dark:placeholder:text-zinc-400 py-3 pr-24 resize-none overflow-y-auto disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="min-h-[44px] max-h-[120px] w-full bg-zinc-200/90 dark:bg-zinc-700/75 border-none focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200 placeholder:text-zinc-500 dark:placeholder:text-zinc-400 py-3 pr-36 resize-none overflow-y-auto disabled:opacity-60 disabled:cursor-not-allowed"
                       placeholder={
                         !isIrcConnected
                           ? "Disconnected from IRC server"
@@ -754,6 +887,14 @@ export const ChatInput = ({
                       }
                       rows={1}
                       {...field}
+                      onChange={(e) => {
+                        const newVal = e.target.value;
+                        const bytes = getIrcByteCount(newVal);
+                        if (bytes <= maxBytes) {
+                          field.onChange(e);
+                        }
+                      }}
+                      onPaste={handlePaste}
                       ref={(e) => {
                         field.ref(e);
                         // @ts-ignore
@@ -766,6 +907,17 @@ export const ChatInput = ({
                     />
 
                     <div className="absolute right-3 bottom-3 z-10 flex items-center gap-x-2">
+                      <div
+                        className={`text-[10px] font-mono font-medium px-1.5 py-0.5 rounded transition-colors select-none ${
+                          currentBytes >= maxBytes
+                            ? "bg-rose-500 text-white font-bold shadow-sm"
+                            : "bg-zinc-300/60 dark:bg-zinc-800/80 text-zinc-500 dark:text-zinc-400"
+                        }`}
+                        title={`IRC message byte limit: ${currentBytes} / ${maxBytes} bytes`}
+                      >
+                        {currentBytes}/{maxBytes}
+                      </div>
+
                       <button
                         type="button"
                         disabled={isLoading}
@@ -783,8 +935,18 @@ export const ChatInput = ({
                       <EmojiPicker
                         disabled={isLoading}
                         onChange={(emoji: string) => {
-                          field.onChange(`${field.value ? field.value + " " : ""}${emoji}`);
-                          form.setFocus("content");
+                          const currentVal = field.value || "";
+                          const newText = `${currentVal ? currentVal + " " : ""}${emoji}`;
+                          const bytes = getIrcByteCount(newText);
+                          if (bytes <= maxBytes) {
+                            field.onChange(newText);
+                            form.setFocus("content");
+                          } else {
+                            onOpen("ircError", {
+                              title: "Message length limit exceeded",
+                              description: `Adding this emoji would exceed the maximum allowed message limit of ${maxBytes} bytes.`,
+                            });
+                          }
                         }}
                       />
                     </div>

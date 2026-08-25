@@ -168,6 +168,13 @@ export interface Conversation {
   directMessages?: DirectMessage[];
 }
 
+export interface CustomCommand {
+  trigger: string;
+  message: string;
+  description?: string;
+  suggestions?: string[];
+}
+
 export interface Server {
   id: string;
   name: string;
@@ -187,6 +194,7 @@ export interface Server {
   autoJoinChannels?: string[];
   autoConnect?: boolean;
   autoReconnect?: boolean;
+  customCommands?: CustomCommand[];
   notificationSettings?: NotificationOverride;
 }
 
