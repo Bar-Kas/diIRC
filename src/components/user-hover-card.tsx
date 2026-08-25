@@ -28,11 +28,11 @@ export const getMemberDisplayName = (
     (server?.nicknames?.[0] &&
       member.profile.name.toLowerCase() === server.nicknames[0].toLowerCase());
 
-  if (isSelf && server?.realname && server.realname.trim().length > 0) {
+  if (isSelf && server?.realname && server.realname.trim().length > 0 && server.realname.toLowerCase() !== "realname") {
     return server.realname;
   }
 
-  if (member.profile.realname && member.profile.realname.trim().length > 0) {
+  if (member.profile.realname && member.profile.realname.trim().length > 0 && member.profile.realname.toLowerCase() !== "realname") {
     return member.profile.realname;
   }
 
@@ -57,8 +57,12 @@ export const UserHoverCard = ({
   const awayReasonsMap = useMockStore((state) => state.awayReasons);
 
   const activeServer = server || servers[0];
+  const freshMember = activeServer?.members.find(
+    (m) => m.id === member.id || m.profile.name.toLowerCase() === member.profile.name.toLowerCase()
+  ) || member;
+
   const activeChannel = customChannel || activeServer?.channels.find((c) => c.id === params?.channelId);
-  const nickname = member.profile.name;
+  const nickname = freshMember.profile.name;
 
   const isAway = activeServer ? !!awayUsersMap[activeServer.id]?.[nickname.toLowerCase()] : false;
   const awayReason = activeServer ? awayReasonsMap[activeServer.id]?.[nickname.toLowerCase()] : undefined;
@@ -66,11 +70,11 @@ export const UserHoverCard = ({
   const userModes = activeChannel ? channelUserModesMap[activeChannel.id]?.[nickname.toLowerCase()] || [] : [];
   const highestRole = getHighestChannelRole(userModes);
 
-  const displayName = getMemberDisplayName(member, activeServer);
+  const displayName = getMemberDisplayName(freshMember, activeServer);
   const isSelf =
-    member.profileId === currentProfile.id ||
+    freshMember.profileId === currentProfile.id ||
     (activeServer?.nicknames?.[0] &&
-      member.profile.name.toLowerCase() === activeServer.nicknames[0].toLowerCase());
+      freshMember.profile.name.toLowerCase() === activeServer.nicknames[0].toLowerCase());
 
   const onOpenDM = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -79,7 +83,7 @@ export const UserHoverCard = ({
     if (!activeServer || isSelf) return;
 
     let targetMember = activeServer.members.find(
-      (m) => m.id === member.id || m.profile.name.toLowerCase() === member.profile.name.toLowerCase()
+      (m) => m.id === freshMember.id || m.profile.name.toLowerCase() === freshMember.profile.name.toLowerCase()
     );
 
     if (!targetMember) {
@@ -94,7 +98,7 @@ export const UserHoverCard = ({
 
   return (
     <HoverCard openDelay={150} closeDelay={300}>
-      <UserContextMenu member={member} server={activeServer} channel={activeChannel}>
+      <UserContextMenu member={freshMember} server={activeServer} channel={activeChannel}>
         <HoverCardTrigger asChild>
           {children}
         </HoverCardTrigger>
@@ -114,7 +118,7 @@ export const UserHoverCard = ({
             <div className="-mt-10 mb-3 flex items-end justify-between">
               <div className="relative ring-4 ring-white dark:ring-[#1e1f22] rounded-full overflow-hidden shadow-lg bg-[#1e1f22]">
                 <UserAvatar
-                  src={member.profile.imageUrl}
+                  src={freshMember.profile.imageUrl}
                   name={displayName}
                   className="h-16 w-16 md:h-16 md:w-16"
                 />
@@ -162,6 +166,17 @@ export const UserHoverCard = ({
                 <div className="flex justify-between">
                   <span className="font-medium">RealName:</span>
                   <span className="font-sans text-zinc-700 dark:text-zinc-300">{displayName}</span>
+                </div>
+              )}
+              {freshMember.profile.host && (
+                <div className="flex justify-between items-center gap-x-2">
+                  <span className="font-medium">Host:</span>
+                  <span
+                    className="font-mono text-zinc-700 dark:text-zinc-300 truncate max-w-[170px]"
+                    title={freshMember.profile.host}
+                  >
+                    {freshMember.profile.host}
+                  </span>
                 </div>
               )}
             </div>

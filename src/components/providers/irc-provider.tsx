@@ -31,6 +31,13 @@ interface IrcUserEventPayload {
   event_type: string;
 }
 
+interface IrcUserHostEventPayload {
+  server_id: string;
+  nick: string;
+  host: string;
+  realname?: string;
+}
+
 export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   const addMessage = useMockStore((state) => state.addMessage);
   const currentProfile = useMockStore((state) => state.currentProfile);
@@ -685,6 +692,28 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
     setupUsersListener();
 
+    let unlistenHostFn: (() => void) | null = null;
+    const setupHostListener = async () => {
+      try {
+        const unlistenHost = await listen<IrcUserHostEventPayload>("irc_user_host_event", (event) => {
+          const { server_id, nick, host, realname } = event.payload;
+          if (server_id && nick && host) {
+            useMockStore.getState().addServerMember(server_id, nick, realname, host);
+          }
+        });
+
+        if (isCancelled) {
+          unlistenHost();
+        } else {
+          unlistenHostFn = unlistenHost;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC host listener:", error);
+      }
+    };
+
+    setupHostListener();
+
     let unlistenStatusFn: (() => void) | null = null;
     const setupStatusListener = async () => {
       try {
@@ -1024,6 +1053,9 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
       }
       if (unlistenAwayFn) {
         unlistenAwayFn();
+      }
+      if (unlistenHostFn) {
+        unlistenHostFn();
       }
     };
   }, [addMessage, addServerMember, removeServerMember, setIrcConnected]);

@@ -8,6 +8,7 @@ export interface Profile {
   userId: string;
   name: string;
   realname?: string;
+  host?: string;
   imageUrl: string;
   email: string;
   createdAt?: string;

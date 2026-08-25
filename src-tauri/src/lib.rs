@@ -67,6 +67,41 @@ struct IrcTopicErrorEvent {
 }
 
 #[derive(Serialize, Clone)]
+struct IrcUserHostEvent {
+    server_id: String,
+    nick: String,
+    host: String,
+    realname: Option<String>,
+}
+
+fn emit_user_host(
+    app: &AppHandle,
+    server_id: &str,
+    nick: &str,
+    user: &str,
+    host: &str,
+    realname: Option<String>,
+) {
+    if nick.is_empty() || host.is_empty() {
+        return;
+    }
+    let hostmask = if user.is_empty() {
+        host.to_string()
+    } else {
+        format!("{}@{}", user, host)
+    };
+    let _ = app.emit(
+        "irc_user_host_event",
+        IrcUserHostEvent {
+            server_id: server_id.to_string(),
+            nick: nick.to_string(),
+            host: hostmask,
+            realname,
+        },
+    );
+}
+
+#[derive(Serialize, Clone)]
 struct IrcBadChannelKeyEvent {
     server_id: String,
     channel: String,
@@ -1088,8 +1123,11 @@ async fn connect_irc(
                     match message.command {
                         Command::PRIVMSG(channel, content) => {
                             if let Some(source) = message.prefix {
-                                let sender_name = match source {
-                                    Prefix::Nickname(nick, _, _) => nick,
+                                let sender_name = match source.clone() {
+                                    Prefix::Nickname(nick, user, host) => {
+                                        emit_user_host(&app_clone, &stream_server_id, &nick, &user, &host, None);
+                                        nick
+                                    }
                                     Prefix::ServerName(name) => name,
                                 };
                                 let own_nickname =
@@ -1138,7 +1176,10 @@ async fn connect_irc(
                         Command::JOIN(channel, _, _) => {
                             if let Some(source) = message.prefix {
                                 let sender_name = match source.clone() {
-                                    Prefix::Nickname(nick, _, _) => nick,
+                                    Prefix::Nickname(nick, user, host) => {
+                                        emit_user_host(&app_clone, &stream_server_id, &nick, &user, &host, None);
+                                        nick
+                                    }
                                     Prefix::ServerName(name) => name,
                                 };
                                 let full_source = match source {
@@ -2015,7 +2056,37 @@ async fn connect_irc(
                                 },
                             );
                         }
+                        Command::Response(Response::RPL_WHOREPLY, ref args) => {
+                            if args.len() >= 6 {
+                                let nick = &args[5];
+                                let user = args.get(2).map(|s| s.as_str()).unwrap_or("");
+                                let host = args.get(3).map(|s| s.as_str()).unwrap_or("");
+                                let realname = args.get(7).map(|r| r.trim_start_matches("0 ").trim().to_string()).filter(|r| !r.is_empty());
+                                emit_user_host(&app_clone, &stream_server_id, nick, user, host, realname);
+                            }
+                            if args.len() >= 7 {
+                                let nick = args[5].clone();
+                                let flags = &args[6];
+                                let is_away = flags.contains('G');
+                                let _ = app_clone.emit(
+                                    "irc_away_event",
+                                    IrcAwayEvent {
+                                        server_id: stream_server_id.clone(),
+                                        nick,
+                                        away: is_away,
+                                        reason: None,
+                                    },
+                                );
+                            }
+                        }
                         Command::Raw(ref cmd, ref args) if cmd == "352" => {
+                            if args.len() >= 6 {
+                                let nick = &args[5];
+                                let user = args.get(2).map(|s| s.as_str()).unwrap_or("");
+                                let host = args.get(3).map(|s| s.as_str()).unwrap_or("");
+                                let realname = args.get(7).map(|r| r.trim_start_matches("0 ").trim().to_string()).filter(|r| !r.is_empty());
+                                emit_user_host(&app_clone, &stream_server_id, nick, user, host, realname);
+                            }
                             if args.len() >= 7 {
                                 let nick = args[5].clone();
                                 let flags = &args[6];

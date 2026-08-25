@@ -144,13 +144,14 @@ const parseLogTimestamp = (timestamp: string) => {
   return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
 };
 
-const createIrcMember = (serverId: string, name: string): Member => ({
+const createIrcMember = (serverId: string, name: string, host?: string): Member => ({
   id: `irc-${name}`,
   profileId: `profile-${name}`,
   profile: {
     id: `profile-${name}`,
     userId: `user-${name}`,
     name,
+    host,
     imageUrl: "",
     email: `${name}@irc.local`,
     createdAt: new Date().toISOString(),
@@ -313,7 +314,7 @@ interface MockState {
 
   // Member Actions
   removeMember: (serverId: string, memberId: string) => void;
-  addServerMember: (serverId: string, name: string, realname?: string) => Member | undefined;
+  addServerMember: (serverId: string, name: string, realname?: string, host?: string) => Member | undefined;
   removeServerMember: (serverId: string, name: string) => void;
   channelMembers: Record<string, string[]>;
   channelOps: Record<string, string[]>;
@@ -957,7 +958,7 @@ export const useMockStore = create<MockState>()(
         }));
       },
 
-      addServerMember: (serverId, name, realname) => {
+      addServerMember: (serverId, name, realname, host) => {
         let resultMember: Member | undefined;
         set((state) => {
           const s = state.servers.find(s => s.id === serverId);
@@ -965,8 +966,31 @@ export const useMockStore = create<MockState>()(
 
           const exists = s.members.find(m => m.profile.name.toLowerCase() === name.toLowerCase());
           if (exists) {
-            if (realname && !exists.profile.realname) {
-              exists.profile.realname = realname;
+            let changed = false;
+            const updatedProfile = { ...exists.profile };
+            if (realname && exists.profile.realname !== realname) {
+              updatedProfile.realname = realname;
+              changed = true;
+            }
+            if (host && exists.profile.host !== host) {
+              updatedProfile.host = host;
+              changed = true;
+            }
+            if (changed) {
+              const updatedMember = { ...exists, profile: updatedProfile };
+              resultMember = updatedMember;
+              return {
+                servers: state.servers.map((serv) =>
+                  serv.id === serverId
+                    ? {
+                        ...serv,
+                        members: serv.members.map((m) =>
+                          m.id === exists.id ? updatedMember : m
+                        ),
+                      }
+                    : serv
+                ),
+              };
             }
             resultMember = exists;
             return state;
@@ -984,6 +1008,7 @@ export const useMockStore = create<MockState>()(
                     ...m.profile,
                     name,
                     realname: realname || s.realname || m.profile.realname,
+                    host: host || m.profile.host,
                   },
                 };
                 if (!updatedSelf) updatedSelf = updated;
@@ -1009,6 +1034,7 @@ export const useMockStore = create<MockState>()(
               userId: `user-${name}`,
               name: name,
               realname: realname || "",
+              host: host,
               imageUrl: "",
               email: `${name}@irc.local`,
               createdAt: new Date().toISOString(),
