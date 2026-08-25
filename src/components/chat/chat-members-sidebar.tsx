@@ -7,8 +7,7 @@ import { cn } from "@/lib/utils";
 import { UserRoleIcon, getHighestChannelRole } from "@/components/user-role-icon";
 import { useUIStore } from "@/hooks/use-ui-store";
 import { useModal } from "@/hooks/use-modal-store";
-import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
-import { ActionTooltip } from "@/components/action-tooltip";
+import { MoreHorizontal } from "lucide-react";
 
 interface ChatMembersSidebarProps {
   server: Server;
@@ -31,7 +30,6 @@ export const ChatMembersSidebar = ({
   const directMessagesMap = useMockStore((state) => state.directMessages);
 
   const showMembersSidebar = useUIStore((state) => state.showMembersSidebar);
-  const toggleMembersSidebar = useUIStore((state) => state.toggleMembersSidebar);
 
   const isConnected = !!ircConnectedServers[server.id];
 
@@ -163,25 +161,6 @@ export const ChatMembersSidebar = ({
         showMembersSidebar ? "w-60" : "w-0"
       )}
     >
-      {/* Side Edge Toggle Arrow Button */}
-      <div className="absolute left-0 bottom-[34px] -translate-x-1/2 z-30 pointer-events-auto">
-        <ActionTooltip
-          side="left"
-          label={showMembersSidebar ? "Hide user list" : "Show user list"}
-        >
-          <button
-            onClick={toggleMembersSidebar}
-            className="h-8 w-5 rounded-l-md rounded-r-xs bg-white dark:bg-[#2B2D31] border border-zinc-200 dark:border-zinc-700 shadow-md flex items-center justify-center cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 transition group"
-          >
-            {showMembersSidebar ? (
-              <ChevronRight className="w-3.5 h-3.5 stroke-[2.5]" />
-            ) : (
-              <ChevronLeft className="w-3.5 h-3.5 stroke-[2.5]" />
-            )}
-          </button>
-        </ActionTooltip>
-      </div>
-
       {/* Sliding Outer Clipping Wrapper */}
       <div className="w-full h-full overflow-hidden border-l border-zinc-200 dark:border-zinc-800 bg-[#F2F3F5] dark:bg-[#2B2D31]">
         <div className="w-60 h-full flex flex-col">
