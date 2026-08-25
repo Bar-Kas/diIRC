@@ -523,6 +523,16 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
           if (targetChannel) {
             addMessage(targetChannel.id, mockMember as any, content, null, isSystem);
+          } else if (isSystem && (!channel || channel.trim() === "")) {
+            const store = useMockStore.getState();
+            const channelsWithSender = targetServer.channels.filter((c) => {
+              const members = store.channelMembers[c.id] || [];
+              return members.some((m) => m.toLowerCase() === sender.toLowerCase());
+            });
+            const channelsToNotify = channelsWithSender.length > 0 ? channelsWithSender : targetServer.channels;
+            channelsToNotify.forEach((c) => {
+              addMessage(c.id, mockMember as any, content, null, isSystem);
+            });
           } else if (targetServer.channels.length > 0) {
             addMessage(targetServer.channels[0].id, mockMember as any, content, null, isSystem);
           }
@@ -605,7 +615,9 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
       try {
         const unlistenUsers = await listen<IrcUserEventPayload>("irc_user_event", (event) => {
           const { server_id, channel, users, event_type } = event.payload;
-          updateChannelMembers(server_id, channel, users, event_type as any);
+          setTimeout(() => {
+            updateChannelMembers(server_id, channel, users, event_type as any);
+          }, 100);
 
           if (event_type === "JOIN") {
             const store = useMockStore.getState();
