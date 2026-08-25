@@ -14,6 +14,7 @@ export interface CommandContext {
   addMessage: (channelId: string, member: Member, content: string) => void;
   addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean) => void;
   navigate?: (path: string) => void;
+  setInputContent?: (content: string, cursorPosition?: number) => void;
 }
 
 export interface SlashCommand {
@@ -195,7 +196,7 @@ commandRegistry.register({
     const actionText = args.trim();
     if (!actionText) return;
 
-    const ctcpAction = `\x01ACTION ${actionText}\x01`;
+    const ctcpAction = `\x01ACTION ${actionText.replace(/\r?\n/g, "\u0085")}\x01`;
 
     if (ctx.type === "channel" && ctx.channelId) {
       const channelTarget = ctx.channelName.startsWith("#") ? ctx.channelName : `#${ctx.channelName}`;
@@ -416,11 +417,12 @@ commandRegistry.register({
 
     if (initialMessage) {
       const conversationId = [ctx.currentMember.id, targetMember.id].sort().join("-");
+      const ircMessage = initialMessage.replace(/\r?\n/g, "\u0085");
       try {
         await invoke("send_message", {
           serverId: ctx.serverId,
           channel: cleanNick,
-          message: initialMessage,
+          message: ircMessage,
         });
         ctx.addDirectMessage(conversationId, ctx.currentMember, initialMessage);
       } catch (err) {
@@ -435,5 +437,21 @@ commandRegistry.register({
     return true;
   },
 });
+
+commandRegistry.register({
+  name: "code",
+  description: "Inserts a markdown code block template",
+  execute: (args: string, ctx: CommandContext) => {
+    const lang = args.trim();
+    const template = `\`\`\`${lang}\n\n\`\`\``;
+    const cursorPosition = 3 + lang.length + 1;
+
+    if (ctx.setInputContent) {
+      ctx.setInputContent(template, cursorPosition);
+    }
+    return true;
+  },
+});
+
 
 

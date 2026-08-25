@@ -27,6 +27,26 @@ import { isMediaUrl } from "@/lib/image-utils";
 import { commandRegistry, expandCustomCommand, listSlashSuggestions } from "@/lib/commands/command-system";
 import { useDraftStore, AttachedImage } from "@/hooks/use-draft-store";
 
+export const getIrcByteCount = (text: string): number => {
+  if (!text) return 0;
+  const ircMessage = text.replace(/\r?\n/g, "\u0085");
+  return new TextEncoder().encode(ircMessage).length;
+};
+
+export const getIrcMaxMessageBytes = (
+  target: string,
+  nick?: string,
+  username?: string,
+  host?: string
+): number => {
+  const defaultNick = nick || "user";
+  const defaultUser = username || defaultNick;
+  const defaultHost = host || "localhost";
+  const rawPrefix = `:${defaultNick}!${defaultUser}@${defaultHost} PRIVMSG ${target} :\r\n`;
+  const overhead = new TextEncoder().encode(rawPrefix).length;
+  return Math.max(0, 512 - overhead);
+};
+
 interface ChatInputProps {
   query: Record<string, string>;
   name: string;
@@ -153,7 +173,36 @@ export const ChatInput = ({
     return () => clearTimeout(timer);
   }, [activeId, form, getDraft, setDraft, focusInput]);
 
-  const content = form.watch("content");
+  const content = form.watch("content") || "";
+
+  const targetName = type === "channel" ? (name.startsWith("#") ? name : `#${name}`) : name;
+  const currentNick = primaryNick || currentMember?.profile?.name || "You";
+  const serverHost = activeServer?.host || "localhost";
+  const serverUser = activeServer?.realname || currentNick;
+
+  const maxBytes = getIrcMaxMessageBytes(targetName, currentNick, serverUser, serverHost);
+  const currentBytes = getIrcByteCount(content);
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const pasteText = e.clipboardData.getData("text");
+    if (!pasteText) return;
+
+    const textarea = e.currentTarget;
+    const selectionStart = textarea.selectionStart ?? 0;
+    const selectionEnd = textarea.selectionEnd ?? 0;
+    const currentVal = form.getValues("content") || "";
+
+    const nextVal = currentVal.slice(0, selectionStart) + pasteText + currentVal.slice(selectionEnd);
+    const nextBytes = getIrcByteCount(nextVal);
+
+    if (nextBytes > maxBytes) {
+      e.preventDefault();
+      onOpen("ircError", {
+        title: "Message length limit exceeded",
+        description: `Pasted message exceeds the maximum allowed limit of ${maxBytes} bytes (attempted paste size: ${nextBytes} bytes).`,
+      });
+    }
+  };
 
   useEffect(() => {
     if (!activeId || isSwitchingRef.current) return;
@@ -428,7 +477,93 @@ export const ChatInput = ({
     }
   };
 
+  const autoResize = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    const newHeight = Math.min(ta.scrollHeight, 120);
+    ta.style.height = `${newHeight}px`;
+  }, []);
+
+  const createCommandContext = useCallback((onInputUpdated?: () => void) => {
+    const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : (servers[0] || null);
+    if (!activeServer) return null;
+
+    const senderMember: Member = currentMember
+      ? {
+          ...currentMember,
+          profile: {
+            ...currentMember.profile,
+            name: primaryNick || currentMember.profile.name,
+          },
+        }
+      : {
+          id: `self-${activeServer.id}`,
+          profileId: currentProfile.id,
+          profile: {
+            ...currentProfile,
+            name: primaryNick || currentProfile.name,
+          },
+          serverId: activeServer.id,
+        };
+
+    return {
+      serverId: activeServer.id,
+      channelName: name,
+      channelId: query?.channelId,
+      conversationId: query?.conversationId,
+      targetMemberId: query?.targetMemberId,
+      type,
+      currentMember: senderMember,
+      activeServer,
+      addMessage,
+      addDirectMessage,
+      navigate,
+      setInputContent: (newContent: string, cursorPosition?: number) => {
+        if (onInputUpdated) onInputUpdated();
+        form.setValue("content", newContent);
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+            if (typeof cursorPosition === "number") {
+              textareaRef.current.setSelectionRange(cursorPosition, cursorPosition);
+            }
+          }
+          autoResize();
+        }, 0);
+      },
+    };
+  }, [
+    query,
+    servers,
+    currentMember,
+    primaryNick,
+    currentProfile,
+    name,
+    type,
+    addMessage,
+    addDirectMessage,
+    navigate,
+    form,
+    autoResize,
+  ]);
+
   const onCommandSelect = (insert: string) => {
+    const trimmedInsert = insert.trim();
+    if (trimmedInsert === "/code") {
+      const currentContent = form.getValues("content") || "";
+      let args = "";
+      if (currentContent.toLowerCase().startsWith(`/code`)) {
+        args = currentContent.slice(5).trim();
+      }
+      const ctx = createCommandContext();
+      if (ctx) {
+        commandRegistry.execute(`/code ${args}`, ctx);
+      }
+      setShowCommands(false);
+      return;
+    }
+
     form.setValue("content", insert);
     form.setFocus("content");
     setShowCommands(false);
@@ -475,14 +610,6 @@ export const ChatInput = ({
       return;
     }
   };
-
-  const autoResize = useCallback(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    const newHeight = Math.min(ta.scrollHeight, 120);
-    ta.style.height = `${newHeight}px`;
-  }, []);
 
   useEffect(() => {
     autoResize();
@@ -532,50 +659,48 @@ export const ChatInput = ({
           };
 
       if (textContent.startsWith("/")) {
-        const isHandled = await commandRegistry.execute(textContent, {
-          serverId: activeServer.id,
-          channelName: name,
-          channelId: query?.channelId,
-          conversationId: query?.conversationId,
-          targetMemberId: query?.targetMemberId,
-          type,
-          currentMember: senderMember,
-          activeServer,
-          addMessage,
-          addDirectMessage,
-          navigate,
+        let inputUpdated = false;
+        const ctx = createCommandContext(() => {
+          inputUpdated = true;
         });
 
-        if (isHandled) {
-          for (const img of readyImages) {
-            if (img.url) {
-              if (type === "channel" && query?.channelId) {
-                await invoke("send_message", {
-                  serverId: activeServer.id,
-                  channel: name.startsWith("#") ? name : `#${name}`,
-                  message: img.url,
-                }).catch((e) => console.error(e));
-                addMessage(query.channelId, senderMember, img.url);
-              } else if (type === "conversation" && query?.conversationId) {
-                await invoke("send_message", {
-                  serverId: activeServer.id,
-                  channel: name,
-                  message: img.url,
-                }).catch((e) => console.error(e));
-                addDirectMessage(query.conversationId, senderMember, img.url);
-                if (query.targetMemberId) {
-                  useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
+        if (ctx) {
+          const isHandled = await commandRegistry.execute(textContent, ctx);
+
+          if (isHandled) {
+            for (const img of readyImages) {
+              if (img.url) {
+                if (type === "channel" && query?.channelId) {
+                  await invoke("send_message", {
+                    serverId: activeServer.id,
+                    channel: name.startsWith("#") ? name : `#${name}`,
+                    message: img.url,
+                  }).catch((e) => console.error(e));
+                  addMessage(query.channelId, senderMember, img.url);
+                } else if (type === "conversation" && query?.conversationId) {
+                  await invoke("send_message", {
+                    serverId: activeServer.id,
+                    channel: name,
+                    message: img.url,
+                  }).catch((e) => console.error(e));
+                  addDirectMessage(query.conversationId, senderMember, img.url);
+                  if (query.targetMemberId) {
+                    useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
+                  }
                 }
               }
             }
+            if (!inputUpdated) {
+              if (activeId) {
+                clearDraft(activeId);
+              }
+              form.reset({ content: "" });
+              clearAllAttachments();
+              form.setFocus("content");
+            }
+            return;
           }
-          if (activeId) {
-            clearDraft(activeId);
-          }
-          form.reset({ content: "" });
-          clearAllAttachments();
-          focusInput();
-          return;
+
         }
 
         const expanded = expandCustomCommand(textContent, activeServer.customCommands);
@@ -596,55 +721,40 @@ export const ChatInput = ({
       focusInput();
 
       for (const line of linesToSend) {
+        const targetName = type === "channel" ? (name.startsWith("#") ? name : `#${name}`) : name;
+
         if (type === "channel" && query?.channelId) {
           addMessage(query.channelId, senderMember, line);
-          try {
-            await invoke("send_message", { 
-              serverId: activeServer.id,
-              channel: name.startsWith("#") ? name : `#${name}`, 
-              message: line 
-            });
-          } catch (err: any) {
-            console.error("Failed to send channel message via Tauri IRC:", err);
-            useMockStore.getState().removeLastMessageFromChannel(query.channelId, senderMember.id);
-            await invoke("delete_last_log_entry", {
-              serverId: activeServer.id,
-              target: name.startsWith("#") ? name : `#${name}`,
-              sender: senderMember.profile.name,
-            }).catch(() => {});
-            form.setValue("content", line);
-            focusInput();
-            return;
-          }
         } else if (type === "conversation" && query?.conversationId) {
           addDirectMessage(query.conversationId, senderMember, line);
           if (query.targetMemberId) {
             useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
           }
-          try {
-            await invoke("send_message", { 
-              serverId: activeServer.id,
-              channel: name, 
-              message: line 
-            });
-          } catch (err: any) {
-            console.error("Failed to send private message via Tauri IRC:", err);
+        }
+
+        // Format message for IRC: replace newlines with NEL character (ASCII C1 Hex 85 / \u0085)
+        const ircMessage = line.replace(/\r?\n/g, "\u0085");
+
+        try {
+          await invoke("send_message", {
+            serverId: activeServer.id,
+            channel: targetName,
+            message: ircMessage,
+          });
+        } catch (err: any) {
+          console.error("Failed to send message via Tauri IRC:", err);
+          if (type === "channel" && query?.channelId) {
+            useMockStore.getState().removeLastMessageFromChannel(query.channelId, senderMember.id);
+          } else if (type === "conversation" && query?.conversationId) {
             useMockStore.getState().removeLastDirectMessageFromMember(query.conversationId, senderMember.id);
-            await invoke("delete_last_log_entry", {
-              serverId: activeServer.id,
-              target: name,
-              sender: senderMember.profile.name,
-            }).catch(() => {});
-            try {
-              const loggedNicks = await invoke<string[]>("list_logged_conversations", {
-                serverId: activeServer.id,
-              });
-              useMockStore.getState().syncActiveConversationsWithDisk(activeServer.id, loggedNicks);
-            } catch (e) {}
-            form.setValue("content", line);
-            focusInput();
-            return;
           }
+          await invoke("delete_last_log_entry", {
+            serverId: activeServer.id,
+            target: targetName,
+            sender: senderMember.profile.name,
+          }).catch(() => {});
+          form.setValue("content", textContent);
+          return;
         }
       }
     } catch (error) {
@@ -760,7 +870,7 @@ export const ChatInput = ({
                     <Textarea
                       disabled={!isIrcConnected || isMuted}
                       autoFocus
-                      className="min-h-[44px] max-h-[120px] w-full bg-zinc-200/90 dark:bg-zinc-700/75 border-none focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200 placeholder:text-zinc-500 dark:placeholder:text-zinc-400 py-3 pr-24 resize-none overflow-y-auto disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="min-h-[44px] max-h-[120px] w-full bg-zinc-200/90 dark:bg-zinc-700/75 border-none focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200 placeholder:text-zinc-500 dark:placeholder:text-zinc-400 py-3 pr-36 resize-none overflow-y-auto disabled:opacity-60 disabled:cursor-not-allowed"
                       placeholder={
                         !isIrcConnected
                           ? "Disconnected from IRC server"
@@ -772,6 +882,14 @@ export const ChatInput = ({
                       }
                       rows={1}
                       {...field}
+                      onChange={(e) => {
+                        const newVal = e.target.value;
+                        const bytes = getIrcByteCount(newVal);
+                        if (bytes <= maxBytes) {
+                          field.onChange(e);
+                        }
+                      }}
+                      onPaste={handlePaste}
                       ref={(e) => {
                         field.ref(e);
                         // @ts-ignore
@@ -784,6 +902,17 @@ export const ChatInput = ({
                     />
 
                     <div className="absolute right-3 bottom-3 z-10 flex items-center gap-x-2">
+                      <div
+                        className={`text-[10px] font-mono font-medium px-1.5 py-0.5 rounded transition-colors select-none ${
+                          currentBytes >= maxBytes
+                            ? "bg-rose-500 text-white font-bold shadow-sm"
+                            : "bg-zinc-300/60 dark:bg-zinc-800/80 text-zinc-500 dark:text-zinc-400"
+                        }`}
+                        title={`IRC message byte limit: ${currentBytes} / ${maxBytes} bytes`}
+                      >
+                        {currentBytes}/{maxBytes}
+                      </div>
+
                       <button
                         type="button"
                         disabled={isLoading}
@@ -801,8 +930,18 @@ export const ChatInput = ({
                       <EmojiPicker
                         disabled={isLoading}
                         onChange={(emoji: string) => {
-                          field.onChange(`${field.value ? field.value + " " : ""}${emoji}`);
-                          form.setFocus("content");
+                          const currentVal = field.value || "";
+                          const newText = `${currentVal ? currentVal + " " : ""}${emoji}`;
+                          const bytes = getIrcByteCount(newText);
+                          if (bytes <= maxBytes) {
+                            field.onChange(newText);
+                            form.setFocus("content");
+                          } else {
+                            onOpen("ircError", {
+                              title: "Message length limit exceeded",
+                              description: `Adding this emoji would exceed the maximum allowed message limit of ${maxBytes} bytes.`,
+                            });
+                          }
                         }}
                       />
                     </div>

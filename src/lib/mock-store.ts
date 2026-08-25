@@ -176,7 +176,7 @@ const mapLogEntries = (
   return {
     id: stableId,
     offset: entry.offset,
-    content: entry.content,
+    content: entry.content ? entry.content.replace(/\u0085/g, "\n") : "",
     fileUrl: null,
     memberId: member.id,
     member,

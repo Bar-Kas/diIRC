@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, memo } from "react";
 import { Member, Profile } from "@/types";
-import { Reply } from "lucide-react";
+import { Reply, AlertTriangle } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { UserAvatar } from "@/components/user-avatar";
@@ -15,6 +15,7 @@ import { isMediaUrl, subscribeImageCache } from "@/lib/image-utils";
 import { openExternalUrl } from "@/lib/system-utils";
 import { MarkdownRenderer } from "@/lib/markdown/markdown-renderer";
 import { extractUrlsFromMarkdownText, stripTrailingPunct, hasMarkdownSyntax } from "@/lib/markdown/markdown-utils";
+import { isBrokenHeader, stripSteganography } from "@/lib/markdown/multiline-steganography";
 
 interface ChatItemProps {
   id: string;
@@ -133,18 +134,21 @@ const ChatItemInner = ({
     });
   }, [content, isSystem, deleted, isSelf, myNicks]);
 
+  const hasBrokenHeader = isBrokenHeader(content);
+  const cleanContent = stripSteganography(content).replace(/\u0085/g, "\n");
+
   const urlRegex = /(https?:\/\/[^\s]+)/g;
 
-  const isAction = typeof content === "string" && /^\x01ACTION ([\s\S]*)\x01?$/i.test(content.trim());
+  const isAction = typeof cleanContent === "string" && /^\x01ACTION ([\s\S]*)\x01?$/i.test(cleanContent.trim());
   const actionText = isAction
-    ? content.trim().replace(/^\x01ACTION /i, "").replace(/\x01$/, "").trim()
-    : content;
+    ? cleanContent.trim().replace(/^\x01ACTION /i, "").replace(/\x01$/, "").trim()
+    : cleanContent;
 
   // Check if there is any visible text remaining after hiding image URLs
-  const textToEvaluate = isAction ? actionText : content;
+  const textToEvaluate = isAction ? actionText : cleanContent;
 
-  // Markdown vs legacy rendering — only when markdown chars present
-  const shouldUseMarkdown = enableMarkdown && !deleted && !isSystem && !isAction && hasMarkdownSyntax(textToEvaluate);
+  // Markdown vs legacy rendering — only when markdown chars present and block is not broken
+  const shouldUseMarkdown = enableMarkdown && !deleted && !isSystem && !isAction && !hasBrokenHeader && hasMarkdownSyntax(textToEvaluate);
 
   const parseMentions = (text: string, keyPrefix: string | number) => {
     if (!text) return text;
@@ -302,7 +306,7 @@ const ChatItemInner = ({
         ? "bg-amber-500/10 hover:bg-amber-500/15 dark:bg-amber-500/15 dark:hover:bg-amber-500/20 border-amber-500"
         : "hover:bg-black/5 border-transparent"
     )}>
-      <div className="group flex gap-x-2 items-start w-full">
+      <div className="group flex gap-x-2 items-start w-full min-w-0">
         {!compactMode && !compact ? (
           <UserHoverCard member={member} server={activeServer} side="right">
             <div onClick={onMemberClick} className="cursor-pointer hover:drop-shadow-md transition shrink-0">
@@ -316,7 +320,7 @@ const ChatItemInner = ({
             </span>
           </div>
         ) : null}
-        <div className="flex flex-col w-full">
+        <div className="flex flex-col w-full min-w-0">
           {!compact && (
             <div className="flex items-center gap-x-2">
               {!isAction && (
@@ -343,9 +347,18 @@ const ChatItemInner = ({
           )}
 
           {!fileUrl && (
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-0 w-full">
               {(hasVisibleText || deleted) && (
-                isAction ? (
+                hasBrokenHeader ? (
+                  <div className="flex items-center gap-x-2 my-0.5">
+                    <ActionTooltip label="Incomplete code block: transmission was interrupted or dropped by IRC server">
+                      <div className="inline-flex items-center gap-x-2 px-2.5 py-1 rounded bg-rose-500/15 dark:bg-rose-500/20 border border-rose-500/30 text-rose-700 dark:text-rose-300 font-mono text-xs font-semibold cursor-help select-none">
+                        <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
+                        <span>{textToEvaluate}</span>
+                      </div>
+                    </ActionTooltip>
+                  </div>
+                ) : isAction ? (
                   <p className="text-sm text-zinc-600 dark:text-zinc-300 italic">
                     <span className="font-bold text-indigo-500 dark:text-indigo-400 not-italic mr-1.5">*</span>
                     <UserHoverCard member={member} server={activeServer} side="right">
@@ -357,11 +370,11 @@ const ChatItemInner = ({
                   </p>
                 ) : shouldUseMarkdown ? (
                   <div className={cn(
-                    "text-sm text-zinc-600 dark:text-zinc-300",
+                    "text-sm text-zinc-600 dark:text-zinc-300 min-w-0 w-full",
                     deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
                   )}>
                     <MarkdownRenderer
-                      content={content}
+                      content={cleanContent}
                       onContentSizeChange={onContentSizeChange}
                       compact={compact}
                       myNicks={myNicks}
@@ -370,10 +383,10 @@ const ChatItemInner = ({
                   </div>
                 ) : (
                   <p className={cn(
-                    "text-sm text-zinc-600 dark:text-zinc-300",
+                    "text-sm text-zinc-600 dark:text-zinc-300 whitespace-pre-wrap break-words",
                     deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
                   )}>
-                    {renderContentWithLinks(content)}
+                    {renderContentWithLinks(cleanContent)}
                   </p>
                 )
               )}
