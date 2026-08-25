@@ -117,6 +117,7 @@ export const ChatInput = ({
   const isIrcConnected = activeServer ? !!ircConnectedServers[activeServer.id] : true;
   const isUploading = attachedImages.some((img) => img.isUploading);
   const isLoading = isUploading || !isIrcConnected || isMuted;
+  const isInputDisabled = !isIrcConnected || isMuted;
 
   const focusInput = useCallback(() => {
     textareaRef.current?.focus();
@@ -217,13 +218,6 @@ export const ChatInput = ({
     });
   }, []);
 
-  const isIrcConnected = activeServer ? !!ircConnectedServers[activeServer.id] : true;
-  const isUploading = attachedImages.some((img) => img.isUploading);
-  // Buttons are blocked while uploading/disconnected, but the textarea itself must NOT be
-  // disabled during submission: disabling a focused element blurs it and the input
-  // loses keyboard focus after every sent message.
-  const isLoading = isUploading || !isIrcConnected || isMuted;
-  const isInputDisabled = !isIrcConnected || isMuted;
   const processFileUpload = useCallback(async (file: File) => {
     if (uploadConfig.provider === "disabled") {
       setUploadError("Uploading is disabled in settings. Enable an upload provider in Settings.");

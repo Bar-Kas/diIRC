@@ -1,4 +1,4 @@
-import { Hash, PanelLeft, Server, Users, Edit3 } from "lucide-react";
+import { Hash, PanelLeft, Server, Users, Edit3, Bell } from "lucide-react";
 
 import { MobileToggle } from "@/components/mobile-toggle";
 import { UserAvatar } from "@/components/user-avatar";
