@@ -135,7 +135,7 @@ const ChatItemInner = ({
   }, [content, isSystem, deleted, isSelf, myNicks]);
 
   const hasBrokenHeader = isBrokenHeader(content);
-  const cleanContent = stripSteganography(content);
+  const cleanContent = stripSteganography(content).replace(/\u0085/g, "\n");
 
   const urlRegex = /(https?:\/\/[^\s]+)/g;
 
@@ -374,7 +374,7 @@ const ChatItemInner = ({
                     deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
                   )}>
                     <MarkdownRenderer
-                      content={content}
+                      content={cleanContent}
                       onContentSizeChange={onContentSizeChange}
                       compact={compact}
                       myNicks={myNicks}
@@ -383,10 +383,10 @@ const ChatItemInner = ({
                   </div>
                 ) : (
                   <p className={cn(
-                    "text-sm text-zinc-600 dark:text-zinc-300",
+                    "text-sm text-zinc-600 dark:text-zinc-300 whitespace-pre-wrap break-words",
                     deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
                   )}>
-                    {renderContentWithLinks(content)}
+                    {renderContentWithLinks(cleanContent)}
                   </p>
                 )
               )}

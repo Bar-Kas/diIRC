@@ -300,7 +300,9 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   const multilineAccumulatorRef = useRef<IrcMultilineAccumulator | null>(null);
 
   const processIncomingPayload = useCallback(async (payload: IrcMessagePayload) => {
-    const { sender, content, channel } = payload;
+    const { sender, channel } = payload;
+    const rawContent = payload.content;
+    const content = rawContent ? rawContent.replace(/\u0085/g, "\n") : "";
     const serverId = payload.serverId || payload.server_id;
     const isSystem = payload.isSystem ?? payload.is_system;
 
@@ -614,15 +616,6 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     const setupListener = async () => {
       try {
         const unlisten = await listen<IrcMessagePayload>("irc_message", async (event) => {
-          const { sender, content, channel } = event.payload;
-          const serverId = event.payload.serverId || event.payload.server_id;
-          const isSystem = event.payload.isSystem ?? event.payload.is_system;
-
-          if (serverId && !isSystem && sender !== "System" && multilineAccumulatorRef.current) {
-            const handled = multilineAccumulatorRef.current.processLine(serverId, channel, sender, content);
-            if (handled) return;
-          }
-
           processIncomingPayload(event.payload);
         });
 

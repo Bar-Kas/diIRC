@@ -67,7 +67,7 @@ commandRegistry.register({
     const actionText = args.trim();
     if (!actionText) return;
 
-    const ctcpAction = `\x01ACTION ${actionText}\x01`;
+    const ctcpAction = `\x01ACTION ${actionText.replace(/\r?\n/g, "\u0085")}\x01`;
 
     if (ctx.type === "channel" && ctx.channelId) {
       const channelTarget = ctx.channelName.startsWith("#") ? ctx.channelName : `#${ctx.channelName}`;
@@ -288,11 +288,12 @@ commandRegistry.register({
 
     if (initialMessage) {
       const conversationId = [ctx.currentMember.id, targetMember.id].sort().join("-");
+      const ircMessage = initialMessage.replace(/\r?\n/g, "\u0085");
       try {
         await invoke("send_message", {
           serverId: ctx.serverId,
           channel: cleanNick,
-          message: initialMessage,
+          message: ircMessage,
         });
         ctx.addDirectMessage(conversationId, ctx.currentMember, initialMessage);
       } catch (err) {

@@ -26,7 +26,6 @@ import { ImageContextMenu } from "@/components/image-context-menu";
 import { isMediaUrl } from "@/lib/image-utils";
 import { commandRegistry } from "@/lib/commands/command-system";
 import { useDraftStore, AttachedImage } from "@/hooks/use-draft-store";
-import { encodeLineCount } from "@/lib/markdown/multiline-steganography";
 
 interface ChatInputProps {
   query: Record<string, string>;
@@ -568,7 +567,6 @@ export const ChatInput = ({
 
       // Handle text content lines
       if (textContent) {
-        const rawLines = textContent.split(/\r?\n/);
         const targetName = type === "channel" ? (name.startsWith("#") ? name : `#${name}`) : name;
 
         if (type === "channel" && query?.channelId) {
@@ -580,38 +578,29 @@ export const ChatInput = ({
           }
         }
 
-        // Prepare IRC lines with zero-width line count header if multi-line code block
-        const ircLines = [...rawLines];
-        if (ircLines.length > 1 && textContent.includes("```")) {
-          ircLines[0] = ircLines[0] + encodeLineCount(ircLines.length);
-        }
+        // Format message for IRC: replace newlines with NEL character (ASCII C1 Hex 85 / \u0085)
+        const ircMessage = textContent.replace(/\r?\n/g, "\u0085");
 
-        // Send lines sequentially (delay set to 0ms temporarily for testing)
-        for (let i = 0; i < ircLines.length; i++) {
-          if (i > 0) {
-            await new Promise((res) => setTimeout(res, 0));
+        try {
+          await invoke("send_message", {
+            serverId: activeServer.id,
+            channel: targetName,
+            message: ircMessage,
+          });
+        } catch (err: any) {
+          console.error("Failed to send message via Tauri IRC:", err);
+          if (type === "channel" && query?.channelId) {
+            useMockStore.getState().removeLastMessageFromChannel(query.channelId, senderMember.id);
+          } else if (type === "conversation" && query?.conversationId) {
+            useMockStore.getState().removeLastDirectMessageFromMember(query.conversationId, senderMember.id);
           }
-          try {
-            await invoke("send_message", {
-              serverId: activeServer.id,
-              channel: targetName,
-              message: ircLines[i],
-            });
-          } catch (err: any) {
-            console.error("Failed to send line via Tauri IRC:", err);
-            if (type === "channel" && query?.channelId) {
-              useMockStore.getState().removeLastMessageFromChannel(query.channelId, senderMember.id);
-            } else if (type === "conversation" && query?.conversationId) {
-              useMockStore.getState().removeLastDirectMessageFromMember(query.conversationId, senderMember.id);
-            }
-            await invoke("delete_last_log_entry", {
-              serverId: activeServer.id,
-              target: targetName,
-              sender: senderMember.profile.name,
-            }).catch(() => {});
-            form.setValue("content", textContent);
-            return;
-          }
+          await invoke("delete_last_log_entry", {
+            serverId: activeServer.id,
+            target: targetName,
+            sender: senderMember.profile.name,
+          }).catch(() => {});
+          form.setValue("content", textContent);
+          return;
         }
       }
 
