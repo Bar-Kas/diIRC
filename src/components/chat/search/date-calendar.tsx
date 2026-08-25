@@ -20,10 +20,10 @@ interface DateCalendarProps {
   onSelect: (day: Date) => void;
 }
 
-const WEEKDAY_LABELS = ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"];
+const WEEKDAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
 /**
- * Compact month-grid calendar (Polish labels, weeks starting Monday) used by the
+ * Compact month-grid calendar (weeks starting Monday) used by the
  * search input for `before:` / `after:` / `during:` suggestions. Purely presentational —
  * the caller owns insertion into the query string.
  */
@@ -42,7 +42,7 @@ export const DateCalendar = ({ onSelect }: DateCalendarProps) => {
           type="button"
           onClick={() => setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
           className="p-1 rounded hover:bg-zinc-200 dark:hover:bg-[#3f4147] transition"
-          title="Poprzedni miesiąc"
+          title="Previous month"
         >
           <ChevronLeft className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
         </button>
@@ -53,7 +53,7 @@ export const DateCalendar = ({ onSelect }: DateCalendarProps) => {
           type="button"
           onClick={() => setViewMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
           className="p-1 rounded hover:bg-zinc-200 dark:hover:bg-[#3f4147] transition"
-          title="Następny miesiąc"
+          title="Next month"
         >
           <ChevronRight className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
         </button>
@@ -101,14 +101,14 @@ export const DateCalendar = ({ onSelect }: DateCalendarProps) => {
           onClick={() => onSelect(startOfDay(new Date()))}
           className="px-2 py-0.5 rounded text-[11px] text-indigo-600 dark:text-indigo-400 hover:bg-zinc-100 dark:hover:bg-[#2b2d31] transition"
         >
-          Dzisiaj
+          Today
         </button>
         <button
           type="button"
           onClick={() => onSelect(startOfDay(subDays(new Date(), 1)))}
           className="px-2 py-0.5 rounded text-[11px] text-indigo-600 dark:text-indigo-400 hover:bg-zinc-100 dark:hover:bg-[#2b2d31] transition"
         >
-          Wczoraj
+          Yesterday
         </button>
       </div>
     </div>

@@ -35,17 +35,17 @@ export const ChatMembersSidebar = ({
 
   const isConnected = !!ircConnectedServers[server.id];
 
-  // Nasz nick pochodzi zawsze z ustawień serwera (server.nicknames[0])
-  // i tworzymy syntetyczny wpis na podstawie currentProfile + nicku IRC
+  // Our nickname always comes from the server settings (server.nicknames[0])
+  // and we create a synthetic entry from currentProfile + IRC nick
   const ourNick = server.nicknames?.[0] || currentProfile.name;
-  // Szukamy faktycznego membera pasującego do naszego nicku lub profileId
+  // Look for the actual member matching our nick or profileId
   const selfMemberFromStore = server.members.find(
     (m) =>
       m.profileId === currentProfile.id ||
       m.profile.name.toLowerCase() === ourNick.toLowerCase()
   );
-  // Zawsze wyświetlamy siebie – jeśli nie ma w store (np. server jeszcze się ładuje),
-  // budujemy syntetyczny wpis z naszych danych
+  // Always display ourselves — if not in store yet (e.g. server still loading),
+  // construct a synthetic entry from our profile data
   const selfMember: Member = selfMemberFromStore ?? {
     id: `self-${server.id}`,
     profileId: currentProfile.id,
@@ -56,15 +56,15 @@ export const ChatMembersSidebar = ({
     serverId: server.id,
   };
 
-  // Wykluczamy siebie z listy pozostałych na podstawie nicku i profileId
+  // Exclude ourselves from other members list by nick and profileId
   const selfNickLower = selfMember.profile.name.toLowerCase();
   const isNotSelf = (m: Member) =>
     m.profileId !== currentProfile.id &&
     m.profile.name.toLowerCase() !== selfNickLower;
 
-  // Ustalamy listę pozostałych użytkowników do wyświetlenia:
-  // w trybie kanału: filtrujemy użytkowników z tego kanału
-  // w trybie PM: pokazujemy tylko osoby, z którymi prowadzimy aktywne konwersacje (i posiadające wiadomości lub aktywne)
+  // Determine list of remaining users to display:
+  // in channel mode: filter members in this channel
+  // in PM mode: show active conversation partners
   let otherMembers: Member[];
   if (channel) {
     const channelUserNicks = channelMembersMap[channel.id];

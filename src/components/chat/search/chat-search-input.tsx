@@ -33,11 +33,11 @@ interface OperatorSuggestion {
 // (timestamp / sender / content). `has:*` removed — content-type detection
 // proved unreliable; bare regexes cover power users instead.
 const OPERATOR_SUGGESTIONS: OperatorSuggestion[] = [
-  { insert: "from:", label: "from:", description: "Od użytkownika (nick lub realname)", icon: "user" },
-  { insert: "mentions:", label: "mentions:", description: "Nick w treści wiadomości", icon: "user" },
-  { insert: "before:", label: "before:", description: "Starsze niż data — wybierz z kalendarza", icon: "calendar" },
-  { insert: "after:", label: "after:", description: "Nowsze niż data — wybierz z kalendarza", icon: "calendar" },
-  { insert: "during:", label: "during:", description: "Z konkretnego dnia — wybierz z kalendarza", icon: "calendar" },
+  { insert: "from:", label: "from:", description: "From user (nick or real name)", icon: "user" },
+  { insert: "mentions:", label: "mentions:", description: "User mentioned in message", icon: "user" },
+  { insert: "before:", label: "before:", description: "Older than date — pick from calendar", icon: "calendar" },
+  { insert: "after:", label: "after:", description: "Newer than date — pick from calendar", icon: "calendar" },
+  { insert: "during:", label: "during:", description: "Specific day — pick from calendar", icon: "calendar" },
 ];
 
 type ActivePopup =
@@ -351,7 +351,7 @@ export const ChatSearchInput = ({ context, members = [] }: ChatSearchInputProps)
         />
         <button
           onClick={closeSearch}
-          title="Zamknij wyszukiwanie (Escape)"
+          title="Close search (Escape)"
           className="shrink-0 p-0.5 rounded hover:bg-zinc-200/70 dark:hover:bg-zinc-700/60 transition"
         >
           <X className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
@@ -367,7 +367,7 @@ export const ChatSearchInput = ({ context, members = [] }: ChatSearchInputProps)
           {popup.kind === "operators" && (
             <>
               <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-                Filtry
+                Filters
               </p>
               {popup.items.map((item, index) => (
                 <SuggestionRow
@@ -386,11 +386,11 @@ export const ChatSearchInput = ({ context, members = [] }: ChatSearchInputProps)
           {popup.kind === "members" && (
             <>
               <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-                Użytkownicy
+                Users
               </p>
               {popup.items.length === 0 ? (
                 <p className="px-3 py-2 text-xs text-zinc-500 dark:text-zinc-400">
-                  Wpisz ręcznie — wyszukiwanie uwzględni nick i realname.
+                  Type manually — search matches nick and real name.
                 </p>
               ) : (
                 popup.items.map((member, index) => (
@@ -412,7 +412,7 @@ export const ChatSearchInput = ({ context, members = [] }: ChatSearchInputProps)
             <>
               <p className="px-3 pt-2 pb-1 flex items-center gap-x-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
                 <CalendarDays className="w-3 h-3" />
-                Wybierz datę dla „{popup.key}:” — lub wpisz ręcznie
+                Pick date for “{popup.key}:” — or type manually
               </p>
               <DateCalendar onSelect={(day) => handleSelectDate(popup.key, day)} />
             </>

@@ -4,6 +4,7 @@ import { useModal } from "@/hooks/use-modal-store";
 import { ImageContextMenu } from "@/components/image-context-menu";
 import { openExternalUrl, getFilenameFromUrl } from "@/lib/system-utils";
 import { SmartImage } from "@/components/chat/smart-image";
+import { LazyVideoEmbed } from "@/components/chat/lazy-video-embed";
 import { 
   isImageUrl, 
   isVideoUrl, 
@@ -63,17 +64,7 @@ export const ChatItemAttachment = ({
   }
 
   if (isVideo) {
-    return (
-      <div className="mt-2 max-w-md rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-black">
-        <video
-          src={fileUrl}
-          controls
-          playsInline
-          className="max-h-[320px] w-full rounded-lg"
-          preload="metadata"
-        />
-      </div>
-    );
+    return <LazyVideoEmbed url={fileUrl} onContentSizeChange={onContentSizeChange} />;
   }
 
   // Generic File Attachment (PDF, ZIP, DOCX, TXT, etc.)

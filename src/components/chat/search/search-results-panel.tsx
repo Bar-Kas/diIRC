@@ -29,13 +29,9 @@ const parseLogTimestamp = (timestamp: string): Date => {
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 };
 
-/** Polish pluralization for the results counter. */
+/** English pluralization for the results counter. */
 const resultUnit = (count: number): string => {
-  if (count === 1) return "wynik";
-  const lastDigit = count % 10;
-  const lastTwo = count % 100;
-  if (lastDigit >= 2 && lastDigit <= 4 && (lastTwo < 10 || lastTwo >= 20)) return "wyniki";
-  return "wyników";
+  return count === 1 ? "result" : "results";
 };
 
 const groupHitsByDay = (hits: SearchHit[]): HitGroup[] => {
@@ -122,9 +118,9 @@ export const ChatSearchResultsPanel = ({ context }: ChatSearchResultsPanelProps)
 
   const title =
     status === "loading"
-      ? "Wyszukiwanie…"
+      ? "Searching…"
       : status === "error"
-        ? "Błąd wyszukiwania"
+        ? "Search error"
         : `${hits.length} ${resultUnit(hits.length)}`;
 
   return (
@@ -140,24 +136,24 @@ export const ChatSearchResultsPanel = ({ context }: ChatSearchResultsPanelProps)
         <div className="flex items-center gap-x-1 shrink-0">
           <button
             onClick={() => setSort(sort === "newest" ? "oldest" : "newest", context)}
-            title={sort === "newest" ? "Sortuj: od najnowszych (kliknij, aby zmienić na od najstarszych)" : "Sortuj: od najstarszych (kliknij, aby zmienić na od najnowszych)"}
+            title={sort === "newest" ? "Sort: newest first (click to switch to oldest)" : "Sort: oldest first (click to switch to newest)"}
             className="flex items-center gap-x-1 px-1.5 py-1 rounded text-xs text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200/70 dark:hover:bg-zinc-700/60 transition font-medium"
           >
             {sort === "newest" ? (
               <>
                 <ArrowDownWideNarrow className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400 shrink-0" />
-                <span className="text-[11px] hidden sm:inline">Najnowsze</span>
+                <span className="text-[11px] hidden sm:inline">Newest</span>
               </>
             ) : (
               <>
                 <ArrowUpNarrowWide className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400 shrink-0" />
-                <span className="text-[11px] hidden sm:inline">Najstarsze</span>
+                <span className="text-[11px] hidden sm:inline">Oldest</span>
               </>
             )}
           </button>
           <button
             onClick={closeSearch}
-            title="Zamknij wyniki (Escape)"
+            title="Close results (Escape)"
             className="p-1.5 rounded hover:bg-zinc-200/60 dark:hover:bg-zinc-700/50 transition text-zinc-500 dark:text-zinc-400"
           >
             <X className="w-4 h-4" />
@@ -174,7 +170,7 @@ export const ChatSearchResultsPanel = ({ context }: ChatSearchResultsPanelProps)
               <button
                 key={`${chip.type}:${chip.value}:${index}`}
                 onClick={() => removeChipToken(chip.token)}
-                title="Kliknij, aby usunąć fragment zapytania"
+                title="Click to remove filter"
                 className="inline-flex items-center gap-x-1 px-2 py-0.5 rounded-full text-xs bg-zinc-200 text-zinc-800 hover:bg-zinc-300 dark:bg-[#3f4147] dark:text-zinc-100 dark:hover:bg-[#4a4d55] transition"
               >
                 {isOperator && <span className="opacity-70">{chip.type}:</span>}
@@ -194,31 +190,31 @@ export const ChatSearchResultsPanel = ({ context }: ChatSearchResultsPanelProps)
         {status === "loading" && (
           <div className="flex items-center justify-center gap-x-2 py-8 text-sm text-zinc-500 dark:text-zinc-400">
             <Loader2 className="w-4 h-4 animate-spin" />
-            Wyszukiwanie…
+            Searching…
           </div>
         )}
 
         {status === "idle" && (
           <div className="px-3 py-8 text-center text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-            Wpisz frazę lub użyj filtrów:
+            Type a phrase or use filters:
             <br />
             <code className="text-[11px]">from:</code>{" "}
             <code className="text-[11px]">mentions:</code>{" "}
-            <code className="text-[11px]">before:data</code>
+            <code className="text-[11px]">before:date</code>
             <br />
-            Regex w ukośnikach, np. <code className="text-[11px]">/message \d+:/</code>
+            Regex in slashes, e.g. <code className="text-[11px]">/message \d+:/</code>
           </div>
         )}
 
         {status === "done" && hits.length === 0 && (
           <div className="px-3 py-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-            Brak wyników
+            No results found
           </div>
         )}
 
         {status === "error" && (
           <div className="px-3 py-8 text-center text-xs text-red-500 dark:text-red-400 break-words">
-            Wyszukiwanie nie powiodło się.
+            Search failed.
           </div>
         )}
 
@@ -261,13 +257,13 @@ export const ChatSearchResultsPanel = ({ context }: ChatSearchResultsPanelProps)
         {loadingMore && (
           <div className="flex items-center justify-center gap-x-2 py-3 text-xs text-zinc-500 dark:text-zinc-400">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            Wyszukiwanie kolejnych wiadomości w tle…
+            Searching more messages in background…
           </div>
         )}
 
         {status === "done" && !loadingMore && hits.length > 0 && (
           <div className="py-3 text-[11px] text-center text-zinc-400 dark:text-zinc-500">
-            Koniec wyników wyszukiwania ({hits.length} wiadomości)
+            End of search results ({hits.length} {hits.length === 1 ? "message" : "messages"})
           </div>
         )}
       </div>

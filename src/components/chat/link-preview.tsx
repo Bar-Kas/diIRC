@@ -7,6 +7,7 @@ import { ImageContextMenu } from "@/components/image-context-menu";
 import { openExternalUrl } from "@/lib/system-utils";
 import { SmartImage } from "@/components/chat/smart-image";
 import { LazyYouTubeEmbed } from "@/components/chat/youtube-embed";
+import { LazyVideoEmbed } from "@/components/chat/lazy-video-embed";
 
 interface LinkPreviewProps {
   url: string;
@@ -204,17 +205,7 @@ export const LinkPreview: React.FC<LinkPreviewProps> = ({ url, onContentSizeChan
 
   // B) Render Direct Video Preview
   if (isDirectVideo) {
-    return (
-      <div className="mt-2 max-w-md w-full aspect-video rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-black flex items-center justify-center">
-        <video
-          src={url}
-          controls
-          className="max-h-[320px] w-full h-full object-contain rounded-lg"
-          preload="metadata"
-          onLoadedMetadata={onContentSizeChange}
-        />
-      </div>
-    );
+    return <LazyVideoEmbed url={url} onContentSizeChange={onContentSizeChange} />;
   }
 
   // C) Render YouTube Lazy Facade (IntersectionObserver + click-to-load)
