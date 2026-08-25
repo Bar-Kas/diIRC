@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useParams } from "react-router-dom";
 import {
@@ -6,6 +6,7 @@ import {
   DialogContent,
   DialogDescription,
   DialogHeader,
+  DialogFooter,
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
@@ -50,6 +51,7 @@ export const MotdModal = () => {
   const setServerMotdPolicy = useMockStore((state) => state.setServerMotdPolicy);
   const markServerMotdSeen = useMockStore((state) => state.markServerMotdSeen);
   const enableLinkPreviews = useMockStore((state) => state.enableLinkPreviews ?? true);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   const activeServerId = data?.server?.id || data?.serverId || params.serverId || servers[0]?.id;
   const activeServer = (activeServerId ? servers.find((s) => s.id === activeServerId) : null) || servers[0];
@@ -148,19 +150,23 @@ export const MotdModal = () => {
   return (
     <Dialog open={isModalOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
       <DialogContent
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          closeButtonRef.current?.focus();
+        }}
         className={cn(
           "bg-white dark:bg-[#313338] text-black dark:text-white p-0 overflow-hidden rounded-xl shadow-2xl border border-zinc-200 dark:border-zinc-800 w-[94vw] transition-all duration-200 max-h-[90vh] flex flex-col",
           modalMaxWidth
         )}
       >
-        <DialogHeader className="pt-4 px-6 pb-1 shrink-0">
+        <DialogHeader className="pt-4 px-6 pb-2 shrink-0 border-b border-zinc-100 dark:border-zinc-800/50">
           <DialogTitle className="text-lg font-bold flex items-center gap-x-2 flex-wrap">
             <ScrollText className="w-5 h-5 text-indigo-500 shrink-0" />
             <span>Message of the day</span>
             {isDirc && (
               <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800/60 select-none ml-1">
                 <Sparkles className="w-3 h-3" />
-                diIRC Format
+                diIRC format
               </span>
             )}
           </DialogTitle>
@@ -169,7 +175,7 @@ export const MotdModal = () => {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="px-6 pt-1 pb-4 space-y-3 overflow-y-auto discord-scrollbar-chat flex-1 min-h-0">
+        <div className="px-6 py-4 space-y-3 overflow-y-auto discord-scrollbar-chat flex-1 min-h-0">
           {motdLines.length > 0 ? (
             <div className="rounded-xl border border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/70 dark:bg-[#2B2D31]/70 p-4 select-text transition-all">
               {isDirc ? (
@@ -245,7 +251,7 @@ export const MotdModal = () => {
               <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                  Fetching Message of the Day...
+                  Fetching message of the day...
                 </p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
                   Connecting to {serverDisplayName} to retrieve the latest MOTD.
@@ -259,7 +265,7 @@ export const MotdModal = () => {
               </div>
               <div className="space-y-1">
                 <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                  No Message of the Day available
+                  No message of the day available
                 </p>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-sm">
                   The server did not send a MOTD or the MOTD file is empty.
@@ -267,40 +273,41 @@ export const MotdModal = () => {
               </div>
             </div>
           )}
-
-          {/* Footer Actions — Show on connect policy & Close Button */}
-          <div className="flex items-center justify-end pt-3 border-t border-zinc-200 dark:border-zinc-800 shrink-0 gap-x-3">
-            <div className="flex items-center gap-x-2">
-              <span className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap select-none">
-                Show on connect:
-              </span>
-              <Select
-                value={currentPolicy}
-                onValueChange={(val: ServerMotdDisplayPolicy) => handlePolicyChange(val)}
-              >
-                <SelectTrigger className="h-8 text-xs bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 min-w-[155px]">
-                  <SelectValue placeholder="Display policy" />
-                </SelectTrigger>
-                <SelectContent className="bg-white dark:bg-[#2B2D31] border-zinc-200 dark:border-zinc-800 text-xs">
-                  <SelectItem value="default">Default ({globalPolicyLabel})</SelectItem>
-                  <SelectItem value="on_change">Only when changed</SelectItem>
-                  <SelectItem value="always">Always show</SelectItem>
-                  <SelectItem value="never">Don't show again</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Button
-              type="button"
-              variant="default"
-              size="sm"
-              onClick={handleClose}
-              className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white"
-            >
-              Close
-            </Button>
-          </div>
         </div>
+
+        {/* Footer Actions — Fixed at the bottom of the modal */}
+        <DialogFooter className="px-6 py-3 bg-zinc-50/80 dark:bg-[#2B2D31]/80 border-t border-zinc-200 dark:border-zinc-800 shrink-0 flex flex-row items-center justify-end gap-x-3">
+          <div className="flex items-center gap-x-2">
+            <span className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap select-none">
+              Show on connect:
+            </span>
+            <Select
+              value={currentPolicy}
+              onValueChange={(val: ServerMotdDisplayPolicy) => handlePolicyChange(val)}
+            >
+              <SelectTrigger className="h-8 text-xs bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 min-w-[155px]">
+                <SelectValue placeholder="Display policy" />
+              </SelectTrigger>
+              <SelectContent className="bg-white dark:bg-[#2B2D31] border-zinc-200 dark:border-zinc-800 text-xs">
+                <SelectItem value="default">Default ({globalPolicyLabel})</SelectItem>
+                <SelectItem value="on_change">Only when changed</SelectItem>
+                <SelectItem value="always">Always show</SelectItem>
+                <SelectItem value="never">Don't show again</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Button
+            ref={closeButtonRef}
+            type="button"
+            variant="default"
+            size="sm"
+            onClick={handleClose}
+            className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white"
+          >
+            Close
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
