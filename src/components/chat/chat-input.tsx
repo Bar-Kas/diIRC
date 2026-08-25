@@ -27,6 +27,26 @@ import { isMediaUrl } from "@/lib/image-utils";
 import { commandRegistry } from "@/lib/commands/command-system";
 import { useDraftStore, AttachedImage } from "@/hooks/use-draft-store";
 
+export const getIrcByteCount = (text: string): number => {
+  if (!text) return 0;
+  const ircMessage = text.replace(/\r?\n/g, "\u0085");
+  return new TextEncoder().encode(ircMessage).length;
+};
+
+export const getIrcMaxMessageBytes = (
+  target: string,
+  nick?: string,
+  username?: string,
+  host?: string
+): number => {
+  const defaultNick = nick || "user";
+  const defaultUser = username || defaultNick;
+  const defaultHost = host || "localhost";
+  const rawPrefix = `:${defaultNick}!${defaultUser}@${defaultHost} PRIVMSG ${target} :\r\n`;
+  const overhead = new TextEncoder().encode(rawPrefix).length;
+  return Math.max(0, 512 - overhead);
+};
+
 interface ChatInputProps {
   query: Record<string, string>;
   name: string;
@@ -143,7 +163,36 @@ export const ChatInput = ({
     return () => clearTimeout(timer);
   }, [activeId, form, getDraft, setDraft]);
 
-  const content = form.watch("content");
+  const content = form.watch("content") || "";
+
+  const targetName = type === "channel" ? (name.startsWith("#") ? name : `#${name}`) : name;
+  const currentNick = primaryNick || currentMember?.profile?.name || "You";
+  const serverHost = activeServer?.host || "localhost";
+  const serverUser = activeServer?.realname || currentNick;
+
+  const maxBytes = getIrcMaxMessageBytes(targetName, currentNick, serverUser, serverHost);
+  const currentBytes = getIrcByteCount(content);
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const pasteText = e.clipboardData.getData("text");
+    if (!pasteText) return;
+
+    const textarea = e.currentTarget;
+    const selectionStart = textarea.selectionStart ?? 0;
+    const selectionEnd = textarea.selectionEnd ?? 0;
+    const currentVal = form.getValues("content") || "";
+
+    const nextVal = currentVal.slice(0, selectionStart) + pasteText + currentVal.slice(selectionEnd);
+    const nextBytes = getIrcByteCount(nextVal);
+
+    if (nextBytes > maxBytes) {
+      e.preventDefault();
+      onOpen("ircError", {
+        title: "Message length limit exceeded",
+        description: `Pasted message exceeds the maximum allowed limit of ${maxBytes} bytes (attempted paste size: ${nextBytes} bytes).`,
+      });
+    }
+  };
 
   useEffect(() => {
     if (!activeId || isSwitchingRef.current) return;
@@ -811,7 +860,7 @@ export const ChatInput = ({
                     <Textarea
                       disabled={(isLoading && attachedImages.length === 0) || !isIrcConnected || isMuted}
                       autoFocus
-                      className="min-h-[44px] max-h-[120px] w-full bg-zinc-200/90 dark:bg-zinc-700/75 border-none focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200 placeholder:text-zinc-500 dark:placeholder:text-zinc-400 py-3 pr-24 resize-none overflow-y-auto disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="min-h-[44px] max-h-[120px] w-full bg-zinc-200/90 dark:bg-zinc-700/75 border-none focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200 placeholder:text-zinc-500 dark:placeholder:text-zinc-400 py-3 pr-36 resize-none overflow-y-auto disabled:opacity-60 disabled:cursor-not-allowed"
                       placeholder={
                         !isIrcConnected
                           ? "Disconnected from IRC server"
@@ -823,6 +872,14 @@ export const ChatInput = ({
                       }
                       rows={1}
                       {...field}
+                      onChange={(e) => {
+                        const newVal = e.target.value;
+                        const bytes = getIrcByteCount(newVal);
+                        if (bytes <= maxBytes) {
+                          field.onChange(e);
+                        }
+                      }}
+                      onPaste={handlePaste}
                       ref={(e) => {
                         field.ref(e);
                         // @ts-ignore
@@ -835,6 +892,17 @@ export const ChatInput = ({
                     />
 
                     <div className="absolute right-3 bottom-3 z-10 flex items-center gap-x-2">
+                      <div
+                        className={`text-[10px] font-mono font-medium px-1.5 py-0.5 rounded transition-colors select-none ${
+                          currentBytes >= maxBytes
+                            ? "bg-rose-500 text-white font-bold shadow-sm"
+                            : "bg-zinc-300/60 dark:bg-zinc-800/80 text-zinc-500 dark:text-zinc-400"
+                        }`}
+                        title={`IRC message byte limit: ${currentBytes} / ${maxBytes} bytes`}
+                      >
+                        {currentBytes}/{maxBytes}
+                      </div>
+
                       <button
                         type="button"
                         disabled={isLoading}
@@ -852,8 +920,18 @@ export const ChatInput = ({
                       <EmojiPicker
                         disabled={isLoading}
                         onChange={(emoji: string) => {
-                          field.onChange(`${field.value ? field.value + " " : ""}${emoji}`);
-                          form.setFocus("content");
+                          const currentVal = field.value || "";
+                          const newText = `${currentVal ? currentVal + " " : ""}${emoji}`;
+                          const bytes = getIrcByteCount(newText);
+                          if (bytes <= maxBytes) {
+                            field.onChange(newText);
+                            form.setFocus("content");
+                          } else {
+                            onOpen("ircError", {
+                              title: "Message length limit exceeded",
+                              description: `Adding this emoji would exceed the maximum allowed message limit of ${maxBytes} bytes.`,
+                            });
+                          }
                         }}
                       />
                     </div>
