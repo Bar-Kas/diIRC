@@ -175,6 +175,9 @@ export interface CustomCommand {
   suggestions?: string[];
 }
 
+export type MotdDisplayPolicy = "always" | "on_change" | "never";
+export type ServerMotdDisplayPolicy = "default" | "always" | "on_change" | "never";
+
 export interface Server {
   id: string;
   name: string;
@@ -196,11 +199,14 @@ export interface Server {
   autoReconnect?: boolean;
   customCommands?: CustomCommand[];
   notificationSettings?: NotificationOverride;
+  motd?: string[];
+  motdPolicy?: ServerMotdDisplayPolicy;
 }
 
 export type ServerWithMembersWithProfiles = Server;
 
 export type StatusDisplayMode = "always" | "on_error" | "disabled";
+
 
 
 

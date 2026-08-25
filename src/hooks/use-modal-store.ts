@@ -21,7 +21,8 @@ export type ModalType =
   | "connectionDetails"
   | "roleIcons"
   | "privateMessages"
-  | "updateAvailable";
+  | "updateAvailable"
+  | "motd";
 
 interface ModalData {
   server?: Server;
@@ -38,6 +39,7 @@ interface ModalData {
   description?: string;
   errorMessage?: string;
   flag?: string;
+  motd?: string[];
   updateInfo?: {
     currentVersion: string;
     version: string;

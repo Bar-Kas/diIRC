@@ -38,9 +38,11 @@ import {
   Loader2,
   Sparkles,
   MessageSquare,
-  ArrowUpDown
+  ArrowUpDown,
+  ScrollText,
 } from "lucide-react";
 import { StatusDisplayMode, formatMessageDate } from "@/lib/mock-store";
+import { MotdDisplayPolicy } from "@/types";
 import { playNotificationSound, SoundPreset } from "@/lib/notification-sound";
 import { requestDesktopNotificationPermission } from "@/lib/notification-service";
 import { NotificationSettingsFields } from "@/components/notifications/notification-settings-fields";
@@ -103,6 +105,9 @@ export const SettingsModal = () => {
 
   const dmSortOrder = useMockStore((state) => state.dmSortOrder ?? "opening");
   const setDmSortOrder = useMockStore((state) => state.setDmSortOrder);
+
+  const globalMotdPolicy = useMockStore((state) => state.globalMotdPolicy) || "on_change";
+  const setGlobalMotdPolicy = useMockStore((state) => state.setGlobalMotdPolicy);
 
   const [checkStatus, setCheckStatus] = useState<"idle" | "checking" | "upToDate" | "available" | "error">("idle");
   const [foundUpdate, setFoundUpdate] = useState<Update | null>(null);
@@ -509,6 +514,28 @@ export const SettingsModal = () => {
               <option value="always">Always show</option>
               <option value="on_error">Only on error</option>
               <option value="disabled">Disabled (hidden)</option>
+            </select>
+          </div>
+
+          {/* Message of the Day (MOTD) */}
+          <div className="flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-3 shadow-sm transition">
+            <div className="flex items-center gap-x-2">
+              <ScrollText className="w-4 h-4 text-indigo-500" />
+              <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Message of the day (MOTD)
+              </label>
+            </div>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+              Choose when to automatically display the server MOTD upon connecting or joining.
+            </p>
+            <select
+              value={globalMotdPolicy}
+              onChange={(e) => setGlobalMotdPolicy(e.target.value as MotdDisplayPolicy)}
+              className="w-full bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              <option value="on_change">Only when changed (recommended)</option>
+              <option value="always">Always show on connect</option>
+              <option value="never">Never show automatically</option>
             </select>
           </div>
 
