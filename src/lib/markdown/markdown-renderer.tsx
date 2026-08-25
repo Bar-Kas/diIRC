@@ -3,9 +3,12 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeSanitize from "rehype-sanitize";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { Copy, Check } from "lucide-react";
 import { markdownSanitizeSchema } from "./markdown-config";
 import { remarkSpoiler, remarkUnderline, remarkMention } from "./remark-plugins";
-import { openExternalUrl } from "@/lib/system-utils";
+import { openExternalUrl, copyToClipboard } from "@/lib/system-utils";
 import { cn } from "@/lib/utils";
 import { isSafeHref } from "./markdown-utils";
 import { isMediaUrl } from "@/lib/image-utils";
@@ -19,6 +22,78 @@ interface MarkdownRendererProps {
   myNicks?: string[];
   allMemberNicks?: string[];
 }
+
+// CodeBlock component with syntax highlighting & copy button
+const CodeBlock: React.FC<{ language: string; code: string; onContentSizeChange?: () => void }> = ({
+  language,
+  code,
+  onContentSizeChange,
+}) => {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    onContentSizeChange?.();
+  }, [onContentSizeChange, code]);
+
+  const handleCopy = async () => {
+    const success = await copyToClipboard(code);
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const displayLanguage = language ? language.toLowerCase() : "text";
+
+  return (
+    <div className="rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-950 dark:bg-[#18191c] overflow-hidden my-2 group">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-900 dark:bg-[#1e1f22] border-b border-zinc-800 text-zinc-400 text-xs font-mono select-none">
+        <span className="uppercase tracking-wider font-semibold text-[11px] text-zinc-400">
+          {displayLanguage}
+        </span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex items-center gap-1.5 text-zinc-400 hover:text-zinc-200 transition-colors px-2 py-0.5 rounded hover:bg-zinc-800/60"
+          title="Copy code"
+        >
+          {copied ? (
+            <>
+              <Check className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-emerald-400 text-xs">Copied!</span>
+            </>
+          ) : (
+            <>
+              <Copy className="w-3.5 h-3.5" />
+              <span className="text-xs">Copy code</span>
+            </>
+          )}
+        </button>
+      </div>
+      <div className="overflow-x-auto p-3 text-[13px] font-mono leading-5">
+        <SyntaxHighlighter
+          language={displayLanguage}
+          style={vscDarkPlus}
+          customStyle={{
+            margin: 0,
+            padding: 0,
+            background: "transparent",
+            fontSize: "13px",
+            lineHeight: "1.25rem",
+          }}
+          codeTagProps={{
+            style: {
+              fontFamily: "var(--font-mono, monospace)",
+            },
+          }}
+          PreTag="div"
+        >
+          {code}
+        </SyntaxHighlighter>
+      </div>
+    </div>
+  );
+};
 
 // Spoiler component — hidden until clicked
 const SpoilerInline: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -78,26 +153,32 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     em: ({ children }: any) => <em className="italic">{children}</em>,
     del: ({ children }: any) => <del className="line-through opacity-80 decoration-2">{children}</del>,
     code: ({ children, className: _className, ...props }: any) => {
-      const isBlock = String(_className || "").includes("language-") || props.inline === false;
+      const match = /language-(\w+)/.exec(_className || "");
       const childStr = String(children);
-      const hasNewline = childStr.includes("\n");
-      if (isBlock || hasNewline) {
-        return <code className={cn("font-mono text-[13px]", _className)} {...props}>{children}</code>;
+      const isMultiLine = childStr.includes("\n");
+      const isBlock = Boolean(match) || isMultiLine || props.inline === false;
+
+      if (isBlock) {
+        const lang = match ? match[1] : "text";
+        return (
+          <CodeBlock
+            language={lang}
+            code={childStr.replace(/\n$/, "")}
+            onContentSizeChange={onContentSizeChange}
+          />
+        );
       }
+
       return (
         <code
-          className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded text-[13px] font-mono border border-zinc-200 dark:border-zinc-700 text-rose-600 dark:text-rose-300"
+          className="bg-zinc-100 dark:bg-zinc-800/80 px-1.5 py-0.5 rounded text-[13px] font-mono border border-zinc-200 dark:border-zinc-700 text-rose-600 dark:text-rose-400"
           {...props}
         >
           {children}
         </code>
       );
     },
-    pre: ({ children }: any) => (
-      <pre className="bg-zinc-900 dark:bg-[#1e1f22] text-zinc-100 p-3 rounded-md overflow-x-auto my-2 border border-zinc-800 text-[13px] font-mono leading-5 whitespace-pre-wrap break-words">
-        {children}
-      </pre>
-    ),
+    pre: ({ children }: any) => <div className="my-1">{children}</div>,
     blockquote: ({ children }: any) => (
       <blockquote className="border-l-4 border-zinc-300 dark:border-zinc-600 pl-3 py-1 my-2 italic bg-zinc-50 dark:bg-zinc-800/40 rounded-r text-zinc-600 dark:text-zinc-300">
         {children}
