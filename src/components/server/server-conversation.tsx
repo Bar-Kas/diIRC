@@ -23,6 +23,13 @@ export const ServerConversation = ({
   const closeConversation = useMockStore((state) => state.closeConversation);
   const currentProfile = useMockStore((state) => state.currentProfile);
 
+  const awayUsersMap = useMockStore((state) => state.awayUsers);
+  const awayReasonsMap = useMockStore((state) => state.awayReasons);
+
+  const memberNickLower = member.profile.name.toLowerCase();
+  const isAway = !!awayUsersMap[server.id]?.[memberNickLower];
+  const awayReason = awayReasonsMap[server.id]?.[memberNickLower];
+
   const currentMember = server.members.find(
     (m) =>
       m.profileId === currentProfile?.id ||
@@ -91,15 +98,23 @@ export const ServerConversation = ({
       {isUnread && (
         <span className="absolute left-0 w-1.5 h-4 bg-rose-500 rounded-r-full transition-all" />
       )}
-      <div className="flex items-center gap-x-2 overflow-hidden flex-1">
-        <UserAvatar
-          src={member.profile.imageUrl}
-          name={displayName}
-          className={cn(
-            "h-7 w-7 md:h-7 md:w-7 transition",
-            isUnread && "ring-2 ring-rose-500 ring-offset-1 ring-offset-background"
+      <div className="flex items-center gap-x-2 min-w-0 flex-1">
+        <div className="relative shrink-0">
+          <UserAvatar
+            src={member.profile.imageUrl}
+            name={displayName}
+            className={cn(
+              "h-7 w-7 md:h-7 md:w-7 transition",
+              isUnread && "ring-2 ring-rose-500 ring-offset-1 ring-offset-background"
+            )}
+          />
+          {isAway && (
+            <span
+              className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-yellow-500 dark:bg-yellow-400 rounded-full ring-2 ring-[#F2F3F5] dark:ring-[#2B2D31]"
+              title={awayReason ? `Away: ${awayReason}` : "Away"}
+            />
           )}
-        />
+        </div>
         <p
           className={cn(
             "line-clamp-1 text-sm text-left transition flex-1",

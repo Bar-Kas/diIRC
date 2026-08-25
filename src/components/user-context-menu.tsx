@@ -14,7 +14,7 @@ import { useMockStore } from "@/lib/mock-store";
 import { inviteUserToChannel } from "@/lib/irc-actions";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
-import { MessageSquare, ShieldAlert, ShieldOff, Mic, MicOff, UserPlus, Hash } from "lucide-react";
+import { MessageSquare, ShieldAlert, ShieldOff, Mic, MicOff, UserPlus, Hash, Clock, UserCheck } from "lucide-react";
 
 interface UserContextMenuProps {
   member: Member & { profile: Profile };
@@ -34,6 +34,8 @@ export const UserContextMenu = React.forwardRef<
   const channelUserModesMap = useMockStore((state) => state.channelUserModes);
   const channelOpsMap = useMockStore((state) => state.channelOps);
   const channelModesMap = useMockStore((state) => state.channelModes);
+  const selfAwayMap = useMockStore((state) => state.selfAway);
+  const awayUsersMap = useMockStore((state) => state.awayUsers);
 
   const activeServer = server || servers[0];
   const nickname = member.profile.name;
@@ -57,6 +59,35 @@ export const UserContextMenu = React.forwardRef<
     member.profileId === currentProfile.id ||
     (activeServer?.nicknames?.[0] &&
       nickname.toLowerCase() === activeServer.nicknames[0].toLowerCase());
+
+  const isSelfAway = activeServer
+    ? !!selfAwayMap[activeServer.id] || !!awayUsersMap[activeServer.id]?.[ourNick.toLowerCase()]
+    : false;
+
+  const handleToggleSelfAway = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!activeServer) return;
+
+    const store = useMockStore.getState();
+    if (isSelfAway) {
+      try {
+        await invoke("send_away", { serverId: activeServer.id, reason: null });
+      } catch (err) {
+        console.error("Failed to send /back via context menu:", err);
+      }
+      store.setUserAway(activeServer.id, ourNick, false);
+      store.setSelfAway(activeServer.id, false);
+    } else {
+      const reason = "Away";
+      try {
+        await invoke("send_away", { serverId: activeServer.id, reason });
+      } catch (err) {
+        console.error("Failed to send /away via context menu:", err);
+      }
+      store.setUserAway(activeServer.id, ourNick, true, reason);
+      store.setSelfAway(activeServer.id, true);
+    }
+  };
 
   // Channels on activeServer where our current user is operator AND channel is invite-only (+i)
   const eligibleInviteChannels = activeServer
@@ -159,6 +190,25 @@ export const UserContextMenu = React.forwardRef<
         {children}
       </ContextMenuTrigger>
       <ContextMenuContent className="w-52 select-none">
+        {isSelf && activeServer && (
+          <>
+            <ContextMenuItem onClick={handleToggleSelfAway} className="gap-x-2 cursor-pointer">
+              {isSelfAway ? (
+                <>
+                  <UserCheck className="w-4 h-4 text-emerald-500" />
+                  <span>Set back</span>
+                </>
+              ) : (
+                <>
+                  <Clock className="w-4 h-4 text-amber-500" />
+                  <span>Set away</span>
+                </>
+              )}
+            </ContextMenuItem>
+            {channel && <ContextMenuSeparator />}
+          </>
+        )}
+
         {!isSelf && activeServer && (
           <>
             <ContextMenuItem onClick={onOpenDM} className="gap-x-2">

@@ -22,7 +22,8 @@ export type ModalType =
   | "roleIcons"
   | "privateMessages"
   | "updateAvailable"
-  | "motd";
+  | "motd"
+  | "alreadyAway";
 
 interface ModalData {
   server?: Server;

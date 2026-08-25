@@ -471,5 +471,59 @@ commandRegistry.register({
   },
 });
 
+commandRegistry.register({
+  name: "away",
+  description: "Sets away status or displays error if already away: /away [reason]",
+  execute: async (args: string, ctx: CommandContext) => {
+    const { useMockStore } = await import("@/lib/mock-store");
+    const store = useMockStore.getState();
+    const isAlreadyAway = !!store.selfAway[ctx.serverId];
+
+    if (isAlreadyAway) {
+      const { useModalStore } = await import("@/hooks/use-modal-store");
+      useModalStore.getState().onOpen("alreadyAway", { serverId: ctx.serverId });
+      return true;
+    }
+
+    const reason = args.trim() || "Away";
+    try {
+      await invoke("send_away", {
+        serverId: ctx.serverId,
+        reason: reason,
+      });
+    } catch (err) {
+      console.error("Failed to send /away via Tauri IRC:", err);
+    }
+
+    const ourNick = ctx.activeServer.nicknames?.[0] || store.currentProfile.name;
+    store.setUserAway(ctx.serverId, ourNick, true, reason);
+    store.setSelfAway(ctx.serverId, true);
+    return true;
+  },
+});
+
+commandRegistry.register({
+  name: "back",
+  description: "Returns from away status: /back",
+  execute: async (_args: string, ctx: CommandContext) => {
+    const { useMockStore } = await import("@/lib/mock-store");
+    const store = useMockStore.getState();
+
+    try {
+      await invoke("send_away", {
+        serverId: ctx.serverId,
+        reason: null,
+      });
+    } catch (err) {
+      console.error("Failed to send /back via Tauri IRC:", err);
+    }
+
+    const ourNick = ctx.activeServer.nicknames?.[0] || store.currentProfile.name;
+    store.setUserAway(ctx.serverId, ourNick, false);
+    store.setSelfAway(ctx.serverId, false);
+    return true;
+  },
+});
+
 
 

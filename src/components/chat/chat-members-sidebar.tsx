@@ -7,8 +7,7 @@ import { cn } from "@/lib/utils";
 import { UserRoleIcon, getHighestChannelRole } from "@/components/user-role-icon";
 import { useUIStore } from "@/hooks/use-ui-store";
 import { useModal } from "@/hooks/use-modal-store";
-import { ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
-import { ActionTooltip } from "@/components/action-tooltip";
+import { MoreHorizontal } from "lucide-react";
 
 interface ChatMembersSidebarProps {
   server: Server;
@@ -29,9 +28,11 @@ export const ChatMembersSidebar = ({
   const ircConnectedServers = useMockStore((state) => state.ircConnectedServers);
   const historicalConversations = useMockStore((state) => state.historicalConversations);
   const directMessagesMap = useMockStore((state) => state.directMessages);
+  const awayUsersMap = useMockStore((state) => state.awayUsers);
+  const awayReasonsMap = useMockStore((state) => state.awayReasons);
+  const selfAwayMap = useMockStore((state) => state.selfAway);
 
   const showMembersSidebar = useUIStore((state) => state.showMembersSidebar);
-  const toggleMembersSidebar = useUIStore((state) => state.toggleMembersSidebar);
 
   const isConnected = !!ircConnectedServers[server.id];
 
@@ -132,17 +133,33 @@ export const ChatMembersSidebar = ({
     const userModes = channel ? channelUserModesMap[channel.id]?.[member.profile.name.toLowerCase()] || [] : [];
     const highestRole = getHighestChannelRole(userModes);
 
+    const memberNickLower = member.profile.name.toLowerCase();
+    const isAway = isSelf
+      ? !!selfAwayMap[server.id] || !!awayUsersMap[server.id]?.[ourNick.toLowerCase()] || !!awayUsersMap[server.id]?.[memberNickLower]
+      : !!awayUsersMap[server.id]?.[memberNickLower];
+    const awayReason = isSelf
+      ? awayReasonsMap[server.id]?.[ourNick.toLowerCase()] || awayReasonsMap[server.id]?.[memberNickLower]
+      : awayReasonsMap[server.id]?.[memberNickLower];
+
     return (
       <UserHoverCard member={member} server={server} channel={channel} side="left">
         <div
           onClick={() => onMemberClick(member.id)}
           className="group px-2 py-1 flex items-center gap-x-2 w-full hover:bg-zinc-700/10 dark:hover:bg-zinc-700/50 transition cursor-pointer rounded-md"
         >
-          <UserAvatar 
-            src={member.profile.imageUrl}
-            name={displayName}
-            className="h-8 w-8 md:h-8 md:w-8"
-          />
+          <div className="relative shrink-0">
+            <UserAvatar 
+              src={member.profile.imageUrl}
+              name={displayName}
+              className="h-8 w-8 md:h-8 md:w-8"
+            />
+            {isAway && (
+              <span 
+                className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-yellow-500 dark:bg-yellow-400 rounded-full ring-2 ring-[#F2F3F5] dark:ring-[#2B2D31]"
+                title={awayReason ? `Away: ${awayReason}` : "Away"}
+              />
+            )}
+          </div>
           <div className="flex flex-col overflow-hidden">
             <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">
               {displayName}
@@ -163,25 +180,6 @@ export const ChatMembersSidebar = ({
         showMembersSidebar ? "w-60" : "w-0"
       )}
     >
-      {/* Side Edge Toggle Arrow Button */}
-      <div className="absolute left-0 bottom-[34px] -translate-x-1/2 z-30 pointer-events-auto">
-        <ActionTooltip
-          side="left"
-          label={showMembersSidebar ? "Hide user list" : "Show user list"}
-        >
-          <button
-            onClick={toggleMembersSidebar}
-            className="h-8 w-5 rounded-l-md rounded-r-xs bg-white dark:bg-[#2B2D31] border border-zinc-200 dark:border-zinc-700 shadow-md flex items-center justify-center cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 transition group"
-          >
-            {showMembersSidebar ? (
-              <ChevronRight className="w-3.5 h-3.5 stroke-[2.5]" />
-            ) : (
-              <ChevronLeft className="w-3.5 h-3.5 stroke-[2.5]" />
-            )}
-          </button>
-        </ActionTooltip>
-      </div>
-
       {/* Sliding Outer Clipping Wrapper */}
       <div className="w-full h-full overflow-hidden border-l border-zinc-200 dark:border-zinc-800 bg-[#F2F3F5] dark:bg-[#2B2D31]">
         <div className="w-60 h-full flex flex-col">

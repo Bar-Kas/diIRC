@@ -906,7 +906,7 @@ export const ChatInput = ({
                       onInput={autoResize}
                     />
 
-                    <div className="absolute right-3 bottom-3 z-10 flex items-center gap-x-2">
+                    <div className="absolute right-3 bottom-2 z-10 flex items-center gap-x-2">
                       <div
                         className={`text-[10px] font-mono font-medium px-1.5 py-0.5 rounded transition-colors select-none ${
                           currentBytes >= maxBytes

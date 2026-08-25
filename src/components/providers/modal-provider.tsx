@@ -20,6 +20,7 @@ import { RoleIconsModal } from "@/components/modals/role-icons-modal";
 import { PrivateMessagesModal } from "@/components/modals/private-messages-modal";
 import { UpdateModal } from "@/components/modals/update-modal";
 import { MotdModal } from "@/components/modals/motd-modal";
+import { AlreadyAwayModal } from "@/components/modals/already-away-modal";
 
 export const ModalProvider = () => {
   const [isMounted, setIsMounted] = useState(false);
@@ -54,6 +55,7 @@ export const ModalProvider = () => {
       <PrivateMessagesModal />
       <UpdateModal />
       <MotdModal />
+      <AlreadyAwayModal />
     </>
   );
 };

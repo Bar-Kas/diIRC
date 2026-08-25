@@ -28,11 +28,11 @@ export const getMemberDisplayName = (
     (server?.nicknames?.[0] &&
       member.profile.name.toLowerCase() === server.nicknames[0].toLowerCase());
 
-  if (isSelf && server?.realname && server.realname.trim().length > 0) {
+  if (isSelf && server?.realname && server.realname.trim().length > 0 && server.realname.toLowerCase() !== "realname") {
     return server.realname;
   }
 
-  if (member.profile.realname && member.profile.realname.trim().length > 0) {
+  if (member.profile.realname && member.profile.realname.trim().length > 0 && member.profile.realname.toLowerCase() !== "realname") {
     return member.profile.realname;
   }
 
@@ -53,19 +53,28 @@ export const UserHoverCard = ({
   const servers = useMockStore((state) => state.servers);
   const openConversation = useMockStore((state) => state.openConversation);
   const channelUserModesMap = useMockStore((state) => state.channelUserModes);
+  const awayUsersMap = useMockStore((state) => state.awayUsers);
+  const awayReasonsMap = useMockStore((state) => state.awayReasons);
 
   const activeServer = server || servers[0];
+  const freshMember = activeServer?.members.find(
+    (m) => m.id === member.id || m.profile.name.toLowerCase() === member.profile.name.toLowerCase()
+  ) || member;
+
   const activeChannel = customChannel || activeServer?.channels.find((c) => c.id === params?.channelId);
-  const nickname = member.profile.name;
+  const nickname = freshMember.profile.name;
+
+  const isAway = activeServer ? !!awayUsersMap[activeServer.id]?.[nickname.toLowerCase()] : false;
+  const awayReason = activeServer ? awayReasonsMap[activeServer.id]?.[nickname.toLowerCase()] : undefined;
 
   const userModes = activeChannel ? channelUserModesMap[activeChannel.id]?.[nickname.toLowerCase()] || [] : [];
   const highestRole = getHighestChannelRole(userModes);
 
-  const displayName = getMemberDisplayName(member, activeServer);
+  const displayName = getMemberDisplayName(freshMember, activeServer);
   const isSelf =
-    member.profileId === currentProfile.id ||
+    freshMember.profileId === currentProfile.id ||
     (activeServer?.nicknames?.[0] &&
-      member.profile.name.toLowerCase() === activeServer.nicknames[0].toLowerCase());
+      freshMember.profile.name.toLowerCase() === activeServer.nicknames[0].toLowerCase());
 
   const onOpenDM = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -74,7 +83,7 @@ export const UserHoverCard = ({
     if (!activeServer || isSelf) return;
 
     let targetMember = activeServer.members.find(
-      (m) => m.id === member.id || m.profile.name.toLowerCase() === member.profile.name.toLowerCase()
+      (m) => m.id === freshMember.id || m.profile.name.toLowerCase() === freshMember.profile.name.toLowerCase()
     );
 
     if (!targetMember) {
@@ -89,7 +98,7 @@ export const UserHoverCard = ({
 
   return (
     <HoverCard openDelay={150} closeDelay={300}>
-      <UserContextMenu member={member} server={activeServer} channel={activeChannel}>
+      <UserContextMenu member={freshMember} server={activeServer} channel={activeChannel}>
         <HoverCardTrigger asChild>
           {children}
         </HoverCardTrigger>
@@ -107,9 +116,9 @@ export const UserHoverCard = ({
           <div className="px-4 pb-4 pt-0 relative">
             {/* Avatar floating above boundary */}
             <div className="-mt-10 mb-3 flex items-end justify-between">
-              <div className="ring-4 ring-white dark:ring-[#1e1f22] rounded-full overflow-hidden shadow-lg bg-[#1e1f22]">
+              <div className="relative ring-4 ring-white dark:ring-[#1e1f22] rounded-full overflow-hidden shadow-lg bg-[#1e1f22]">
                 <UserAvatar
-                  src={member.profile.imageUrl}
+                  src={freshMember.profile.imageUrl}
                   name={displayName}
                   className="h-16 w-16 md:h-16 md:w-16"
                 />
@@ -143,6 +152,12 @@ export const UserHoverCard = ({
 
             {/* Additional details section */}
             <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 text-[11px] text-zinc-500 dark:text-zinc-400 space-y-1">
+              {isAway && (
+                <div className="flex justify-between items-center text-yellow-600 dark:text-yellow-400 font-semibold mb-1">
+                  <span>Status:</span>
+                  <span className="truncate max-w-[160px]">{awayReason ? `Away (${awayReason})` : "Away"}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="font-medium">Username:</span>
                 <span className="font-mono text-zinc-700 dark:text-zinc-300">{nickname}</span>
@@ -151,6 +166,17 @@ export const UserHoverCard = ({
                 <div className="flex justify-between">
                   <span className="font-medium">RealName:</span>
                   <span className="font-sans text-zinc-700 dark:text-zinc-300">{displayName}</span>
+                </div>
+              )}
+              {freshMember.profile.host && (
+                <div className="flex justify-between items-center gap-x-2">
+                  <span className="font-medium">Host:</span>
+                  <span
+                    className="font-mono text-zinc-700 dark:text-zinc-300 truncate max-w-[170px]"
+                    title={freshMember.profile.host}
+                  >
+                    {freshMember.profile.host}
+                  </span>
                 </div>
               )}
             </div>

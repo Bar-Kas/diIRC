@@ -67,6 +67,41 @@ struct IrcTopicErrorEvent {
 }
 
 #[derive(Serialize, Clone)]
+struct IrcUserHostEvent {
+    server_id: String,
+    nick: String,
+    host: String,
+    realname: Option<String>,
+}
+
+fn emit_user_host(
+    app: &AppHandle,
+    server_id: &str,
+    nick: &str,
+    user: &str,
+    host: &str,
+    realname: Option<String>,
+) {
+    if nick.is_empty() || host.is_empty() {
+        return;
+    }
+    let hostmask = if user.is_empty() {
+        host.to_string()
+    } else {
+        format!("{}@{}", user, host)
+    };
+    let _ = app.emit(
+        "irc_user_host_event",
+        IrcUserHostEvent {
+            server_id: server_id.to_string(),
+            nick: nick.to_string(),
+            host: hostmask,
+            realname,
+        },
+    );
+}
+
+#[derive(Serialize, Clone)]
 struct IrcBadChannelKeyEvent {
     server_id: String,
     channel: String,
@@ -98,6 +133,14 @@ struct IrcInvitedEvent {
 struct IrcMotdEvent {
     server_id: String,
     motd: Vec<String>,
+}
+
+#[derive(Serialize, Clone)]
+struct IrcAwayEvent {
+    server_id: String,
+    nick: String,
+    away: bool,
+    reason: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -1016,6 +1059,11 @@ async fn connect_irc(
         err_msg
     })?;
 
+    // Request IRCv3 away-notify capability so we receive AWAY messages from other users in real-time.
+    if let Err(e) = client.send_cap_req(&[Capability::AwayNotify]) {
+        log::warn!("Failed to request away-notify CAP: {}", e);
+    }
+
     client.identify().map_err(|e| {
         let err_msg = e.to_string();
         let _ = app.emit(
@@ -1082,8 +1130,11 @@ async fn connect_irc(
                     match message.command {
                         Command::PRIVMSG(channel, content) => {
                             if let Some(source) = message.prefix {
-                                let sender_name = match source {
-                                    Prefix::Nickname(nick, _, _) => nick,
+                                let sender_name = match source.clone() {
+                                    Prefix::Nickname(nick, user, host) => {
+                                        emit_user_host(&app_clone, &stream_server_id, &nick, &user, &host, None);
+                                        nick
+                                    }
                                     Prefix::ServerName(name) => name,
                                 };
                                 let own_nickname =
@@ -1132,7 +1183,10 @@ async fn connect_irc(
                         Command::JOIN(channel, _, _) => {
                             if let Some(source) = message.prefix {
                                 let sender_name = match source.clone() {
-                                    Prefix::Nickname(nick, _, _) => nick,
+                                    Prefix::Nickname(nick, user, host) => {
+                                        emit_user_host(&app_clone, &stream_server_id, &nick, &user, &host, None);
+                                        nick
+                                    }
                                     Prefix::ServerName(name) => name,
                                 };
                                 let full_source = match source {
@@ -1327,6 +1381,10 @@ async fn connect_irc(
                                     ops,
                                 };
                                 let _ = app_clone.emit("irc_ops_event", ops_payload);
+
+                                if let Some(sender) = senders_clone.lock().await.get(&stream_server_id) {
+                                    let _ = sender.send(Command::WHO(Some(channel.to_string()), None));
+                                }
                             }
                         }
                         Command::Response(Response::RPL_WELCOME, ref args) => {
@@ -1975,6 +2033,169 @@ async fn connect_irc(
                             };
                             let _ = app_clone.emit("irc_motd_event", payload);
                         }
+                        Command::Response(Response::RPL_NOWAWAY, ref _args) => {
+                            let own_nick = nicknames_clone.lock().await.get(&stream_server_id).cloned().unwrap_or_default();
+                            let _ = app_clone.emit(
+                                "irc_away_event",
+                                IrcAwayEvent {
+                                    server_id: stream_server_id.clone(),
+                                    nick: own_nick,
+                                    away: true,
+                                    reason: None,
+                                },
+                            );
+                        }
+                        Command::Response(Response::RPL_UNAWAY, ref _args) => {
+                            let own_nick = nicknames_clone.lock().await.get(&stream_server_id).cloned().unwrap_or_default();
+                            let _ = app_clone.emit(
+                                "irc_away_event",
+                                IrcAwayEvent {
+                                    server_id: stream_server_id.clone(),
+                                    nick: own_nick,
+                                    away: false,
+                                    reason: None,
+                                },
+                            );
+                        }
+                        Command::Response(Response::RPL_AWAY, ref args) => {
+                            if args.len() >= 2 {
+                                let nick = args[1].clone();
+                                let reason = args.get(2).cloned();
+                                let _ = app_clone.emit(
+                                    "irc_away_event",
+                                    IrcAwayEvent {
+                                        server_id: stream_server_id.clone(),
+                                        nick,
+                                        away: true,
+                                        reason,
+                                    },
+                                );
+                            }
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "301" => {
+                            if args.len() >= 2 {
+                                let nick = args[1].clone();
+                                let reason = args.get(2).cloned();
+                                let _ = app_clone.emit(
+                                    "irc_away_event",
+                                    IrcAwayEvent {
+                                        server_id: stream_server_id.clone(),
+                                        nick,
+                                        away: true,
+                                        reason,
+                                    },
+                                );
+                            }
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "305" => {
+                            let own_nick = nicknames_clone.lock().await.get(&stream_server_id).cloned().unwrap_or_default();
+                            let _ = app_clone.emit(
+                                "irc_away_event",
+                                IrcAwayEvent {
+                                    server_id: stream_server_id.clone(),
+                                    nick: own_nick,
+                                    away: false,
+                                    reason: None,
+                                },
+                            );
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "306" => {
+                            let own_nick = nicknames_clone.lock().await.get(&stream_server_id).cloned().unwrap_or_default();
+                            let _ = app_clone.emit(
+                                "irc_away_event",
+                                IrcAwayEvent {
+                                    server_id: stream_server_id.clone(),
+                                    nick: own_nick,
+                                    away: true,
+                                    reason: None,
+                                },
+                            );
+                        }
+                        Command::Response(Response::RPL_WHOREPLY, ref args) => {
+                            if args.len() >= 6 {
+                                let nick = &args[5];
+                                let user = args.get(2).map(|s| s.as_str()).unwrap_or("");
+                                let host = args.get(3).map(|s| s.as_str()).unwrap_or("");
+                                let realname = args.get(7).map(|r| r.trim_start_matches("0 ").trim().to_string()).filter(|r| !r.is_empty());
+                                emit_user_host(&app_clone, &stream_server_id, nick, user, host, realname);
+                            }
+                            if args.len() >= 7 {
+                                let nick = args[5].clone();
+                                let flags = &args[6];
+                                let is_away = flags.contains('G');
+                                let _ = app_clone.emit(
+                                    "irc_away_event",
+                                    IrcAwayEvent {
+                                        server_id: stream_server_id.clone(),
+                                        nick,
+                                        away: is_away,
+                                        reason: None,
+                                    },
+                                );
+                            }
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "352" => {
+                            if args.len() >= 6 {
+                                let nick = &args[5];
+                                let user = args.get(2).map(|s| s.as_str()).unwrap_or("");
+                                let host = args.get(3).map(|s| s.as_str()).unwrap_or("");
+                                let realname = args.get(7).map(|r| r.trim_start_matches("0 ").trim().to_string()).filter(|r| !r.is_empty());
+                                emit_user_host(&app_clone, &stream_server_id, nick, user, host, realname);
+                            }
+                            if args.len() >= 7 {
+                                let nick = args[5].clone();
+                                let flags = &args[6];
+                                let is_away = flags.contains('G');
+                                let _ = app_clone.emit(
+                                    "irc_away_event",
+                                    IrcAwayEvent {
+                                        server_id: stream_server_id.clone(),
+                                        nick,
+                                        away: is_away,
+                                        reason: None,
+                                    },
+                                );
+                            }
+                        }
+                        Command::AWAY(ref reason_opt) => {
+                            if let Some(source) = message.prefix {
+                                let sender_name = match source {
+                                    Prefix::Nickname(nick, _, _) => nick,
+                                    Prefix::ServerName(name) => name,
+                                };
+                                let is_away = reason_opt.as_ref().map_or(false, |r| !r.trim().is_empty());
+                                log::info!("IRC [{}] AWAY event for nick={} away={} reason={:?}", stream_server_id, sender_name, is_away, reason_opt);
+                                let _ = app_clone.emit(
+                                    "irc_away_event",
+                                    IrcAwayEvent {
+                                        server_id: stream_server_id.clone(),
+                                        nick: sender_name,
+                                        away: is_away,
+                                        reason: reason_opt.clone(),
+                                    },
+                                );
+                            }
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "AWAY" => {
+                            if let Some(source) = message.prefix {
+                                let sender_name = match source {
+                                    Prefix::Nickname(nick, _, _) => nick,
+                                    Prefix::ServerName(name) => name,
+                                };
+                                let is_away = !args.is_empty() && !args[0].trim().is_empty();
+                                let reason = if is_away { args.first().cloned() } else { None };
+                                log::info!("IRC [{}] AWAY raw event for nick={} away={} reason={:?}", stream_server_id, sender_name, is_away, reason);
+                                let _ = app_clone.emit(
+                                    "irc_away_event",
+                                    IrcAwayEvent {
+                                        server_id: stream_server_id.clone(),
+                                        nick: sender_name,
+                                        away: is_away,
+                                        reason,
+                                    },
+                                );
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -2431,6 +2652,37 @@ async fn send_invite(
 }
 
 #[tauri::command]
+async fn send_away(
+    state: State<'_, IrcState>,
+    server_id: String,
+    reason: Option<String>,
+) -> Result<(), String> {
+    log::info!("send_away called for server: {}, reason: {:?}", server_id, reason);
+    let senders = state.senders.lock().await;
+    if let Some(sender) = senders.get(&server_id) {
+        let res = match reason {
+            Some(ref r) if !r.trim().is_empty() => {
+                let formatted_reason = if r.trim().starts_with(':') {
+                    r.trim().to_string()
+                } else {
+                    format!(":{}", r.trim())
+                };
+                sender.send(Command::Raw("AWAY".to_string(), vec![formatted_reason]))
+            }
+            _ => sender.send(Command::Raw("AWAY".to_string(), vec![])),
+        };
+        if let Err(e) = res {
+            log::error!("Error sending AWAY: {}", e);
+            return Err(e.to_string());
+        }
+        Ok(())
+    } else {
+        log::error!("Not connected to server {}", server_id);
+        Err(format!("Not connected to server {}", server_id))
+    }
+}
+
+#[tauri::command]
 fn toggle_devtools(window: tauri::WebviewWindow) {
     if window.is_devtools_open() {
         window.close_devtools();
@@ -2634,7 +2886,8 @@ pub fn run() {
             toggle_devtools,
             send_os_notification,
             clear_os_notification,
-            request_motd
+            request_motd,
+            send_away
         ])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
