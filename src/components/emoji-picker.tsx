@@ -23,10 +23,13 @@ export const EmojiPicker = ({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button type="button" disabled={disabled} className="outline-none disabled:opacity-50 disabled:cursor-not-allowed">
-          <Smile
-            className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition"
-          />
+        <button
+          type="button"
+          disabled={disabled}
+          className="h-7 w-7 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition flex items-center justify-center rounded-md hover:bg-zinc-300/50 dark:hover:bg-zinc-600/50 disabled:opacity-50 disabled:cursor-not-allowed outline-none"
+          title="Emoji picker"
+        >
+          <Smile className="w-4 h-4" />
         </button>
       </PopoverTrigger>
       <PopoverContent 
