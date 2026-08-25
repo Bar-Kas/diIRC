@@ -415,7 +415,92 @@ export const ChatInput = ({
     }
   };
 
+  const autoResize = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    const newHeight = Math.min(ta.scrollHeight, 120);
+    ta.style.height = `${newHeight}px`;
+  }, []);
+
+  const createCommandContext = useCallback((onInputUpdated?: () => void) => {
+    const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : (servers[0] || null);
+    if (!activeServer) return null;
+
+    const senderMember: Member = currentMember
+      ? {
+          ...currentMember,
+          profile: {
+            ...currentMember.profile,
+            name: primaryNick || currentMember.profile.name,
+          },
+        }
+      : {
+          id: `self-${activeServer.id}`,
+          profileId: currentProfile.id,
+          profile: {
+            ...currentProfile,
+            name: primaryNick || currentProfile.name,
+          },
+          serverId: activeServer.id,
+        };
+
+    return {
+      serverId: activeServer.id,
+      channelName: name,
+      channelId: query?.channelId,
+      conversationId: query?.conversationId,
+      targetMemberId: query?.targetMemberId,
+      type,
+      currentMember: senderMember,
+      activeServer,
+      addMessage,
+      addDirectMessage,
+      navigate,
+      setInputContent: (newContent: string, cursorPosition?: number) => {
+        if (onInputUpdated) onInputUpdated();
+        form.setValue("content", newContent);
+        setTimeout(() => {
+          if (textareaRef.current) {
+            textareaRef.current.focus();
+            if (typeof cursorPosition === "number") {
+              textareaRef.current.setSelectionRange(cursorPosition, cursorPosition);
+            }
+          }
+          autoResize();
+        }, 0);
+      },
+    };
+  }, [
+    query,
+    servers,
+    currentMember,
+    primaryNick,
+    currentProfile,
+    name,
+    type,
+    addMessage,
+    addDirectMessage,
+    navigate,
+    form,
+    autoResize,
+  ]);
+
   const onCommandSelect = (commandName: string) => {
+    if (commandName === "code") {
+      const currentContent = form.getValues("content") || "";
+      let args = "";
+      if (currentContent.toLowerCase().startsWith(`/${commandName}`)) {
+        args = currentContent.slice(1 + commandName.length).trim();
+      }
+      const ctx = createCommandContext();
+      if (ctx) {
+        commandRegistry.execute(`/${commandName} ${args}`, ctx);
+      }
+      setShowCommands(false);
+      return;
+    }
+
     form.setValue("content", `/${commandName} `);
     form.setFocus("content");
     setShowCommands(false);
@@ -454,14 +539,6 @@ export const ChatInput = ({
       return;
     }
   };
-
-  const autoResize = useCallback(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    const newHeight = Math.min(ta.scrollHeight, 120);
-    ta.style.height = `${newHeight}px`;
-  }, []);
 
   useEffect(() => {
     autoResize();
@@ -511,50 +588,47 @@ export const ChatInput = ({
           };
 
       if (textContent.startsWith("/")) {
-        const isHandled = await commandRegistry.execute(textContent, {
-          serverId: activeServer.id,
-          channelName: name,
-          channelId: query?.channelId,
-          conversationId: query?.conversationId,
-          targetMemberId: query?.targetMemberId,
-          type,
-          currentMember: senderMember,
-          activeServer,
-          addMessage,
-          addDirectMessage,
-          navigate,
+        let inputUpdated = false;
+        const ctx = createCommandContext(() => {
+          inputUpdated = true;
         });
 
-        if (isHandled) {
-          for (const img of readyImages) {
-            if (img.url) {
-              if (type === "channel" && query?.channelId) {
-                await invoke("send_message", {
-                  serverId: activeServer.id,
-                  channel: name.startsWith("#") ? name : `#${name}`,
-                  message: img.url,
-                }).catch((e) => console.error(e));
-                addMessage(query.channelId, senderMember, img.url);
-              } else if (type === "conversation" && query?.conversationId) {
-                await invoke("send_message", {
-                  serverId: activeServer.id,
-                  channel: name,
-                  message: img.url,
-                }).catch((e) => console.error(e));
-                addDirectMessage(query.conversationId, senderMember, img.url);
-                if (query.targetMemberId) {
-                  useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
+        if (ctx) {
+          const isHandled = await commandRegistry.execute(textContent, ctx);
+
+          if (isHandled) {
+            for (const img of readyImages) {
+              if (img.url) {
+                if (type === "channel" && query?.channelId) {
+                  await invoke("send_message", {
+                    serverId: activeServer.id,
+                    channel: name.startsWith("#") ? name : `#${name}`,
+                    message: img.url,
+                  }).catch((e) => console.error(e));
+                  addMessage(query.channelId, senderMember, img.url);
+                } else if (type === "conversation" && query?.conversationId) {
+                  await invoke("send_message", {
+                    serverId: activeServer.id,
+                    channel: name,
+                    message: img.url,
+                  }).catch((e) => console.error(e));
+                  addDirectMessage(query.conversationId, senderMember, img.url);
+                  if (query.targetMemberId) {
+                    useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
+                  }
                 }
               }
             }
+            if (!inputUpdated) {
+              if (activeId) {
+                clearDraft(activeId);
+              }
+              form.reset({ content: "" });
+              clearAllAttachments();
+              form.setFocus("content");
+            }
+            return;
           }
-          if (activeId) {
-            clearDraft(activeId);
-          }
-          form.reset({ content: "" });
-          clearAllAttachments();
-          form.setFocus("content");
-          return;
         }
       }
 

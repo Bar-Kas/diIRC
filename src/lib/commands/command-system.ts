@@ -14,6 +14,7 @@ export interface CommandContext {
   addMessage: (channelId: string, member: Member, content: string) => void;
   addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean) => void;
   navigate?: (path: string) => void;
+  setInputContent?: (content: string, cursorPosition?: number) => void;
 }
 
 export interface SlashCommand {
@@ -308,5 +309,21 @@ commandRegistry.register({
     return true;
   },
 });
+
+commandRegistry.register({
+  name: "code",
+  description: "Inserts a markdown code block template",
+  execute: (args: string, ctx: CommandContext) => {
+    const lang = args.trim();
+    const template = `\`\`\`${lang}\n\n\`\`\``;
+    const cursorPosition = 3 + lang.length + 1;
+
+    if (ctx.setInputContent) {
+      ctx.setInputContent(template, cursorPosition);
+    }
+    return true;
+  },
+});
+
 
 
