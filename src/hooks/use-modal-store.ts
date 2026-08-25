@@ -21,7 +21,8 @@ export type ModalType =
   | "connectionDetails"
   | "roleIcons"
   | "privateMessages"
-  | "updateAvailable";
+  | "updateAvailable"
+  | "alreadyAway";
 
 interface ModalData {
   server?: Server;

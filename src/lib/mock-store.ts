@@ -319,6 +319,11 @@ interface MockState {
   channelOps: Record<string, string[]>;
   channelUserModes: Record<string, Record<string, string[]>>;
   channelModes: Record<string, string[]>;
+  awayUsers: Record<string, Record<string, boolean>>;
+  awayReasons: Record<string, Record<string, string>>;
+  selfAway: Record<string, boolean>;
+  setUserAway: (serverId: string, nick: string, isAway: boolean, reason?: string) => void;
+  setSelfAway: (serverId: string, isAway: boolean) => void;
   updateChannelMembers: (serverId: string, channelName: string, users: string[], eventType: "NAMES" | "JOIN" | "PART" | "QUIT") => void;
   updateChannelOps: (serverId: string, channelName: string, ops: string[]) => void;
   updateChannelModes: (serverId: string, channelName: string, modeString: string, isFullListing?: boolean) => void;
@@ -1041,6 +1046,49 @@ export const useMockStore = create<MockState>()(
       channelOps: {},
       channelUserModes: {},
       channelModes: {},
+      awayUsers: {},
+      awayReasons: {},
+      selfAway: {},
+
+      setUserAway: (serverId, nick, isAway, reason) => {
+        if (!serverId || !nick) return;
+        const lowerNick = nick.toLowerCase();
+        set((state) => {
+          const serverAwayUsers = { ...(state.awayUsers[serverId] || {}) };
+          const serverAwayReasons = { ...(state.awayReasons[serverId] || {}) };
+
+          if (isAway) {
+            serverAwayUsers[lowerNick] = true;
+            if (reason) {
+              serverAwayReasons[lowerNick] = reason;
+            }
+          } else {
+            delete serverAwayUsers[lowerNick];
+            delete serverAwayReasons[lowerNick];
+          }
+
+          return {
+            awayUsers: {
+              ...state.awayUsers,
+              [serverId]: serverAwayUsers,
+            },
+            awayReasons: {
+              ...state.awayReasons,
+              [serverId]: serverAwayReasons,
+            },
+          };
+        });
+      },
+
+      setSelfAway: (serverId, isAway) => {
+        if (!serverId) return;
+        set((state) => ({
+          selfAway: {
+            ...state.selfAway,
+            [serverId]: isAway,
+          },
+        }));
+      },
 
       updateChannelOps: (serverId, channelName, ops) => {
         const cleanChan = channelName ? channelName.trim().replace(/^#/, "").toLowerCase() : "";

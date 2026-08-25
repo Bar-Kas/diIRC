@@ -28,6 +28,9 @@ export const ChatMembersSidebar = ({
   const ircConnectedServers = useMockStore((state) => state.ircConnectedServers);
   const historicalConversations = useMockStore((state) => state.historicalConversations);
   const directMessagesMap = useMockStore((state) => state.directMessages);
+  const awayUsersMap = useMockStore((state) => state.awayUsers);
+  const awayReasonsMap = useMockStore((state) => state.awayReasons);
+  const selfAwayMap = useMockStore((state) => state.selfAway);
 
   const showMembersSidebar = useUIStore((state) => state.showMembersSidebar);
 
@@ -130,17 +133,33 @@ export const ChatMembersSidebar = ({
     const userModes = channel ? channelUserModesMap[channel.id]?.[member.profile.name.toLowerCase()] || [] : [];
     const highestRole = getHighestChannelRole(userModes);
 
+    const memberNickLower = member.profile.name.toLowerCase();
+    const isAway = isSelf
+      ? !!selfAwayMap[server.id] || !!awayUsersMap[server.id]?.[ourNick.toLowerCase()] || !!awayUsersMap[server.id]?.[memberNickLower]
+      : !!awayUsersMap[server.id]?.[memberNickLower];
+    const awayReason = isSelf
+      ? awayReasonsMap[server.id]?.[ourNick.toLowerCase()] || awayReasonsMap[server.id]?.[memberNickLower]
+      : awayReasonsMap[server.id]?.[memberNickLower];
+
     return (
       <UserHoverCard member={member} server={server} channel={channel} side="left">
         <div
           onClick={() => onMemberClick(member.id)}
           className="group px-2 py-1 flex items-center gap-x-2 w-full hover:bg-zinc-700/10 dark:hover:bg-zinc-700/50 transition cursor-pointer rounded-md"
         >
-          <UserAvatar 
-            src={member.profile.imageUrl}
-            name={displayName}
-            className="h-8 w-8 md:h-8 md:w-8"
-          />
+          <div className="relative shrink-0">
+            <UserAvatar 
+              src={member.profile.imageUrl}
+              name={displayName}
+              className="h-8 w-8 md:h-8 md:w-8"
+            />
+            {isAway && (
+              <span 
+                className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-yellow-500 dark:bg-yellow-400 rounded-full ring-2 ring-[#F2F3F5] dark:ring-[#2B2D31]"
+                title={awayReason ? `Away: ${awayReason}` : "Away"}
+              />
+            )}
+          </div>
           <div className="flex flex-col overflow-hidden">
             <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">
               {displayName}

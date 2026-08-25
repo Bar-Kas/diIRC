@@ -53,10 +53,15 @@ export const UserHoverCard = ({
   const servers = useMockStore((state) => state.servers);
   const openConversation = useMockStore((state) => state.openConversation);
   const channelUserModesMap = useMockStore((state) => state.channelUserModes);
+  const awayUsersMap = useMockStore((state) => state.awayUsers);
+  const awayReasonsMap = useMockStore((state) => state.awayReasons);
 
   const activeServer = server || servers[0];
   const activeChannel = customChannel || activeServer?.channels.find((c) => c.id === params?.channelId);
   const nickname = member.profile.name;
+
+  const isAway = activeServer ? !!awayUsersMap[activeServer.id]?.[nickname.toLowerCase()] : false;
+  const awayReason = activeServer ? awayReasonsMap[activeServer.id]?.[nickname.toLowerCase()] : undefined;
 
   const userModes = activeChannel ? channelUserModesMap[activeChannel.id]?.[nickname.toLowerCase()] || [] : [];
   const highestRole = getHighestChannelRole(userModes);
@@ -107,7 +112,7 @@ export const UserHoverCard = ({
           <div className="px-4 pb-4 pt-0 relative">
             {/* Avatar floating above boundary */}
             <div className="-mt-10 mb-3 flex items-end justify-between">
-              <div className="ring-4 ring-white dark:ring-[#1e1f22] rounded-full overflow-hidden shadow-lg bg-[#1e1f22]">
+              <div className="relative ring-4 ring-white dark:ring-[#1e1f22] rounded-full overflow-hidden shadow-lg bg-[#1e1f22]">
                 <UserAvatar
                   src={member.profile.imageUrl}
                   name={displayName}
@@ -143,6 +148,12 @@ export const UserHoverCard = ({
 
             {/* Additional details section */}
             <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 text-[11px] text-zinc-500 dark:text-zinc-400 space-y-1">
+              {isAway && (
+                <div className="flex justify-between items-center text-yellow-600 dark:text-yellow-400 font-semibold mb-1">
+                  <span>Status:</span>
+                  <span className="truncate max-w-[160px]">{awayReason ? `Away (${awayReason})` : "Away"}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="font-medium">Username:</span>
                 <span className="font-mono text-zinc-700 dark:text-zinc-300">{nickname}</span>
