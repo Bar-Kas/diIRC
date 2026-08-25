@@ -208,7 +208,11 @@ export const ChatInput = ({
 
   const isIrcConnected = activeServer ? !!ircConnectedServers[activeServer.id] : true;
   const isUploading = attachedImages.some((img) => img.isUploading);
-  const isLoading = form.formState.isSubmitting || isUploading || !isIrcConnected || isMuted;
+  // Buttons are blocked while uploading/disconnected, but the textarea itself must NOT be
+  // disabled during submission: disabling a focused element blurs it and the input
+  // loses keyboard focus after every sent message.
+  const isLoading = isUploading || !isIrcConnected || isMuted;
+  const isInputDisabled = !isIrcConnected || isMuted;
 
   const processFileUpload = useCallback(async (file: File) => {
     if (uploadConfig.provider === "disabled") {
@@ -583,6 +587,7 @@ export const ChatInput = ({
               sender: senderMember.profile.name,
             }).catch(() => {});
             form.setValue("content", line);
+            form.setFocus("content");
             return;
           }
         } else if (type === "conversation" && query?.conversationId) {
@@ -611,10 +616,15 @@ export const ChatInput = ({
               useMockStore.getState().syncActiveConversationsWithDisk(activeServer.id, loggedNicks);
             } catch (e) {}
             form.setValue("content", line);
+            form.setFocus("content");
             return;
           }
         }
       }
+
+      // Safety net: make sure the composer regains keyboard focus once the
+      // async send finishes (e.g. if anything grabbed focus mid-send).
+      form.setFocus("content");
     } catch (error) {
       console.error(error);
     }
@@ -726,7 +736,7 @@ export const ChatInput = ({
 
                   <div className="relative flex flex-col">
                     <Textarea
-                      disabled={(isLoading && attachedImages.length === 0) || !isIrcConnected || isMuted}
+                      disabled={isInputDisabled}
                       autoFocus
                       className="min-h-[44px] max-h-[120px] w-full bg-zinc-200/90 dark:bg-zinc-700/75 border-none focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200 placeholder:text-zinc-500 dark:placeholder:text-zinc-400 py-3 pr-24 resize-none overflow-y-auto disabled:opacity-60 disabled:cursor-not-allowed"
                       placeholder={

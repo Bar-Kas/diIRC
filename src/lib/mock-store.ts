@@ -42,6 +42,9 @@ const EMPTY_HISTORY_WINDOW: HistoryWindow = {
   loadingOlder: false,
   loadingNewer: false,
   pendingLive: [],
+  unreadCount: 0,
+  lastSeenTailId: null,
+  tailPinned: true,
   ready: false,
 };
 
@@ -317,7 +320,22 @@ interface MockState {
       loadOlderHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<boolean>;
       loadNewerHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<boolean>;
       jumpToLatest: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<void>;
+  /**
+   * Re-centers the sliding window around a native log line (search jump-to-message).
+   * Loads the page ending at `offset` and forward-fills newer context, then marks the
+   * window ready so ChatMessages can scroll to `messageId` and flash-highlight it.
+   */
+  jumpToMessage: (
+    type: "channel" | "conversation",
+    chatId: string,
+    serverId: string,
+    target: string,
+    offset: number,
+    messageId: string,
+  ) => Promise<boolean>;
   clearHistoryLoading: () => void;
+  markTailSeen: (tailId: string | null) => void;
+  setTailPinned: (pinned: boolean) => void;
   addMessage: (channelId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean) => Message;
   deleteMessage: (channelId: string, messageId: string) => void;
 
@@ -1312,6 +1330,9 @@ export const useMockStore = create<MockState>()(
               loadingOlder: false,
               loadingNewer: false,
               pendingLive: [],
+              unreadCount: 0,
+              lastSeenTailId: null,
+              tailPinned: true,
               ready: false,
             },
             messages: type === "channel" ? (isSameChat ? state.messages : { [chatId]: preservedLive as Message[] }) : {},
@@ -1515,9 +1536,153 @@ export const useMockStore = create<MockState>()(
         await get().loadChatHistory(type, chatId, serverId, target);
       },
 
+      jumpToMessage: async (type, chatId, serverId, target, offset, messageId) => {
+        const requestedKey = chatKey(type, chatId);
+        const requestToken = get().historyLoadToken + 1;
+
+        // Same reset semantics as loadChatHistory: only the active chat is buffered and
+        // the native log is the source of truth. Offsetless live messages are preserved.
+        set((state) => {
+          const isSameChat = state.activeChatKey === requestedKey;
+          const currentMsgs = (
+            ((type === "channel" ? state.messages[chatId] : state.directMessages[chatId]) || []) as (Message | DirectMessage)[]
+          );
+          const pending = (isSameChat && state.historyWindow.pendingLive) ? state.historyWindow.pendingLive : [];
+          const preservedLive = dedupById([
+            ...currentMsgs.filter((m) => m.offset === undefined),
+            ...pending,
+          ]);
+          return {
+            activeChatKey: requestedKey,
+            historyLoadToken: requestToken,
+            historyWindow: {
+              key: requestedKey,
+              serverId,
+              type,
+              chatId,
+              target,
+              olderCursor: null,
+              newerCursor: null,
+              hasOlder: false,
+              hasNewer: false,
+              loadingOlder: false,
+              loadingNewer: false,
+              pendingLive: preservedLive as (Message | DirectMessage)[],
+              // A search jump lands in history (not at the live tail): preserve the
+              // unread accounting and unpin the tail so further arrivals keep counting.
+              unreadCount: state.historyWindow.unreadCount,
+              lastSeenTailId: state.historyWindow.lastSeenTailId,
+              tailPinned: false,
+              ready: false,
+            },
+            messages: type === "channel" ? { [chatId]: [] } : {},
+            directMessages: type === "conversation" ? { [chatId]: [] } : {},
+          };
+        });
+
+        try {
+          // Page ending just after `offset` — guarantees the target line is included.
+          const page = await invoke<LogPage>("load_log_page", {
+            serverId,
+            channel: target,
+            before: offset + 1,
+          });
+          let current = get();
+          if (current.activeChatKey !== requestedKey || current.historyLoadToken !== requestToken) {
+            return false;
+          }
+
+          const server = current.servers.find((item) => item.id === serverId);
+          let combined = mapLogEntries(page.entries, server, serverId, type, chatId);
+          let newestOffset = lastLogOffset(combined);
+
+          // Forward-fill newer context so the jump target is not glued to the window edge.
+          for (let fill = 0; fill < 4 && combined.length < MAX_HISTORY_WINDOW; fill += 1) {
+            if (newestOffset === null) break;
+            const newerPage = await invoke<LogPage>("load_log_page", {
+              serverId,
+              channel: target,
+              after: newestOffset,
+            });
+            current = get();
+            if (current.activeChatKey !== requestedKey || current.historyLoadToken !== requestToken) {
+              return false;
+            }
+            if (newerPage.entries.length === 0) {
+              newestOffset = null; // reached log tail
+              break;
+            }
+            const newer = mapLogEntries(newerPage.entries, server, serverId, type, chatId);
+            combined = dedupById([...combined, ...newer]);
+            newestOffset = lastLogOffset(combined);
+            if (newerPage.nextAfter === null || newerPage.nextAfter === undefined) {
+              newestOffset = null; // tail reached
+              break;
+            }
+          }
+
+          // Re-attach offsetless live messages queued before the jump.
+          current = get();
+          const pendingLive = current.historyWindow.pendingLive || [];
+          if (pendingLive.length > 0) {
+            const fetchedIds = new Set(combined.map((m) => m.id));
+            combined = dedupById([...combined, ...pendingLive.filter((m) => !fetchedIds.has(m.id))]);
+            newestOffset = lastLogOffset(
+              combined.filter((m) => m.offset !== undefined)
+            );
+          }
+          combined = trimWindow(combined);
+
+          applyWindow(set, type, chatId, combined, {
+            hasOlder: page.nextOffset !== null,
+            olderCursor: page.nextOffset,
+            hasNewer: newestOffset !== null,
+            newerCursor: newestOffset,
+            pendingLive: [],
+            ready: true,
+          });
+
+          // Only confirm when the target actually made it into the rendered window.
+          return get()
+            .messages[chatId]
+            ?.some((m) => m.id === messageId) ||
+            get().directMessages[chatId]?.some((m) => m.id === messageId) || false;
+        } catch (error) {
+          console.error(`Failed to jump to message ${messageId} in ${target}:`, error);
+          const current = get();
+          if (current.activeChatKey !== requestedKey || current.historyLoadToken !== requestToken) return false;
+          applyWindow(set, type, chatId,
+            ((type === "channel"
+              ? current.messages[chatId]
+              : current.directMessages[chatId]) || []) as (Message | DirectMessage)[],
+            { ready: true });
+          return false;
+        }
+      },
+
       clearHistoryLoading: () => set((state) => ({
         historyWindow: { ...state.historyWindow, loadingOlder: false, loadingNewer: false },
       })),
+
+      // Event-driven unread accounting (Model v2): the counter lives in the store so
+      // sliding-window trimming can never freeze or reset it. Chunk loads do NOT touch
+      // unreadCount — only arrivals increment and genuine "seen" stamps zero it.
+      markTailSeen: (tailId) =>
+        set((state) => {
+          const win = state.historyWindow;
+          if (win.unreadCount !== 0 || win.lastSeenTailId !== tailId) {
+            return { historyWindow: { ...win, lastSeenTailId: tailId, unreadCount: 0 } };
+          }
+          return {};
+        }),
+
+      setTailPinned: (pinned) =>
+        set((state) => {
+          if (state.historyWindow.tailPinned !== pinned) {
+            return { historyWindow: { ...state.historyWindow, tailPinned: pinned } };
+          }
+          return {};
+        }),
 
       addMessage: (channelId, member, content, fileUrl, isSystem) => {
         const key = chatKey("channel", channelId);
@@ -1553,6 +1718,11 @@ export const useMockStore = create<MockState>()(
         }
 
         const win = state.historyWindow.key === key ? state.historyWindow : null;
+        // Event-driven unread counting (Model v2): any arrival while the user is away
+        // from the bottom increments once here — regardless of whether the message
+        // lands in the buffer or in the pendingLive queue. Sliding-window trimming and
+        // chunk loads never touch the count, so it can neither freeze nor reset.
+        const shouldCountUnread = Boolean(win && !win.tailPinned);
         if (win?.hasNewer) {
           // Reading older history: queue the live message instead of mutating the window.
           set((s) => {
@@ -1562,6 +1732,7 @@ export const useMockStore = create<MockState>()(
               historyWindow: {
                 ...s.historyWindow,
                 pendingLive: nextPending,
+                unreadCount: shouldCountUnread ? s.historyWindow.unreadCount + 1 : s.historyWindow.unreadCount,
               },
             };
           });
@@ -1573,6 +1744,10 @@ export const useMockStore = create<MockState>()(
               messages: {
                 ...state2.messages,
                 [channelId]: nextMsgs,
+              },
+              historyWindow: {
+                ...state2.historyWindow,
+                unreadCount: shouldCountUnread ? state2.historyWindow.unreadCount + 1 : state2.historyWindow.unreadCount,
               },
             };
           });
@@ -1830,6 +2005,8 @@ export const useMockStore = create<MockState>()(
         }
 
         const win = state.historyWindow.key === key ? state.historyWindow : null;
+        // Event-driven unread counting (Model v2) — see addMessage.
+        const shouldCountUnread = Boolean(win && !win.tailPinned);
         if (win?.hasNewer) {
           // Reading older history: queue the live message instead of mutating the window.
           set((s) => {
@@ -1839,6 +2016,7 @@ export const useMockStore = create<MockState>()(
               historyWindow: {
                 ...s.historyWindow,
                 pendingLive: nextPending,
+                unreadCount: shouldCountUnread ? s.historyWindow.unreadCount + 1 : s.historyWindow.unreadCount,
               },
             };
           });
@@ -1850,6 +2028,10 @@ export const useMockStore = create<MockState>()(
               directMessages: {
                 ...state2.directMessages,
                 [conversationId]: nextDms,
+              },
+              historyWindow: {
+                ...state2.historyWindow,
+                unreadCount: shouldCountUnread ? state2.historyWindow.unreadCount + 1 : state2.historyWindow.unreadCount,
               },
             };
           });

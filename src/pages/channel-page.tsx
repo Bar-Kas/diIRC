@@ -2,10 +2,12 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 import { useMockStore } from "@/lib/mock-store";
 import { useUIStore } from "@/hooks/use-ui-store";
+import { useSearchStore } from "@/hooks/use-search-store";
 import { ChatHeader } from "@/components/chat/chat-header";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatMessages } from "@/components/chat/chat-messages";
 import { ChatMembersSidebar } from "@/components/chat/chat-members-sidebar";
+import { ChatSearchResultsPanel } from "@/components/chat/search/search-results-panel";
 
 export const ChannelPage = () => {
   const { serverId, channelId } = useParams();
@@ -14,6 +16,7 @@ export const ChannelPage = () => {
   const currentProfile = useMockStore((state) => state.currentProfile);
   const showMembersSidebar = useUIStore((state) => state.showMembersSidebar);
   const setMembersSidebar = useUIStore((state) => state.setMembersSidebar);
+  const searchOpen = useSearchStore((state) => state.open);
 
   const server = servers.find((s) => s.id === serverId);
   const channel = server?.channels.find((c) => c.id === channelId);
@@ -46,6 +49,15 @@ export const ChannelPage = () => {
         type="channel"
         channel={channel}
         server={server}
+        searchContext={{
+          type: "channel",
+          chatId: channel.id,
+          serverId: server.id,
+          target: channel.name.startsWith("#") ? channel.name : `#${channel.name}`,
+        }}
+        searchMembers={server.members.flatMap((m) =>
+          m.profile?.name ? [{ name: m.profile.name, realname: m.profile?.realname }] : []
+        )}
       />
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-col flex-1 h-full min-w-0">
@@ -67,7 +79,18 @@ export const ChannelPage = () => {
             }}
           />
         </div>
-        <ChatMembersSidebar server={server} channel={channel} />
+        {searchOpen ? (
+          <ChatSearchResultsPanel
+            context={{
+              type: "channel",
+              chatId: channel.id,
+              serverId: server.id,
+              target: channel.name.startsWith("#") ? channel.name : `#${channel.name}`,
+            }}
+          />
+        ) : (
+          showMembersSidebar && <ChatMembersSidebar server={server} channel={channel} />
+        )}
       </div>
     </div>
   );

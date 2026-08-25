@@ -183,7 +183,7 @@ const ChatItemInner = ({
 
   if (isSystem) {
     return (
-      <div className="relative group flex items-center hover:bg-black/5 px-4 py-1 transition w-full">
+      <div className="relative group flex items-center px-4 py-1 transition w-full">
         <div className="w-10 flex justify-center shrink-0">
           <ActionTooltip label={timestamp}>
             <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-mono select-none">
@@ -200,7 +200,7 @@ const ChatItemInner = ({
 
   return (
     <div className={cn(
-      "relative group flex items-center hover:bg-black/5 px-4 transition w-full",
+      "relative group flex items-center px-4 transition w-full",
       compact ? "py-[2px]" : "pt-2.5 pb-[2px]"
     )}>
       <div className="group flex gap-x-2 items-start w-full">
