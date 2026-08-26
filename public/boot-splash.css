@@ -15,12 +15,16 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  animation: boot-brand-in 280ms ease-out both;
 }
 
 #boot-splash img {
   width: 32px;
   height: 32px;
   border-radius: 6px;
+  animation: boot-logo-pulse 1.6s ease-in-out infinite;
+  transform-origin: center center;
+  will-change: transform, opacity;
 }
 
 #boot-splash .boot-title {
@@ -28,8 +32,52 @@
   font-weight: 600;
   letter-spacing: 0.01em;
   line-height: 1;
+  animation: boot-title-pulse 1.6s ease-in-out infinite;
+  will-change: opacity;
 }
 
 html.oled #boot-splash {
   background: #000;
+}
+
+/* Discord-like entrance + soft breathing pulse */
+@keyframes boot-brand-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes boot-logo-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.72;
+    transform: scale(0.94);
+  }
+}
+
+@keyframes boot-title-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #boot-splash .boot-brand,
+  #boot-splash img,
+  #boot-splash .boot-title {
+    animation: none;
+  }
 }
