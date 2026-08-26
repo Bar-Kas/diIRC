@@ -4,6 +4,7 @@ import { NavigationSidebar } from "@/components/navigation/navigation-sidebar";
 import { ServerSidebar } from "@/components/server/server-sidebar";
 import { useMockStore } from "@/lib/mock-store";
 import { useUIStore } from "@/hooks/use-ui-store";
+import { useModalStore } from "@/hooks/use-modal-store";
 import { cn } from "@/lib/utils";
 
 export const MainLayout = () => {
@@ -14,6 +15,7 @@ export const MainLayout = () => {
   const showServerSidebar = useUIStore((state) => state.showServerSidebar);
 
   const activeServer = servers.find((s) => s.id === serverId) || servers[0];
+  const activeMotd = useMockStore((state) => (activeServer ? state.serverMotds[activeServer.id] : undefined));
 
   useEffect(() => {
     if (!servers || servers.length === 0) {
@@ -22,6 +24,21 @@ export const MainLayout = () => {
       navigate(`/servers/${servers[0].id}`, { replace: true });
     }
   }, [serverId, activeServer, servers, navigate]);
+
+  // Auto-display MOTD when clicking/selecting a server if policy permits
+  useEffect(() => {
+    if (!activeServer || !activeMotd || activeMotd.length === 0) return;
+
+    const store = useMockStore.getState();
+    if (store.shouldAutoShowMotd(activeServer.id, activeMotd)) {
+      useModalStore.getState().onOpen("motd", {
+        server: activeServer,
+        serverId: activeServer.id,
+        motd: activeMotd,
+      });
+      store.markServerMotdSeen(activeServer.id, activeMotd);
+    }
+  }, [activeServer?.id, activeMotd]);
 
   if (!activeServer) {
     return null;

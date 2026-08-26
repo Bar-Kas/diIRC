@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { ActionTooltip } from "@/components/action-tooltip";
 import { useMockStore } from "@/lib/mock-store";
+import { useModalStore } from "@/hooks/use-modal-store";
 
 interface NavigationItemProps {
   id: string;
@@ -20,6 +21,17 @@ export const NavigationItem = ({
 
   const onClick = () => {
     navigate(`/servers/${id}`);
+    const store = useMockStore.getState();
+    const motd = store.serverMotds[id];
+    if (motd && motd.length > 0 && store.shouldAutoShowMotd(id, motd)) {
+      const targetServer = store.servers.find((s) => s.id === id);
+      useModalStore.getState().onOpen("motd", {
+        server: targetServer,
+        serverId: id,
+        motd,
+      });
+      store.markServerMotdSeen(id, motd);
+    }
   };
 
   const isSelected = params?.serverId === id;
