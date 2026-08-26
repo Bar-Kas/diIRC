@@ -5,7 +5,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { useMockStore } from "@/lib/mock-store";
+import { useMockStore, getServerSelfMember } from "@/lib/mock-store";
 import { getMemberDisplayName } from "@/components/user-hover-card";
 import { cn } from "@/lib/utils";
 import { ServerHeader } from "./server-header";
@@ -82,15 +82,7 @@ export const ServerSidebar = ({
   const channels = server.channels || [];
   const textChannels = channels.filter((channel) => channel.type === ChannelType.TEXT);
 
-  const currentMember = server.members.find(
-    (m) =>
-      m.profileId === currentProfile?.id ||
-      m.profile?.id === currentProfile?.id ||
-      (server.nicknames && server.nicknames.length > 0 && 
-       server.nicknames.some(nick => nick.toLowerCase() === m.profile?.name?.toLowerCase())) ||
-      m.id.startsWith("member-")
-  ) || server.members[0]; // fallback to first member so it's never undefined
-
+  const currentMember = getServerSelfMember(server, currentProfile?.id) || server.members[0];
 
   const otherMembers = (server.members || []).filter(
     (m) =>
@@ -134,8 +126,16 @@ export const ServerSidebar = ({
     sortedPmMembers.sort((a, b) => {
       const convIdA = currentMember ? [currentMember.id, a.id].sort().join("-") : "";
       const convIdB = currentMember ? [currentMember.id, b.id].sort().join("-") : "";
-      const unreadA = unreadState[`conversation:${convIdA}`] || unreadState[`conversation:${a.id}`];
-      const unreadB = unreadState[`conversation:${convIdB}`] || unreadState[`conversation:${b.id}`];
+      const unreadA =
+        unreadState[`conversation:${server.id}:${convIdA}`] ||
+        unreadState[`conversation:${server.id}:${a.id}`] ||
+        unreadState[`conversation:${convIdA}`] ||
+        unreadState[`conversation:${a.id}`];
+      const unreadB =
+        unreadState[`conversation:${server.id}:${convIdB}`] ||
+        unreadState[`conversation:${server.id}:${b.id}`] ||
+        unreadState[`conversation:${convIdB}`] ||
+        unreadState[`conversation:${b.id}`];
       const isUnreadA = !!unreadA && unreadA.count > 0 ? 1 : 0;
       const isUnreadB = !!unreadB && unreadB.count > 0 ? 1 : 0;
       return isUnreadB - isUnreadA;

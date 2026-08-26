@@ -1,11 +1,29 @@
 services:
-  ircd:
+  ircd1:
     image: ergochat/ergo:latest
-    container_name: irc-server
+    container_name: irc-server1
     ports:
-      - "6667:6667"  # Plain IRC port (non-SSL)
+      - "6667:6667"
     volumes:
-      - ./data:/ircd-data
+      - ./data:/ircd-data1
+    restart: unless-stopped
+
+  ircd2:
+    image: ergochat/ergo:latest
+    container_name: irc-server2
+    ports:
+      - "6668:6667"
+    volumes:
+      - ./data:/ircd-data2
+    restart: unless-stopped
+
+  ircd3:
+    image: ergochat/ergo:latest
+    container_name: irc-server3
+    ports:
+      - "6669:6667"
+    volumes:
+      - ./data:/ircd-data3
     restart: unless-stopped
 
   pomf:

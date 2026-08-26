@@ -50,20 +50,30 @@ export const NavigationItem = ({
         if (info.hasMention) hasMention = true;
       }
     }
-    const processedConvKeys = new Set<string>();
+    const processedRawKeys = new Set<string>();
     for (const [key, info] of Object.entries(unreadState)) {
-      if (key.startsWith("conversation:") && info.count > 0 && !processedConvKeys.has(key)) {
-        const rawId = key.replace("conversation:", "");
-        if (server.members.some((m) => rawId.includes(m.id) || m.id === rawId)) {
-          totalUnread += info.count;
-          if (info.hasMention) hasMention = true;
-          for (const otherKey of Object.keys(unreadState)) {
-            if (otherKey.startsWith("conversation:")) {
-              const otherRaw = otherKey.replace("conversation:", "");
-              if (otherRaw === rawId || rawId.includes(otherRaw) || otherRaw.includes(rawId)) {
-                processedConvKeys.add(otherKey);
-              }
+      if (key.startsWith("conversation:") && info.count > 0) {
+        let raw = "";
+        if (key.startsWith(`conversation:${id}:`)) {
+          raw = key.replace(`conversation:${id}:`, "");
+        } else if (!key.includes(":", "conversation:".length)) {
+          const rawId = key.replace("conversation:", "");
+          if (server.members.some((m) => m.id === rawId)) {
+            raw = rawId;
+          }
+        }
+        if (raw) {
+          let isDup = false;
+          for (const existing of processedRawKeys) {
+            if (existing === raw || existing.includes(raw) || raw.includes(existing)) {
+              isDup = true;
+              break;
             }
+          }
+          if (!isDup) {
+            totalUnread += info.count;
+            if (info.hasMention) hasMention = true;
+            processedRawKeys.add(raw);
           }
         }
       }

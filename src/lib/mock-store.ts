@@ -43,6 +43,35 @@ export function computeMotdHash(lines: string[]): string {
   return (hash >>> 0).toString(16);
 }
 
+export function getServerSelfMember(server: Server, currentProfileId?: string): Member {
+  const currentMember = server.members.find(
+    (m) =>
+      (currentProfileId && m.profileId === currentProfileId) ||
+      m.id.startsWith("member-") ||
+      m.id === `${server.id}:self` ||
+      (server.nicknames && server.nicknames.some((n) => n.toLowerCase() === m.profile?.name?.toLowerCase()))
+  );
+  return (
+    currentMember ||
+    server.members[0] || {
+      id: `${server.id}:self`,
+      profileId: currentProfileId || "self",
+      profile: {
+        id: currentProfileId || "self",
+        userId: currentProfileId || "self",
+        name: server.nicknames?.[0] || "ReactUser",
+        imageUrl: "",
+        email: "user@irc.local",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      serverId: server.id,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+  );
+}
+
 const EMPTY_HISTORY_WINDOW: HistoryWindow = {
   key: null,
   serverId: null,
@@ -422,13 +451,28 @@ export const useMockStore = create<MockState>()(
           }
 
           if (key.startsWith("conversation:")) {
-            const targetId = key.replace("conversation:", "");
-            for (const uKey of Object.keys(nextState)) {
-              if (uKey.startsWith("conversation:")) {
-                const raw = uKey.replace("conversation:", "");
-                if (raw === targetId || targetId.includes(raw) || raw.includes(targetId)) {
-                  delete nextState[uKey];
-                  changed = true;
+            const parts = key.split(":");
+            if (parts.length >= 3) {
+              const sId = parts[1];
+              const targetId = parts.slice(2).join(":");
+              for (const uKey of Object.keys(nextState)) {
+                if (uKey.startsWith(`conversation:${sId}:`)) {
+                  const raw = uKey.replace(`conversation:${sId}:`, "");
+                  if (raw === targetId || targetId.includes(raw) || raw.includes(targetId)) {
+                    delete nextState[uKey];
+                    changed = true;
+                  }
+                }
+              }
+            } else {
+              const targetId = key.replace("conversation:", "");
+              for (const uKey of Object.keys(nextState)) {
+                if (uKey.startsWith("conversation:")) {
+                  const raw = uKey.replace("conversation:", "");
+                  if (raw === targetId || targetId.includes(raw) || raw.includes(targetId)) {
+                    delete nextState[uKey];
+                    changed = true;
+                  }
                 }
               }
             }
@@ -1034,10 +1078,10 @@ export const useMockStore = create<MockState>()(
       addServerMember: (serverId, name, realname, host) => {
         let resultMember: Member | undefined;
         set((state) => {
-          const s = state.servers.find(s => s.id === serverId);
+          const s = state.servers.find((s) => s.id === serverId);
           if (!s) return state;
 
-          const exists = s.members.find(m => m.profile.name.toLowerCase() === name.toLowerCase());
+          const exists = s.members.find((m) => m.profile.name.toLowerCase() === name.toLowerCase());
           if (exists) {
             let changed = false;
             const updatedProfile = { ...exists.profile };
@@ -1070,11 +1114,11 @@ export const useMockStore = create<MockState>()(
           }
 
           const currentProfile = state.currentProfile;
-          const isOurNick = s.nicknames?.includes(name) || name === currentProfile.name;
+          const isOurNick = s.nicknames && s.nicknames.some((n) => n.toLowerCase() === name.toLowerCase());
           if (isOurNick) {
             let updatedSelf: Member | undefined;
             const updatedMembers = s.members.map((m) => {
-              if (m.profileId === currentProfile.id || m.id.startsWith("member-")) {
+              if (m.profileId === currentProfile.id || m.id.startsWith("member-") || m.id === `${serverId}:self`) {
                 const updated = {
                   ...m,
                   profile: {
@@ -1099,12 +1143,15 @@ export const useMockStore = create<MockState>()(
             };
           }
 
+          const scopedMemberId = `${serverId}:irc-${name.toLowerCase()}`;
+          const scopedProfileId = `${serverId}:profile-${name.toLowerCase()}`;
+
           const mockMember: Member = {
-            id: `irc-${name}`,
-            profileId: `profile-${name}`,
+            id: scopedMemberId,
+            profileId: scopedProfileId,
             profile: {
-              id: `profile-${name}`,
-              userId: `user-${name}`,
+              id: scopedProfileId,
+              userId: `${serverId}:user-${name.toLowerCase()}`,
               name: name,
               realname: realname || "",
               host: host,
@@ -1374,13 +1421,15 @@ export const useMockStore = create<MockState>()(
       },
 
       updateChannelMembers: (serverId, channelName, users, eventType) => {
-        // Ensure all users exist as server members (stripping prefixes like @, +, etc.)
-        users.forEach((u) => {
-          if (u && u.trim()) {
-            const cleanNick = u.trim().replace(/^[~&@%+]+/, "");
-            get().addServerMember(serverId, cleanNick);
-          }
-        });
+        // Ensure users exist as server members ONLY on JOIN or NAMES events
+        if (eventType === "NAMES" || eventType === "JOIN") {
+          users.forEach((u) => {
+            if (u && u.trim()) {
+              const cleanNick = u.trim().replace(/^[~&@%+]+/, "");
+              get().addServerMember(serverId, cleanNick);
+            }
+          });
+        }
 
         const cleanChan = channelName ? channelName.trim().replace(/^#/, "").toLowerCase() : "";
 
@@ -1496,9 +1545,20 @@ export const useMockStore = create<MockState>()(
             const convId = chatId;
             for (const uKey of Object.keys(nextUnreads)) {
               if (uKey.startsWith("conversation:")) {
-                const raw = uKey.replace("conversation:", "");
-                if (raw === convId || convId.includes(raw) || raw.includes(convId)) {
-                  delete nextUnreads[uKey];
+                const parts = uKey.split(":");
+                if (parts.length >= 3) {
+                  const sId = parts[1];
+                  if (sId === serverId) {
+                    const raw = parts.slice(2).join(":");
+                    if (raw === convId || convId.includes(raw) || raw.includes(convId)) {
+                      delete nextUnreads[uKey];
+                    }
+                  }
+                } else {
+                  const raw = uKey.replace("conversation:", "");
+                  if (raw === convId || convId.includes(raw) || raw.includes(convId)) {
+                    delete nextUnreads[uKey];
+                  }
                 }
               }
             }
@@ -2025,14 +2085,7 @@ export const useMockStore = create<MockState>()(
         set((state) => {
           const server = state.servers.find((s) => s.id === serverId);
           if (server) {
-            const currentProfile = state.currentProfile;
-            const currentMember = server.members.find(
-              (m) =>
-                m.profileId === currentProfile.id ||
-                m.profile?.id === currentProfile.id ||
-                (server.nicknames && server.nicknames.includes(m.profile?.name)) ||
-                m.id.startsWith("member-")
-            );
+            const currentMember = getServerSelfMember(server, state.currentProfile.id);
             if (currentMember && currentMember.id === memberId) {
               return state;
             }
@@ -2092,12 +2145,14 @@ export const useMockStore = create<MockState>()(
               const cleanNick = nick.trim().replace(/^[~&@%+]+/, "");
               const exists = updatedMembers.find((m) => m.profile.name.toLowerCase() === cleanNick.toLowerCase());
               if (!exists) {
+                const scopedMemberId = `${serverId}:irc-${cleanNick.toLowerCase()}`;
+                const scopedProfileId = `${serverId}:profile-${cleanNick.toLowerCase()}`;
                 const mockMember: Member = {
-                  id: `irc-${cleanNick}`,
-                  profileId: `profile-${cleanNick}`,
+                  id: scopedMemberId,
+                  profileId: scopedProfileId,
                   profile: {
-                    id: `profile-${cleanNick}`,
-                    userId: `user-${cleanNick}`,
+                    id: scopedProfileId,
+                    userId: `${serverId}:user-${cleanNick.toLowerCase()}`,
                     name: cleanNick,
                     imageUrl: "",
                     email: `${cleanNick}@irc.local`,
@@ -2113,13 +2168,7 @@ export const useMockStore = create<MockState>()(
             }
           });
 
-          const currentMember = updatedMembers.find(
-            (m) =>
-              m.profileId === state.currentProfile.id ||
-              m.profile?.id === state.currentProfile.id ||
-              (server.nicknames && server.nicknames.includes(m.profile?.name)) ||
-              m.id.startsWith("member-")
-          ) || updatedMembers[0];
+          const currentMember = getServerSelfMember(server, state.currentProfile.id);
 
           const validMemberIds = new Set<string>();
 
@@ -2149,8 +2198,6 @@ export const useMockStore = create<MockState>()(
               ...state.historicalConversations,
               [serverId]: Array.from(validMemberIds),
             },
-            // Note: we intentionally do NOT overwrite activeConversations here, 
-            // so closed PM tabs stay closed.
           };
         });
       },
@@ -2172,13 +2219,7 @@ export const useMockStore = create<MockState>()(
         if (member.serverId && !isSystem) {
           const state = get();
           const server = state.servers.find((s) => s.id === member.serverId);
-          const currentMember = server?.members.find(
-            (m) =>
-              m.profileId === state.currentProfile.id ||
-              m.profile?.id === state.currentProfile.id ||
-              (server.nicknames && server.nicknames.includes(m.profile?.name)) ||
-              m.id.startsWith("member-")
-          );
+          const currentMember = server ? getServerSelfMember(server, state.currentProfile.id) : undefined;
 
           if (currentMember) {
             const memberIds = conversationId.split("-");
