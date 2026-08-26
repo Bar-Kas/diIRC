@@ -269,3 +269,89 @@ body,
 .dark .search-highlight-flash {
   animation-name: search-highlight-flash;
 }
+
+/* OLED — pure black surfaces (html class from next-themes) */
+.oled {
+  color-scheme: dark;
+  --background: 0 0% 0%;
+  --foreground: 0 0% 98%;
+  --card: 0 0% 0%;
+  --card-foreground: 0 0% 98%;
+  --popover: 0 0% 0%;
+  --popover-foreground: 0 0% 98%;
+  --primary: 0 0% 98%;
+  --primary-foreground: 0 0% 4%;
+  --secondary: 0 0% 6%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 0 0% 6%;
+  --muted-foreground: 0 0% 64%;
+  --accent: 0 0% 8%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 12%;
+  --input: 0 0% 12%;
+  --ring: 0 0% 72%;
+  scrollbar-color: #1a1a1a transparent;
+}
+
+/* Remap Discord / zinc panel hexes still emitted by dark: utilities under .oled */
+html.oled :is(
+  .bg-\[\#313338\], .dark\:bg-\[\#313338\],
+  .bg-\[\#2b2d31\], .dark\:bg-\[\#2b2d31\], .bg-\[\#2B2D31\], .dark\:bg-\[\#2B2D31\],
+  .bg-\[\#1e1f22\], .dark\:bg-\[\#1e1f22\], .bg-\[\#1E1F22\], .dark\:bg-\[\#1E1F22\],
+  .bg-\[\#232428\], .dark\:bg-\[\#232428\],
+  .bg-\[\#1a1b1e\], .dark\:bg-\[\#1a1b1e\],
+  .bg-\[\#18191c\], .dark\:bg-\[\#18191c\],
+  .bg-\[\#0c0d0e\],
+  .dark\:bg-zinc-900
+) {
+  background-color: #000 !important;
+}
+
+html.oled :is(
+  .bg-\[\#111214\], .dark\:bg-\[\#111214\],
+  .dark\:bg-zinc-800,
+  .dark\:bg-neutral-700
+) {
+  background-color: #0a0a0a !important;
+}
+
+html.oled :is(.bg-\[\#3f4147\], .dark\:bg-\[\#3f4147\]) {
+  background-color: #141414 !important;
+}
+
+html.oled :is(.border-\[\#3f4147\], .dark\:border-\[\#3f4147\]) {
+  border-color: #1a1a1a !important;
+}
+
+html.oled :is(
+  .ring-\[\#1e1f22\], .dark\:ring-\[\#1e1f22\], .ring-\[\#1E1F22\], .dark\:ring-\[\#1E1F22\],
+  .ring-\[\#2b2d31\], .dark\:ring-\[\#2b2d31\], .ring-\[\#2B2D31\], .dark\:ring-\[\#2B2D31\]
+) {
+  --tw-ring-color: #000 !important;
+}
+
+html.oled :is(.ring-\[\#3f4147\], .dark\:ring-\[\#3f4147\]) {
+  --tw-ring-color: #1a1a1a !important;
+}
+
+html.oled ::-webkit-scrollbar-thumb {
+  background-color: #1a1a1a;
+}
+
+html.oled ::-webkit-scrollbar-thumb:hover {
+  background-color: #2a2a2a;
+}
+
+html.oled .discord-scrollbar-chat::-webkit-scrollbar-track {
+  background-color: #000;
+}
+
+html.oled :is(
+  .discord-scrollbar-chat::-webkit-scrollbar-thumb,
+  .discord-scrollbar-ghost:hover::-webkit-scrollbar-thumb
+) {
+  background-color: #1a1a1a;
+}
+
