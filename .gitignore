@@ -19,6 +19,7 @@ src-tauri/target/
 
 # devtools data
 /devtools/data
+/devtools/znc-data
 
 # misc
 .DS_Store

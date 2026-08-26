@@ -1,29 +1,35 @@
 services:
   ircd1:
     image: ergochat/ergo:latest
-    container_name: irc-server1
+    container_name: ircd1
     ports:
       - "6667:6667"
     volumes:
-      - ./data:/ircd-data1
+      - ./data/ircd1:/ircd-data
+    networks:
+      - irc-net
     restart: unless-stopped
 
   ircd2:
     image: ergochat/ergo:latest
-    container_name: irc-server2
+    container_name: ircd2
     ports:
       - "6668:6667"
     volumes:
-      - ./data:/ircd-data2
+      - ./data/ircd2:/ircd-data
+    networks:
+      - irc-net
     restart: unless-stopped
 
   ircd3:
     image: ergochat/ergo:latest
-    container_name: irc-server3
+    container_name: ircd3
     ports:
       - "6669:6667"
     volumes:
-      - ./data:/ircd-data3
+      - ./data/ircd3:/ircd-data
+    networks:
+      - irc-net
     restart: unless-stopped
 
   pomf:
@@ -36,4 +42,40 @@ services:
       - DOMAIN=http://localhost:9999
     volumes:
       - ./data/pomf-uploads:/app/uploads
+    networks:
+      - irc-net
     restart: unless-stopped
+
+  # znc1:
+  #   image: znc:latest
+  #   container_name: znc1
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8080:6697"
+  #   volumes:
+  #     - ./znc-data/znc1:/znc-data
+  #   networks:
+  #     - irc-net
+  #   depends_on:
+  #     - ircd1
+  #     - ircd2
+  #     - ircd3
+    
+  znc2:
+    image: znc:latest
+    container_name: znc2
+    restart: unless-stopped
+    ports:
+      - "8081:6667"
+    volumes:
+      - ./znc-data/znc2:/znc-data
+    networks:
+      - irc-net
+    depends_on:
+      - ircd1
+      - ircd2
+      - ircd3
+
+networks:
+  irc-net:
+    driver: bridge
