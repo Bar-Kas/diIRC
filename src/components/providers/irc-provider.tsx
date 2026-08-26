@@ -995,12 +995,6 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             const { server_id, motd } = event.payload;
             const store = useMockStore.getState();
             store.setServerMotd(server_id, motd);
-
-            if (motd && motd.length > 0 && store.shouldAutoShowMotd(server_id, motd)) {
-              const server = store.servers.find((s) => s.id === server_id);
-              useModalStore.getState().onOpen("motd", { server, serverId: server_id, motd });
-              store.markServerMotdSeen(server_id, motd);
-            }
           }
         );
 
