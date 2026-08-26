@@ -430,26 +430,28 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
         return;
       }
 
-      let senderMember = store.addServerMember(targetServer.id, sender);
       const currentMember = getServerSelfMember(targetServer, store.currentProfile.id);
+      const isSelf =
+        (targetServer.nicknames && targetServer.nicknames.some((n) => n.toLowerCase() === sender.toLowerCase())) ||
+        (currentMember?.profile?.name && currentMember.profile.name.toLowerCase() === sender.toLowerCase());
 
-      if (senderMember && currentMember) {
-        const conversationId = [currentMember.id, senderMember.id].sort().join("-");
-        store.addDirectMessage(conversationId, senderMember, content, null, false, msgTimestamp);
-        store.openConversation(targetServer.id, senderMember.id);
-        store.addToHistoricalConversations(targetServer.id, senderMember.id);
+      const otherNick = isSelf ? channel : sender;
+      let otherMember = store.addServerMember(targetServer.id, otherNick);
 
-        // Trigger notification for DM
-        const isSelf =
-          (targetServer.nicknames && targetServer.nicknames.some((n) => n.toLowerCase() === sender.toLowerCase())) ||
-          (currentMember.profile?.name && currentMember.profile.name.toLowerCase() === sender.toLowerCase());
+      if (otherMember && currentMember) {
+        const conversationId = [currentMember.id, otherMember.id].sort().join("-");
+        const authorMember = isSelf ? currentMember : otherMember;
+
+        store.addDirectMessage(conversationId, authorMember, content, null, false, msgTimestamp);
+        store.openConversation(targetServer.id, otherMember.id);
+        store.addToHistoricalConversations(targetServer.id, otherMember.id);
 
         if (!isSelf) {
           const activeKey = store.activeChatKey;
           const isCurrentChat =
-            activeKey === `conversation:${targetServer.id}:${senderMember.id}` ||
+            activeKey === `conversation:${targetServer.id}:${otherMember.id}` ||
             activeKey === `conversation:${targetServer.id}:${conversationId}` ||
-            activeKey === `conversation:${senderMember.id}` ||
+            activeKey === `conversation:${otherMember.id}` ||
             activeKey === `conversation:${conversationId}`;
           let isWindowFocused = typeof document !== "undefined" && document.hasFocus();
           
@@ -482,7 +484,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
                 title: `${sender} (Private Message)`,
                 body: content,
                 sender,
-                tag: `dm:${targetServer.id}:${senderMember.id}`,
+                tag: `dm:${targetServer.id}:${otherMember.id}`,
                 effectiveSettings,
               });
             }

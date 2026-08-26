@@ -274,11 +274,19 @@ struct IrcConnectParams {
     parse_legacy_znc_timestamps: bool,
 }
 
+struct RecentSentMessage {
+    server_id: String,
+    target: String,
+    content: String,
+    timestamp: std::time::Instant,
+}
+
 struct IrcState {
     senders: Arc<Mutex<HashMap<String, Sender>>>,
     nicknames: Arc<Mutex<HashMap<String, String>>>,
     /// Key: "server_id\x00channel_lowercase" → set of lowercase nicks
     channel_members: Arc<Mutex<HashMap<String, HashSet<String>>>>,
+    recent_sent_messages: Arc<Mutex<Vec<RecentSentMessage>>>,
 }
 
 #[derive(Clone)]
@@ -1174,6 +1182,7 @@ async fn connect_irc(
     let senders_clone = state.senders.clone();
     let nicknames_clone = state.nicknames.clone();
     let channel_members_clone = state.channel_members.clone();
+    let recent_sent_clone = state.recent_sent_messages.clone();
     let app_clone = app.clone();
     let log_state_clone = LogState {
         writers: log_state.writers.clone(),
@@ -1278,10 +1287,25 @@ async fn connect_irc(
                                 };
                                 let own_nickname =
                                     nicknames_clone.lock().await.get(&stream_server_id).cloned();
-                                if own_nickname.as_deref().is_some_and(|nickname| {
+                                let is_self_sender = own_nickname.as_deref().is_some_and(|nickname| {
                                     nickname.eq_ignore_ascii_case(&sender_name)
-                                }) {
-                                    continue;
+                                });
+
+                                let timestamp = extract_message_timestamp(&message.tags, &mut content, parse_legacy_znc_timestamps);
+
+                                if is_self_sender {
+                                    let mut recent = recent_sent_clone.lock().await;
+                                    recent.retain(|m| m.timestamp.elapsed() < std::time::Duration::from_secs(10));
+                                    
+                                    let target_check = channel.clone();
+                                    if let Some(pos) = recent.iter().position(|m| {
+                                        m.server_id == stream_server_id
+                                            && m.target.eq_ignore_ascii_case(&target_check)
+                                            && m.content == content
+                                    }) {
+                                        recent.remove(pos);
+                                        continue;
+                                    }
                                 }
 
                                 let is_znc_buffer_notice = sender_name == "***"
@@ -1289,15 +1313,14 @@ async fn connect_irc(
                                     || content.contains("Playback Complete.");
                                 let is_system = is_znc_buffer_notice || matches!(message.command, Command::NOTICE(..));
 
-                                let timestamp = extract_message_timestamp(&message.tags, &mut content, parse_legacy_znc_timestamps);
-
                                 if sender_name != "***" && !sender_name.trim().is_empty() && !channel.trim().is_empty() {
-                                    let log_target =
-                                        if channel.starts_with('#') || channel.starts_with('&') {
-                                            channel.clone()
-                                        } else {
-                                            sender_name.clone()
-                                        };
+                                    let log_target = if channel.starts_with('#') || channel.starts_with('&') {
+                                        channel.clone()
+                                    } else if is_self_sender {
+                                        channel.clone()
+                                    } else {
+                                        sender_name.clone()
+                                    };
                                     if let Err(error) = append_log_line(
                                         &app_clone,
                                         &log_state_clone,
@@ -2445,6 +2468,12 @@ async fn send_message(
             );
             return Err(e.to_string());
         }
+        state.recent_sent_messages.lock().await.push(RecentSentMessage {
+            server_id: server_id.clone(),
+            target: channel.clone(),
+            content: message.clone(),
+            timestamp: std::time::Instant::now(),
+        });
         let sender_name = state
             .nicknames
             .lock()
@@ -3035,6 +3064,7 @@ pub fn run() {
             senders: Arc::new(Mutex::new(HashMap::new())),
             nicknames: Arc::new(Mutex::new(HashMap::new())),
             channel_members: Arc::new(Mutex::new(HashMap::new())),
+            recent_sent_messages: Arc::new(Mutex::new(Vec::new())),
         })
         .manage(LogState {
             writers: Arc::new(Mutex::new(HashMap::new())),
