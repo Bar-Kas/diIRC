@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { UserAvatar } from "@/components/user-avatar";
 import { getMemberDisplayName } from "@/components/user-hover-card";
 import { ActionTooltip } from "@/components/action-tooltip";
-import { useMockStore } from "@/lib/mock-store";
+import { useMockStore, getServerSelfMember } from "@/lib/mock-store";
 import { useModal } from "@/hooks/use-modal-store";
 
 interface ServerConversationProps {
@@ -30,20 +30,18 @@ export const ServerConversation = ({
   const isAway = !!awayUsersMap[server.id]?.[memberNickLower];
   const awayReason = awayReasonsMap[server.id]?.[memberNickLower];
 
-  const currentMember = server.members.find(
-    (m) =>
-      m.profileId === currentProfile?.id ||
-      m.profile?.id === currentProfile?.id ||
-      (server.nicknames && server.nicknames.includes(m.profile?.name)) ||
-      m.id.startsWith("member-")
-  ) || server.members[0];
+  const currentMember = getServerSelfMember(server, currentProfile?.id);
 
   const conversationId = currentMember ? [currentMember.id, member.id].sort().join("-") : "";
   const isSelected = params?.memberId === member.id;
   const displayName = getMemberDisplayName(member, server);
 
   const unread = useMockStore(
-    (state) => state.unreadState[`conversation:${conversationId}`] || state.unreadState[`conversation:${member.id}`]
+    (state) =>
+      state.unreadState[`conversation:${server.id}:${conversationId}`] ||
+      state.unreadState[`conversation:${server.id}:${member.id}`] ||
+      state.unreadState[`conversation:${conversationId}`] ||
+      state.unreadState[`conversation:${member.id}`]
   );
   const isUnread = !!unread && unread.count > 0;
 

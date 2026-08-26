@@ -1,6 +1,6 @@
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useRef } from "react";
-import { useMockStore } from "@/lib/mock-store";
+import { useMockStore, getServerSelfMember } from "@/lib/mock-store";
 import { useUIStore } from "@/hooks/use-ui-store";
 import { useSearchStore } from "@/hooks/use-search-store";
 import { ChatHeader } from "@/components/chat/chat-header";
@@ -21,13 +21,15 @@ export const ConversationPage = () => {
   const searchOpen = useSearchStore((state) => state.open);
 
   const server = servers.find((s) => s.id === serverId);
-  const targetMember = server?.members.find((m) => m.id === memberId);
+  const targetMember =
+    server?.members.find((m) => m.id === memberId) ||
+    server?.members.find((m) => m.profile.name.toLowerCase() === memberId?.toLowerCase());
 
   const prevPathRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (serverId && memberId) {
-      useMockStore.getState().openConversation(serverId, memberId);
+    if (serverId && memberId && targetMember) {
+      useMockStore.getState().openConversation(serverId, targetMember.id);
       
       const wasInConversation = prevPathRef.current?.includes("/conversations/");
       if (!wasInConversation) {
@@ -35,7 +37,7 @@ export const ConversationPage = () => {
       }
     }
     prevPathRef.current = location.pathname;
-  }, [serverId, memberId, location.pathname, setMembersSidebar]);
+  }, [serverId, memberId, targetMember, location.pathname, setMembersSidebar]);
 
   useEffect(() => {
     if (!server && servers.length > 0) {
@@ -47,14 +49,7 @@ export const ConversationPage = () => {
     return null;
   }
 
-  const currentMember =
-    server.members.find(
-      (m) =>
-        m.profileId === currentProfile.id ||
-        m.profile?.id === currentProfile.id ||
-        (server.nicknames && server.nicknames.includes(m.profile?.name)) ||
-        m.id.startsWith("member-")
-    ) || server.members[0];
+  const currentMember = getServerSelfMember(server, currentProfile.id);
   const conversationId = [currentMember.id, targetMember.id].sort().join("-");
   const displayName = getMemberDisplayName(targetMember, server);
 

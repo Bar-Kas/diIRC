@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useMockStore } from "@/lib/mock-store";
+import { useMockStore, getServerSelfMember } from "@/lib/mock-store";
 import { useModalStore } from "@/hooks/use-modal-store";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { Server, ChannelType } from "@/types";
@@ -316,7 +316,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     if (!serverId) return;
 
     const activeServers = useMockStore.getState().servers;
-    const targetServer = activeServers.find((s) => s.id === serverId) || activeServers[0];
+    const targetServer = activeServers.find((s) => s.id === serverId);
     
     if (!targetServer) return;
 
@@ -328,9 +328,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
       if (isSystem || sender === "System") {
         const targetNick = channel;
         const targetMember = store.addServerMember(targetServer.id, targetNick);
-        const currentMember = targetServer.members.find(
-          (m) => m.profileId === store.currentProfile.id
-        ) || targetServer.members[0];
+        const currentMember = getServerSelfMember(targetServer, store.currentProfile.id);
 
         if (targetMember && currentMember) {
           const conversationId = [currentMember.id, targetMember.id].sort().join("-");
@@ -403,10 +401,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       let senderMember = store.addServerMember(targetServer.id, sender);
-
-      const currentMember = targetServer.members.find(
-        (m) => m.profileId === store.currentProfile.id
-      ) || targetServer.members[0];
+      const currentMember = getServerSelfMember(targetServer, store.currentProfile.id);
 
       if (senderMember && currentMember) {
         const conversationId = [currentMember.id, senderMember.id].sort().join("-");
@@ -416,13 +411,16 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
         // Trigger notification for DM
         const isSelf =
-          sender.toLowerCase() === store.currentProfile.name.toLowerCase() ||
           (targetServer.nicknames && targetServer.nicknames.some((n) => n.toLowerCase() === sender.toLowerCase())) ||
           (currentMember.profile?.name && currentMember.profile.name.toLowerCase() === sender.toLowerCase());
 
         if (!isSelf) {
           const activeKey = store.activeChatKey;
-          const isCurrentChat = activeKey === `conversation:${senderMember.id}` || activeKey === `conversation:${conversationId}`;
+          const isCurrentChat =
+            activeKey === `conversation:${targetServer.id}:${senderMember.id}` ||
+            activeKey === `conversation:${targetServer.id}:${conversationId}` ||
+            activeKey === `conversation:${senderMember.id}` ||
+            activeKey === `conversation:${conversationId}`;
           let isWindowFocused = typeof document !== "undefined" && document.hasFocus();
           
           try {
@@ -434,8 +432,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
           }
 
           if (!isCurrentChat || !isWindowFocused) {
-            store.markUnread(`conversation:${conversationId}`, true);
-            store.markUnread(`conversation:${senderMember.id}`, true);
+            store.markUnread(`conversation:${targetServer.id}:${conversationId}`, true);
           }
 
           if (!isCurrentChat || !isWindowFocused) {

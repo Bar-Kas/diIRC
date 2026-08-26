@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useModal } from "@/hooks/use-modal-store";
 import { EmojiPicker } from "@/components/emoji-picker";
 import { Member } from "@/types";
-import { useMockStore } from "@/lib/mock-store";
+import { useMockStore, getServerSelfMember } from "@/lib/mock-store";
 import { getHighestChannelRole } from "@/components/user-role-icon";
 import { uploadImage } from "@/lib/upload/services";
 import { ImageContextMenu } from "@/components/image-context-menu";
@@ -97,13 +97,7 @@ export const ChatInput = ({
 
   const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : (servers[0] || null);
 
-  let currentMember = activeServer?.members.find(
-    (m) =>
-      m.profileId === currentProfile.id ||
-      m.profile?.id === currentProfile.id ||
-      (activeServer.nicknames && activeServer.nicknames.includes(m.profile?.name)) ||
-      m.id.startsWith("member-")
-  ) || activeServer?.members[0];
+  let currentMember = activeServer ? getServerSelfMember(activeServer, currentProfile.id) : undefined;
 
   const primaryNick = activeServer?.nicknames?.[0];
   if (primaryNick && currentMember) {
