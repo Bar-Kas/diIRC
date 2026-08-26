@@ -599,6 +599,14 @@ export const useMockStore = create<MockState>()(
           },
         })),
 
+      setIrcConnectionError: (serverId: string, error: string | null) =>
+        set((state) => ({
+          ircConnectionErrors: {
+            ...state.ircConnectionErrors,
+            [serverId]: error,
+          },
+        })),
+
       setServerActiveNick: (serverId: string, activeNick: string) => {
         set((state) => {
           const serverIndex = state.servers.findIndex((s) => s.id === serverId);

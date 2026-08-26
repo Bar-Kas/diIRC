@@ -52,6 +52,7 @@ export const ConversationPage = () => {
   const currentMember = getServerSelfMember(server, currentProfile.id);
   const conversationId = [currentMember.id, targetMember.id].sort().join("-");
   const displayName = getMemberDisplayName(targetMember, server);
+  const targetNick = targetMember.profile.name;
 
   return (
     <div className="bg-white dark:bg-[#313338] flex flex-col h-full">
@@ -66,7 +67,7 @@ export const ConversationPage = () => {
           type: "conversation",
           chatId: conversationId,
           serverId: server.id,
-          target: displayName,
+          target: targetNick,
         }}
         searchMembers={server.members.flatMap((m) =>
           m.profile?.name ? [{ name: m.profile.name, realname: m.profile?.realname }] : []
@@ -76,7 +77,7 @@ export const ConversationPage = () => {
         <div className="flex flex-col flex-1 h-full min-w-0">
           <ChatMessages
             member={currentMember}
-            name={displayName}
+            name={targetNick}
             chatId={conversationId}
             serverId={server.id}
             type="conversation"
@@ -84,7 +85,7 @@ export const ConversationPage = () => {
             paramValue={conversationId}
           />
           <ChatInput
-            name={displayName}
+            name={targetNick}
             type="conversation"
             query={{
               conversationId,
@@ -99,7 +100,7 @@ export const ConversationPage = () => {
               type: "conversation",
               chatId: conversationId,
               serverId: server.id,
-              target: displayName,
+              target: targetNick,
             }}
           />
         ) : (

@@ -20,22 +20,8 @@ interface UserHoverCardProps {
 
 export const getMemberDisplayName = (
   member: Member & { profile: Profile },
-  server?: Server
+  _server?: Server
 ): string => {
-  const currentProfile = useMockStore.getState().currentProfile;
-  const activeNick = server ? getServerActiveNick(server) : "";
-  const isSelf =
-    member.profileId === currentProfile.id ||
-    (activeNick && member.profile.name.toLowerCase() === activeNick.toLowerCase());
-
-  if (isSelf && server?.realname && server.realname.trim().length > 0 && server.realname.toLowerCase() !== "realname") {
-    return server.realname;
-  }
-
-  if (member.profile.realname && member.profile.realname.trim().length > 0 && member.profile.realname.toLowerCase() !== "realname") {
-    return member.profile.realname;
-  }
-
   return member.profile.name;
 };
 
