@@ -1031,6 +1031,9 @@ async fn connect_irc(
         Vec::new()
     };
 
+    let mut options = std::collections::HashMap::new();
+    options.insert("away-notify".to_string(), "".to_string());
+
     let config = Config {
         nickname: Some(primary_nickname.clone()),
         username: Some(primary_nickname.clone()),
@@ -1046,6 +1049,7 @@ async fn connect_irc(
         use_tls: Some(params.use_tls),
         ping_time: Some(15),
         ping_timeout: Some(10),
+        options,
         ..Config::default()
     };
 
@@ -1058,6 +1062,11 @@ async fn connect_irc(
         config.username,
         config.realname
     );
+
+    let pwd = config.password.clone();
+    let nick_str = config.nickname.clone().unwrap_or_default();
+    let user_str = config.username.clone().unwrap_or_default();
+    let realname_str = config.realname.clone().unwrap_or_default();
 
     let mut client = Client::from_config(config).await.map_err(|e| {
         let err_msg = e.to_string();
@@ -1072,23 +1081,19 @@ async fn connect_irc(
         err_msg
     })?;
 
-    // Request IRCv3 away-notify capability so we receive AWAY messages from other users in real-time.
-    if let Err(e) = client.send_cap_req(&[Capability::AwayNotify]) {
-        log::warn!("Failed to request away-notify CAP: {}", e);
-    }
+    // Start IRCv3 capability negotiation properly
+    let _ = client.send(Command::Raw("CAP".to_string(), vec!["LS".to_string(), "302".to_string()]));
 
-    client.identify().map_err(|e| {
-        let err_msg = e.to_string();
-        let _ = app.emit(
-            "irc_status",
-            IrcStatusEvent {
-                server_id: server_id.clone(),
-                connected: false,
-                error: Some(err_msg.clone()),
-            },
-        );
-        err_msg
-    })?;
+    // Send registration details manually (we don't use client.identify() because it sends CAP END prematurely)
+    if let Some(p) = pwd {
+        let _ = client.send(Command::PASS(p));
+    }
+    let _ = client.send(Command::NICK(nick_str));
+    let _ = client.send(Command::USER(
+        user_str,
+        "8".to_owned(),
+        realname_str,
+    ));
 
     let sender = client.sender();
     state.senders.lock().await.insert(server_id.clone(), sender);
@@ -1141,6 +1146,40 @@ async fn connect_irc(
                 Ok(message) => {
                     log::info!("IRC [{}] Received: {:?}", stream_server_id, message.command);
                     match message.command {
+                        Command::CAP(_, ref subcmd, ref cap_name, _) => {
+                            let sub_str = format!("{:?}", subcmd);
+                            if sub_str == "LS" {
+                                if let Some(sender) = senders_clone.lock().await.get(&stream_server_id) {
+                                    let _ = sender.send(Command::Raw(
+                                        "CAP".to_string(),
+                                        vec!["REQ".to_string(), "away-notify".to_string()],
+                                    ));
+                                }
+                            } else if sub_str == "ACK" || sub_str == "NAK" {
+                                if let Some(sender) = senders_clone.lock().await.get(&stream_server_id) {
+                                    let _ = sender.send(Command::Raw(
+                                        "CAP".to_string(),
+                                        vec!["END".to_string()],
+                                    ));
+                                }
+                            } else if sub_str == "NEW" {
+                                // ZNC sends CAP NEW when a capability becomes available post-registration
+                                // (e.g. after the server enables it). Request away-notify if announced.
+                                let is_away_notify = cap_name
+                                    .as_deref()
+                                    .map(|s| s.split_whitespace().any(|c| c == "away-notify"))
+                                    .unwrap_or(false);
+                                if is_away_notify {
+                                    if let Some(sender) = senders_clone.lock().await.get(&stream_server_id) {
+                                        log::info!("IRC [{}] CAP NEW away-notify received, requesting it", stream_server_id);
+                                        let _ = sender.send(Command::Raw(
+                                            "CAP".to_string(),
+                                            vec!["REQ".to_string(), "away-notify".to_string()],
+                                        ));
+                                    }
+                                }
+                            }
+                        },
                         Command::PRIVMSG(channel, content) => {
                             if let Some(source) = message.prefix {
                                 let sender_name = match source.clone() {
