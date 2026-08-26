@@ -22,6 +22,7 @@ interface IrcMessagePayload {
   channel: string;
   isSystem?: boolean;
   is_system?: boolean;
+  timestamp?: string;
 }
 
 interface IrcUserEventPayload {
@@ -172,6 +173,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             password: c.key || null
           })),
           useTls: server.useTls || false,
+          parseLegacyZncTimestamps: server.parseLegacyZncTimestamps || false,
         }
       });
       console.log(`Initiated IRC connection for server ${server.name} (${server.id}) with nicks:`, nicks);
@@ -321,6 +323,34 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     if (!targetServer) return;
 
     const isChannelMsg = channel.startsWith("#") || channel.startsWith("&");
+    const msgTimestamp = payload.timestamp;
+    const isDummySender = sender === "***" || !sender || !sender.trim();
+    const effectiveIsSystem = isSystem || isDummySender;
+
+    if (isDummySender && !isChannelMsg) {
+      const store = useMockStore.getState();
+      const targetChan = targetServer.channels.find((c) => `channel:${c.id}` === store.activeChatKey) || targetServer.channels[0];
+      if (targetChan) {
+        const dummyMember = {
+          id: `irc-${sender || "System"}`,
+          profileId: `profile-${sender || "System"}`,
+          profile: {
+            id: `profile-${sender || "System"}`,
+            userId: `user-${sender || "System"}`,
+            name: sender || "System",
+            imageUrl: "",
+            email: "system@irc.local",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          serverId: targetServer.id,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        addMessage(targetChan.id, dummyMember as any, content, null, true, msgTimestamp);
+      }
+      return;
+    }
 
     if (!isChannelMsg) {
       // Private Message (PM)
@@ -391,7 +421,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               .catch(console.error);
           }
 
-          store.addDirectMessage(conversationId, systemMember as any, content, null, true);
+          store.addDirectMessage(conversationId, systemMember as any, content, null, true, msgTimestamp);
           store.openConversation(targetServer.id, targetMember.id);
           if (!isSendError) {
             store.addToHistoricalConversations(targetServer.id, targetMember.id);
@@ -405,7 +435,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (senderMember && currentMember) {
         const conversationId = [currentMember.id, senderMember.id].sort().join("-");
-        store.addDirectMessage(conversationId, senderMember, content, null);
+        store.addDirectMessage(conversationId, senderMember, content, null, false, msgTimestamp);
         store.openConversation(targetServer.id, senderMember.id);
         store.addToHistoricalConversations(targetServer.id, senderMember.id);
 
@@ -524,9 +554,9 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     if (targetChannel) {
-      addMessage(targetChannel.id, mockMember as any, content, null, isSystem);
+      addMessage(targetChannel.id, mockMember as any, content, null, effectiveIsSystem, msgTimestamp);
     } else if (targetServer.channels.length > 0) {
-      addMessage(targetServer.channels[0].id, mockMember as any, content, null, isSystem);
+      addMessage(targetServer.channels[0].id, mockMember as any, content, null, effectiveIsSystem, msgTimestamp);
     }
 
     // Trigger notification for channel message

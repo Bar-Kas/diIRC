@@ -203,6 +203,7 @@ export interface Server {
   notificationSettings?: NotificationOverride;
   motd?: string[];
   motdPolicy?: ServerMotdDisplayPolicy;
+  parseLegacyZncTimestamps?: boolean;
 }
 
 export type ServerWithMembersWithProfiles = Server;
