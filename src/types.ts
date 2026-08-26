@@ -81,6 +81,13 @@ export interface PendingInvite {
   createdAt: string;
 }
 
+export interface MessageReplyTo {
+  messageId: string;
+  nick: string;
+  preview: string;
+  msgid?: string;
+}
+
 export interface Message {
   id: string;
   content: string;
@@ -94,6 +101,12 @@ export interface Message {
   updatedAt: string;
   /** Byte offset in the native log (windowed pagination). */
   offset?: number;
+  /** IRCv3 msgid when provided by the server. */
+  ircMsgid?: string;
+  /** IRCv3 +draft/reply target msgid. */
+  replyToMsgid?: string;
+  /** Persisted reply preview for UI (survives restart). */
+  replyTo?: MessageReplyTo;
 }
 
 export interface DirectMessage {
@@ -109,6 +122,9 @@ export interface DirectMessage {
   updatedAt: string;
   /** Byte offset in the native log (windowed pagination). */
   offset?: number;
+  ircMsgid?: string;
+  replyToMsgid?: string;
+  replyTo?: MessageReplyTo;
 }
 
 export interface LogEntry {
@@ -117,6 +133,11 @@ export interface LogEntry {
   content: string;
   /** Byte offset of the line start in the native log file (used for windowed pagination). */
   offset?: number;
+  msgid?: string;
+  replyToMsgid?: string;
+  replyNick?: string;
+  replyPreview?: string;
+  replyParentOffset?: number;
 }
 
 export interface LogPage {

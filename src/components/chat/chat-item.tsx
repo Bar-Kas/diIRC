@@ -8,6 +8,7 @@ import { UserHoverCard, getMemberDisplayName } from "@/components/user-hover-car
 import { ActionTooltip } from "@/components/action-tooltip";
 import { cn } from "@/lib/utils";
 import { useMockStore } from "@/lib/mock-store";
+import { focusChatMessage, useReplyStore } from "@/hooks/use-reply-store";
 import { ChatItemAttachment } from "./chat-item-attachment";
 import { LinkPreview } from "./link-preview";
 
@@ -32,6 +33,14 @@ interface ChatItemProps {
   conversationId?: string;
   compact?: boolean;
   isSystem?: boolean;
+  ircMsgid?: string;
+  messageOffset?: number;
+  replyTo?: {
+    messageId: string;
+    nick: string;
+    preview: string;
+    msgid?: string;
+  };
   onContentSizeChange?: () => void;
 }
 
@@ -49,6 +58,9 @@ const ChatItemInner = ({
   conversationId,
   compact = false,
   isSystem = false,
+  ircMsgid,
+  messageOffset,
+  replyTo,
   onContentSizeChange,
 }: ChatItemProps) => {
   const params = useParams();
@@ -57,6 +69,35 @@ const ChatItemInner = ({
   const compactMode = useMockStore((state) => state.compactMode);
   const enableLinkPreviews = useMockStore((state) => state.enableLinkPreviews);
   const enableMarkdown = useMockStore((state) => state.enableMarkdown ?? true);
+  const setPendingReply = useReplyStore((state) => state.setPending);
+  const indexMsgid = useReplyStore((state) => state.indexMsgid);
+  const storedReplyMeta = useReplyStore((state) => state.metaByMessageId[id]);
+  const replyMeta = storedReplyMeta || replyTo;
+
+  const chatId = channelId || conversationId;
+
+  const handleReply = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!chatId || deleted || isSystem) return;
+    if (ircMsgid) {
+      indexMsgid(ircMsgid, {
+        messageId: id,
+        nick: member.profile.name,
+        preview: content,
+      });
+    }
+    setPendingReply(chatId, {
+      messageId: id,
+      nick: member.profile.name,
+      preview: content,
+      msgid: ircMsgid,
+      parentOffset: messageOffset,
+    });
+    window.dispatchEvent(
+      new CustomEvent("focus_chat_input", { detail: { chatId } })
+    );
+  };
 
   const [, setCacheTick] = useState(0);
   useEffect(() => {
@@ -321,6 +362,27 @@ const ChatItemInner = ({
           </div>
         ) : null}
         <div className="flex flex-col w-full min-w-0">
+          {(replyMeta?.nick || replyMeta?.preview) && (
+            <button
+              type="button"
+              onClick={() => {
+                if (replyMeta?.messageId) {
+                  focusChatMessage(replyMeta.messageId);
+                }
+              }}
+              className="mb-1 flex items-start gap-x-2 max-w-full text-left group/reply"
+            >
+              <div className="w-0.5 self-stretch rounded-full bg-indigo-500/80 shrink-0" />
+              <div className="min-w-0 flex flex-col">
+                <span className="text-xs font-semibold text-indigo-500 dark:text-indigo-400 truncate">
+                  {replyMeta.nick}
+                </span>
+                <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate group-hover/reply:text-zinc-700 dark:group-hover/reply:text-zinc-300 transition">
+                  {replyMeta.preview}
+                </span>
+              </div>
+            </button>
+          )}
           {!compact && (
             <div className="flex items-center gap-x-2">
               {!isAction && (
@@ -401,13 +463,21 @@ const ChatItemInner = ({
           )}
         </div>
       </div>
-      <div className="hidden group-hover:flex items-center gap-x-2 absolute p-1 -top-2 right-5 bg-white dark:bg-zinc-800 border rounded-sm">
-        <ActionTooltip label="Answer">
-          <Reply
-            className="cursor-pointer ml-auto w-4 h-4 text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition"
-          />
-        </ActionTooltip>
-      </div>
+      {!deleted && !isSystem && (
+        <div className="hidden group-hover:flex items-center gap-x-2 absolute p-1 -top-2 right-5 bg-white dark:bg-zinc-800 border rounded-sm">
+          <ActionTooltip label="Answer">
+            <button
+              type="button"
+              onClick={handleReply}
+              className="p-0.5 rounded-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 transition"
+            >
+              <Reply
+                className="cursor-pointer w-4 h-4 text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition"
+              />
+            </button>
+          </ActionTooltip>
+        </div>
+      )}
     </div>
   );
 };
@@ -421,6 +491,11 @@ export const ChatItem = memo(ChatItemInner, (prev, next) =>
   prev.compact === next.compact &&
   prev.timestamp === next.timestamp &&
   prev.compactTime === next.compactTime &&
+  prev.ircMsgid === next.ircMsgid &&
+  prev.messageOffset === next.messageOffset &&
+  prev.replyTo?.messageId === next.replyTo?.messageId &&
+  prev.replyTo?.nick === next.replyTo?.nick &&
+  prev.replyTo?.preview === next.replyTo?.preview &&
   prev.member?.id === next.member?.id &&
   prev.currentMember?.id === next.currentMember?.id &&
   prev.onContentSizeChange === next.onContentSizeChange

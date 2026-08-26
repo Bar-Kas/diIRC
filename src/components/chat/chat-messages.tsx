@@ -692,6 +692,38 @@ export const ChatMessages = ({
     }
   }, []);
 
+  useEffect(() => {
+    const handleFocusMessage = (event: Event) => {
+      const messageId = (event as CustomEvent<{ messageId?: string }>).detail?.messageId;
+      if (!messageId) return;
+
+      const messageIndex = items.findIndex((message) => message.id === messageId);
+      if (messageIndex < 0) return;
+
+      const virtualIndex = messageIndex + (hasWelcome ? 1 : 0);
+      shouldStickToBottomRef.current = false;
+      setTailPinned(false);
+      setAtBottom(false);
+      markProgrammaticScroll(400);
+      virtualizer.scrollToIndex(virtualIndex, { align: "center" });
+      requestAnimationFrame(() => {
+        markProgrammaticScroll(400);
+        virtualizer.scrollToIndex(virtualIndex, { align: "center" });
+      });
+
+      setHighlightedMessageId(messageId);
+      if (highlightTimeoutRef.current !== null) {
+        window.clearTimeout(highlightTimeoutRef.current);
+      }
+      highlightTimeoutRef.current = window.setTimeout(() => {
+        setHighlightedMessageId(null);
+      }, 2200);
+    };
+
+    window.addEventListener("focus_chat_message", handleFocusMessage);
+    return () => window.removeEventListener("focus_chat_message", handleFocusMessage);
+  }, [items, hasWelcome, virtualizer, markProgrammaticScroll, setTailPinned]);
+
   if (status === "loading") {
     return (
       <div className="flex flex-col flex-1 justify-center items-center">
@@ -778,6 +810,9 @@ export const ChatMessages = ({
                   conversationId={paramKey === "conversationId" ? paramValue : undefined}
                   compact={isCompact}
                   isSystem={message.isSystem}
+                  ircMsgid={message.ircMsgid}
+                  messageOffset={message.offset}
+                  replyTo={message.replyTo}
                   onContentSizeChange={getRemeasureCallback(message.id)}
                 />
               </div>

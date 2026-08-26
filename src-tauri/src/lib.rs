@@ -2,6 +2,8 @@ use base64::Engine;
 use chrono::Local;
 use futures::prelude::*;
 use irc::client::prelude::*;
+use irc::proto::message::Tag;
+use irc::proto::CapSubCommand;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -18,6 +20,8 @@ struct IrcMessage {
     content: String,
     channel: String,
     is_system: bool,
+    msgid: Option<String>,
+    reply_to_msgid: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -101,6 +105,44 @@ fn emit_user_host(
     );
 }
 
+fn irc_tag_value(tags: &Option<Vec<Tag>>, names: &[&str]) -> Option<String> {
+    let tags = tags.as_ref()?;
+    for Tag(key, value) in tags {
+        let bare = key.strip_prefix('+').unwrap_or(key.as_str());
+        if names
+            .iter()
+            .any(|name| bare.eq_ignore_ascii_case(name) || key.eq_ignore_ascii_case(name))
+        {
+            return value.clone();
+        }
+    }
+    None
+}
+
+fn extract_reply_tags(tags: &Option<Vec<Tag>>) -> (Option<String>, Option<String>) {
+    let msgid = irc_tag_value(tags, &["msgid"]);
+    let reply_to = irc_tag_value(tags, &["draft/reply", "+draft/reply"]);
+    (msgid, reply_to)
+}
+
+/// Classic HexChat-style reply prefix in message body: `Nick: text`.
+fn classic_reply_nick(content: &str) -> Option<String> {
+    let trimmed = content.trim_start();
+    let colon = trimmed.find(": ")?;
+    let nick = trimmed[..colon].trim();
+    if nick.is_empty() || nick.len() > 64 || nick.contains('\n') || nick.contains('\u{001e}') {
+        return None;
+    }
+    if nick
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "-[]\\`_^{}|".contains(c))
+    {
+        Some(nick.to_string())
+    } else {
+        None
+    }
+}
+
 #[derive(Serialize, Clone)]
 struct IrcBadChannelKeyEvent {
     server_id: String,
@@ -143,6 +185,52 @@ struct IrcAwayEvent {
     reason: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct LogLineMeta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    m: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    r: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rn: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rp: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ro: Option<u64>,
+}
+
+impl LogLineMeta {
+    fn is_empty(&self) -> bool {
+        self.m.is_none()
+            && self.r.is_none()
+            && self.rn.is_none()
+            && self.rp.is_none()
+            && self.ro.is_none()
+    }
+}
+
+fn inbound_log_meta(
+    msgid: &Option<String>,
+    reply_to_msgid: &Option<String>,
+    content: &str,
+) -> Option<LogLineMeta> {
+    let mut meta = LogLineMeta {
+        m: msgid.clone(),
+        r: reply_to_msgid.clone(),
+        rn: None,
+        rp: None,
+        ro: None,
+    };
+    if meta.rn.is_none() {
+        meta.rn = classic_reply_nick(content);
+    }
+    if meta.is_empty() {
+        None
+    } else {
+        Some(meta)
+    }
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct LogEntry {
@@ -151,7 +239,18 @@ struct LogEntry {
     content: String,
     #[serde(default)]
     offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    msgid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply_to_msgid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply_nick: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply_preview: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply_parent_offset: Option<u64>,
 }
+
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -250,6 +349,8 @@ struct IrcState {
     nicknames: Arc<Mutex<HashMap<String, String>>>,
     /// Key: "server_id\x00channel_lowercase" → set of lowercase nicks
     channel_members: Arc<Mutex<HashMap<String, HashSet<String>>>>,
+    /// IRCv3 capabilities acknowledged per server_id
+    server_caps: Arc<Mutex<HashMap<String, HashSet<String>>>>,
 }
 
 #[derive(Clone)]
@@ -299,6 +400,7 @@ async fn append_log_line(
     target: &str,
     sender: &str,
     content: &str,
+    meta: Option<LogLineMeta>,
 ) -> Result<(), String> {
     let (key, path) = log_path(app, server_id, target)?;
     let writer = {
@@ -325,7 +427,12 @@ async fn append_log_line(
 
     let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
     let normalized_content = content.replace(['\r', '\n'], " ");
-    let line = format!("[{timestamp}] <{sender}> {normalized_content}\n");
+    let meta_suffix = meta
+        .filter(|value| !value.is_empty())
+        .and_then(|value| serde_json::to_string(&value).ok())
+        .map(|json| format!("\u{001e}{json}"))
+        .unwrap_or_default();
+    let line = format!("[{timestamp}] <{sender}> {normalized_content}{meta_suffix}\n");
     let mut file = writer.lock().await;
     file.write_all(line.as_bytes())
         .await
@@ -350,13 +457,37 @@ fn parse_log_line(line: &str) -> Option<LogEntry> {
     let sender_start = timestamp_end + 3;
     let sender_end = line.get(sender_start..)?.find("> ")? + sender_start;
     let sender = line.get(sender_start..sender_end)?.to_string();
-    let content = line.get(sender_end + 2..)?.to_string();
+    let raw_content = line.get(sender_end + 2..)?.to_string();
+
+    let mut msgid = None;
+    let mut reply_to_msgid = None;
+    let mut reply_nick = None;
+    let mut reply_preview = None;
+    let mut reply_parent_offset = None;
+
+    let content = if let Some((body, meta_json)) = raw_content.split_once('\u{001e}') {
+        if let Ok(meta) = serde_json::from_str::<LogLineMeta>(meta_json) {
+            msgid = meta.m;
+            reply_to_msgid = meta.r;
+            reply_nick = meta.rn;
+            reply_preview = meta.rp;
+            reply_parent_offset = meta.ro;
+        }
+        body.to_string()
+    } else {
+        raw_content
+    };
 
     Some(LogEntry {
         timestamp,
         sender,
         content,
         offset: 0,
+        msgid,
+        reply_to_msgid,
+        reply_nick,
+        reply_preview,
+        reply_parent_offset,
     })
 }
 
@@ -1059,9 +1190,13 @@ async fn connect_irc(
         err_msg
     })?;
 
-    // Request IRCv3 away-notify capability so we receive AWAY messages from other users in real-time.
-    if let Err(e) = client.send_cap_req(&[Capability::AwayNotify]) {
-        log::warn!("Failed to request away-notify CAP: {}", e);
+    // Request IRCv3 capabilities used by the client.
+    if let Err(e) = client.send_cap_req(&[
+        Capability::AwayNotify,
+        Capability::Custom("message-tags"),
+        Capability::ServerTime,
+    ]) {
+        log::warn!("Failed to request IRCv3 CAP: {}", e);
     }
 
     client.identify().map_err(|e| {
@@ -1089,6 +1224,7 @@ async fn connect_irc(
     let senders_clone = state.senders.clone();
     let nicknames_clone = state.nicknames.clone();
     let channel_members_clone = state.channel_members.clone();
+    let server_caps_clone = state.server_caps.clone();
     let app_clone = app.clone();
     let log_state_clone = LogState {
         writers: log_state.writers.clone(),
@@ -1108,6 +1244,7 @@ async fn connect_irc(
                 );
                 senders_clone.lock().await.remove(&stream_server_id);
                 nicknames_clone.lock().await.remove(&stream_server_id);
+                server_caps_clone.lock().await.remove(&stream_server_id);
                 let _ = app_clone.emit(
                     "irc_status",
                     IrcStatusEvent {
@@ -1129,6 +1266,7 @@ async fn connect_irc(
                     log::info!("IRC [{}] Received: {:?}", stream_server_id, message.command);
                     match message.command {
                         Command::PRIVMSG(channel, content) => {
+                            let (msgid, reply_to_msgid) = extract_reply_tags(&message.tags);
                             if let Some(source) = message.prefix {
                                 let sender_name = match source.clone() {
                                     Prefix::Nickname(nick, user, host) => {
@@ -1157,6 +1295,7 @@ async fn connect_irc(
                                     &log_target,
                                     &sender_name,
                                     &content,
+                                    inbound_log_meta(&msgid, &reply_to_msgid, &content),
                                 )
                                 .await
                                 {
@@ -1168,6 +1307,8 @@ async fn connect_irc(
                                     content,
                                     channel: channel.clone(),
                                     is_system: false,
+                                    msgid,
+                                    reply_to_msgid,
                                 };
                                 let _ = app_clone.emit("irc_message", payload);
 
@@ -1179,6 +1320,23 @@ async fn connect_irc(
                                 };
                                 let _ = app_clone.emit("irc_user_event", payload_users);
                             }
+                        }
+                        Command::CAP(_, CapSubCommand::ACK, _, Some(caps)) => {
+                            let mut map = server_caps_clone.lock().await;
+                            let entry = map.entry(stream_server_id.clone()).or_default();
+                            for cap in caps.split_whitespace() {
+                                entry.insert(cap.to_ascii_lowercase());
+                            }
+                            log::info!("IRC [{}] CAP ACK: {}", stream_server_id, caps);
+                        }
+                        Command::CAP(_, CapSubCommand::DEL, _, Some(caps)) => {
+                            let mut map = server_caps_clone.lock().await;
+                            if let Some(entry) = map.get_mut(&stream_server_id) {
+                                for cap in caps.split_whitespace() {
+                                    entry.remove(&cap.to_ascii_lowercase());
+                                }
+                            }
+                            log::info!("IRC [{}] CAP DEL: {}", stream_server_id, caps);
                         }
                         Command::JOIN(channel, _, _) => {
                             if let Some(source) = message.prefix {
@@ -1201,6 +1359,8 @@ async fn connect_irc(
                                     content: format!("{} has joined", full_source),
                                     channel: channel.clone(),
                                     is_system: true,
+                                msgid: None,
+                                reply_to_msgid: None,
                                 };
                                 let _ = app_clone.emit("irc_message", payload);
 
@@ -1253,6 +1413,8 @@ async fn connect_irc(
                                     content: sys_content,
                                     channel: channel.clone(),
                                     is_system: true,
+                                msgid: None,
+                                reply_to_msgid: None,
                                 };
                                 let _ = app_clone.emit("irc_message", payload);
 
@@ -1319,6 +1481,8 @@ async fn connect_irc(
                                         content: sys_content.clone(),
                                         channel: "".to_string(),
                                         is_system: true,
+                                    msgid: None,
+                                    reply_to_msgid: None,
                                     };
                                     let _ = app_clone.emit("irc_message", payload);
                                 } else {
@@ -1329,6 +1493,8 @@ async fn connect_irc(
                                             content: sys_content.clone(),
                                             channel: chan.clone(),
                                             is_system: true,
+                                        msgid: None,
+                                        reply_to_msgid: None,
                                         };
                                         let _ = app_clone.emit("irc_message", payload);
                                     }
@@ -1442,6 +1608,8 @@ async fn connect_irc(
                                 content: format!("Permission Denied: {}", reason),
                                 channel: channel.clone(),
                                 is_system: true,
+                            msgid: None,
+                            reply_to_msgid: None,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -1482,6 +1650,8 @@ async fn connect_irc(
                                 content: format!("Error: {} ({})", reason, channel),
                                 channel: channel.clone(),
                                 is_system: true,
+                            msgid: None,
+                            reply_to_msgid: None,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
                         }
@@ -1497,6 +1667,8 @@ async fn connect_irc(
                                 content: format!("Mode error: {}", err_msg),
                                 channel: channel.clone(),
                                 is_system: true,
+                            msgid: None,
+                            reply_to_msgid: None,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -1519,6 +1691,8 @@ async fn connect_irc(
                                 content: format!("Mode error: {}", err_msg),
                                 channel: channel.clone(),
                                 is_system: true,
+                            msgid: None,
+                            reply_to_msgid: None,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -1546,6 +1720,8 @@ async fn connect_irc(
                                 content: format!("Cannot join channel {}: {}", channel, reason),
                                 channel: channel.clone(),
                                 is_system: true,
+                            msgid: None,
+                            reply_to_msgid: None,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -1573,6 +1749,8 @@ async fn connect_irc(
                                 content: format!("Cannot join channel {}: {}", channel, reason),
                                 channel: channel.clone(),
                                 is_system: true,
+                            msgid: None,
+                            reply_to_msgid: None,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -1600,6 +1778,8 @@ async fn connect_irc(
                                 content: format!("Cannot join channel {}: {}", channel, reason),
                                 channel: channel.clone(),
                                 is_system: true,
+                            msgid: None,
+                            reply_to_msgid: None,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -1627,6 +1807,8 @@ async fn connect_irc(
                                 content: format!("Cannot join channel {}: {}", channel, reason),
                                 channel: channel.clone(),
                                 is_system: true,
+                            msgid: None,
+                            reply_to_msgid: None,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -1645,6 +1827,8 @@ async fn connect_irc(
                                 content: format!("Permission Denied: {}", reason),
                                 channel: "".to_string(),
                                 is_system: true,
+                            msgid: None,
+                            reply_to_msgid: None,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -1664,6 +1848,8 @@ async fn connect_irc(
                                 content: format!("Cannot set mode on {}: {}", channel, reason),
                                 channel: channel.clone(),
                                 is_system: true,
+                            msgid: None,
+                            reply_to_msgid: None,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -1683,6 +1869,8 @@ async fn connect_irc(
                                 content: format!("Cannot set mode on {}: {}", channel, reason),
                                 channel: channel.clone(),
                                 is_system: true,
+                            msgid: None,
+                            reply_to_msgid: None,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -1705,6 +1893,8 @@ async fn connect_irc(
                                 content: format!("Error: Cannot send message to {}: {}", target, reason),
                                 channel: target,
                                 is_system: true,
+                            msgid: None,
+                            reply_to_msgid: None,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
                         }
@@ -1720,6 +1910,8 @@ async fn connect_irc(
                                 content: format!("Error: Cannot send message to {}: {}", target, reason),
                                 channel: target,
                                 is_system: true,
+                            msgid: None,
+                            reply_to_msgid: None,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
                         }
@@ -1763,6 +1955,8 @@ async fn connect_irc(
                                     content: sys_content,
                                     channel: channel.clone(),
                                     is_system: true,
+                                msgid: None,
+                                reply_to_msgid: None,
                                 };
                                 let _ = app_clone.emit("irc_message", msg_payload);
                             }
@@ -1777,6 +1971,8 @@ async fn connect_irc(
                                     content: format!("Channel {} modes: {}", channel, modes_str),
                                     channel: channel.to_string(),
                                     is_system: true,
+                                msgid: None,
+                                reply_to_msgid: None,
                                 };
                                 let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -1809,6 +2005,8 @@ async fn connect_irc(
                                 content: sys_content,
                                 channel: channel.clone(),
                                 is_system: true,
+                            msgid: None,
+                            reply_to_msgid: None,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -1844,6 +2042,8 @@ async fn connect_irc(
                                 content: sys_text,
                                 channel: channel.clone(),
                                 is_system: true,
+                            msgid: None,
+                            reply_to_msgid: None,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -1875,6 +2075,8 @@ async fn connect_irc(
                                     content: sys_text,
                                     channel: target.clone(),
                                     is_system: true,
+                                msgid: None,
+                                reply_to_msgid: None,
                                 };
                                 let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -1898,6 +2100,8 @@ async fn connect_irc(
                                     content: format!("Channel {} modes: {}", channel, modes_str),
                                     channel: channel.to_string(),
                                     is_system: true,
+                                msgid: None,
+                                reply_to_msgid: None,
                                 };
                                 let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -1921,6 +2125,8 @@ async fn connect_irc(
                                     content: format!("Invited {} to {}", target_user, channel),
                                     channel: channel.to_string(),
                                     is_system: true,
+                                msgid: None,
+                                reply_to_msgid: None,
                                 };
                                 let _ = app_clone.emit("irc_message", msg_payload);
                             }
@@ -1935,6 +2141,8 @@ async fn connect_irc(
                                     content: format!("Invited {} to {}", target_user, channel),
                                     channel: channel.to_string(),
                                     is_system: true,
+                                msgid: None,
+                                reply_to_msgid: None,
                                 };
                                 let _ = app_clone.emit("irc_message", msg_payload);
                             }
@@ -1951,6 +2159,8 @@ async fn connect_irc(
                                 content: format!("{} invited {} to join {}", sender_name, target, channel),
                                 channel: channel.clone(),
                                 is_system: true,
+                            msgid: None,
+                            reply_to_msgid: None,
                             };
                             let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -1973,6 +2183,8 @@ async fn connect_irc(
                                     content: format!("{} is now known as {}", sender_name, new_nick),
                                     channel: "".to_string(),
                                     is_system: true,
+                                msgid: None,
+                                reply_to_msgid: None,
                                 };
                                 let _ = app_clone.emit("irc_message", msg_payload);
 
@@ -2213,6 +2425,7 @@ async fn connect_irc(
                     );
                     senders_clone.lock().await.remove(&stream_server_id);
                     nicknames_clone.lock().await.remove(&stream_server_id);
+                    server_caps_clone.lock().await.remove(&stream_server_id);
                     break;
                 }
             }
@@ -2221,6 +2434,7 @@ async fn connect_irc(
         log::warn!("IRC [{}] Stream closed!", stream_server_id);
         senders_clone.lock().await.remove(&stream_server_id);
         nicknames_clone.lock().await.remove(&stream_server_id);
+        server_caps_clone.lock().await.remove(&stream_server_id);
         close_server_logs(&log_state_clone, &stream_server_id).await;
         let final_error = last_error.unwrap_or_else(|| "Stream closed".to_string());
         let _ = app_clone.emit(
@@ -2248,13 +2462,57 @@ async fn send_message(
     server_id: String,
     channel: String,
     message: String,
+    reply_to_msgid: Option<String>,
+    reply_nick: Option<String>,
+    reply_preview: Option<String>,
+    reply_parent_offset: Option<u64>,
 ) -> Result<(), String> {
     let senders = state.senders.lock().await;
     if let Some(sender) = senders.get(&server_id) {
-        if let Err(e) = sender.send_privmsg(&channel, &message) {
+        let has_message_tags = state
+            .server_caps
+            .lock()
+            .await
+            .get(&server_id)
+            .map(|caps| caps.contains("message-tags"))
+            .unwrap_or(false);
+
+        let send_result = if has_message_tags {
+            if let Some(msgid) = reply_to_msgid
+                .as_ref()
+                .map(|value| value.trim())
+                .filter(|value| !value.is_empty())
+            {
+                match Message::with_tags(
+                    Some(vec![Tag(
+                        "+draft/reply".to_string(),
+                        Some(msgid.to_string()),
+                    )]),
+                    None,
+                    "PRIVMSG",
+                    vec![&channel, &message],
+                ) {
+                    Ok(tagged) => sender.send(tagged),
+                    Err(error) => {
+                        log::warn!(
+                            "Failed to build tagged reply PRIVMSG, falling back: {}",
+                            error
+                        );
+                        sender.send_privmsg(&channel, &message)
+                    }
+                }
+            } else {
+                sender.send_privmsg(&channel, &message)
+            }
+        } else {
+            sender.send_privmsg(&channel, &message)
+        };
+
+        if let Err(e) = send_result {
             drop(senders);
             state.senders.lock().await.remove(&server_id);
             state.nicknames.lock().await.remove(&server_id);
+            state.server_caps.lock().await.remove(&server_id);
             let _ = app.emit(
                 "irc_status",
                 IrcStatusEvent {
@@ -2279,6 +2537,22 @@ async fn send_message(
             &channel,
             &sender_name,
             &message,
+            Some(LogLineMeta {
+                m: None,
+                r: reply_to_msgid
+                    .as_ref()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty()),
+                rn: reply_nick
+                    .as_ref()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty()),
+                rp: reply_preview
+                    .as_ref()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty()),
+                ro: reply_parent_offset,
+            }),
         )
         .await
         {
@@ -2855,6 +3129,7 @@ pub fn run() {
             senders: Arc::new(Mutex::new(HashMap::new())),
             nicknames: Arc::new(Mutex::new(HashMap::new())),
             channel_members: Arc::new(Mutex::new(HashMap::new())),
+            server_caps: Arc::new(Mutex::new(HashMap::new())),
         })
         .manage(LogState {
             writers: Arc::new(Mutex::new(HashMap::new())),
