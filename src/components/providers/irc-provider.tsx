@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useMockStore, getServerSelfMember } from "@/lib/mock-store";
+import { useMockStore, getServerSelfMember, getServerActiveNick } from "@/lib/mock-store";
 import { useModalStore } from "@/hooks/use-modal-store";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { Server, ChannelType } from "@/types";
@@ -740,6 +740,56 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
     setupStatusListener();
 
+    let unlistenWelcomeNickFn: (() => void) | null = null;
+    const setupWelcomeNickListener = async () => {
+      try {
+        const unlistenWelcomeNick = await listen<{ server_id: string; welcome_nick: string }>(
+          "irc_welcome_nick",
+          (event) => {
+            const { server_id, welcome_nick } = event.payload;
+            if (server_id && welcome_nick) {
+              useMockStore.getState().setServerActiveNick(server_id, welcome_nick);
+            }
+          }
+        );
+
+        if (isCancelled) {
+          unlistenWelcomeNick();
+        } else {
+          unlistenWelcomeNickFn = unlistenWelcomeNick;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC welcome nick listener:", error);
+      }
+    };
+
+    setupWelcomeNickListener();
+
+    let unlistenNickChangeFn: (() => void) | null = null;
+    const setupNickChangeListener = async () => {
+      try {
+        const unlistenNickChange = await listen<{ server_id: string; old_nick: string; new_nick: string }>(
+          "irc_nick_change",
+          (event) => {
+            const { server_id, old_nick, new_nick } = event.payload;
+            if (server_id && old_nick && new_nick) {
+              useMockStore.getState().handleNickChange(server_id, old_nick, new_nick);
+            }
+          }
+        );
+
+        if (isCancelled) {
+          unlistenNickChange();
+        } else {
+          unlistenNickChangeFn = unlistenNickChange;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC nick change listener:", error);
+      }
+    };
+
+    setupNickChangeListener();
+
     let unlistenTopicFn: (() => void) | null = null;
     const setupTopicListener = async () => {
       try {
@@ -1018,7 +1068,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             store.setUserAway(server_id, nick, away, reason);
 
             const server = store.servers.find((s) => s.id === server_id);
-            const ourNick = server?.nicknames?.[0] || store.currentProfile.name;
+            const ourNick = server ? getServerActiveNick(server) : store.currentProfile.name;
             if (nick.toLowerCase() === ourNick.toLowerCase()) {
               store.setSelfAway(server_id, away);
             }
@@ -1039,48 +1089,22 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
     return () => {
       isCancelled = true;
-      if (unlistenFn) {
-        unlistenFn();
-      }
-      if (unlistenUsersFn) {
-        unlistenUsersFn();
-      }
-      if (unlistenStatusFn) {
-        unlistenStatusFn();
-      }
-      if (unlistenTopicFn) {
-        unlistenTopicFn();
-      }
-      if (unlistenOpsFn) {
-        unlistenOpsFn();
-      }
-      if (unlistenTopicErrorFn) {
-        unlistenTopicErrorFn();
-      }
-      if (unlistenBadKeyFn) {
-        unlistenBadKeyFn();
-      }
-      if (unlistenInviteOnlyFn) {
-        unlistenInviteOnlyFn();
-      }
-      if (unlistenInvitedFn) {
-        unlistenInvitedFn();
-      }
-      if (unlistenModeFn) {
-        unlistenModeFn();
-      }
-      if (unlistenModeErrorFn) {
-        unlistenModeErrorFn();
-      }
-      if (unlistenMotdFn) {
-        unlistenMotdFn();
-      }
-      if (unlistenAwayFn) {
-        unlistenAwayFn();
-      }
-      if (unlistenHostFn) {
-        unlistenHostFn();
-      }
+      if (unlistenFn) unlistenFn();
+      if (unlistenUsersFn) unlistenUsersFn();
+      if (unlistenHostFn) unlistenHostFn();
+      if (unlistenStatusFn) unlistenStatusFn();
+      if (unlistenWelcomeNickFn) unlistenWelcomeNickFn();
+      if (unlistenNickChangeFn) unlistenNickChangeFn();
+      if (unlistenTopicFn) unlistenTopicFn();
+      if (unlistenOpsFn) unlistenOpsFn();
+      if (unlistenTopicErrorFn) unlistenTopicErrorFn();
+      if (unlistenBadKeyFn) unlistenBadKeyFn();
+      if (unlistenInviteOnlyFn) unlistenInviteOnlyFn();
+      if (unlistenInvitedFn) unlistenInvitedFn();
+      if (unlistenModeFn) unlistenModeFn();
+      if (unlistenModeErrorFn) unlistenModeErrorFn();
+      if (unlistenMotdFn) unlistenMotdFn();
+      if (unlistenAwayFn) unlistenAwayFn();
     };
   }, [addMessage, addServerMember, removeServerMember, setIrcConnected]);
 

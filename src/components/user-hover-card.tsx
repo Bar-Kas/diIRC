@@ -5,7 +5,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
 import { MessageSquare } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useMockStore } from "@/lib/mock-store";
+import { useMockStore, getServerActiveNick } from "@/lib/mock-store";
 import { UserRoleIcon, getHighestChannelRole } from "@/components/user-role-icon";
 import { UserContextMenu } from "@/components/user-context-menu";
 
@@ -23,10 +23,10 @@ export const getMemberDisplayName = (
   server?: Server
 ): string => {
   const currentProfile = useMockStore.getState().currentProfile;
+  const activeNick = server ? getServerActiveNick(server) : "";
   const isSelf =
     member.profileId === currentProfile.id ||
-    (server?.nicknames?.[0] &&
-      member.profile.name.toLowerCase() === server.nicknames[0].toLowerCase());
+    (activeNick && member.profile.name.toLowerCase() === activeNick.toLowerCase());
 
   if (isSelf && server?.realname && server.realname.trim().length > 0 && server.realname.toLowerCase() !== "realname") {
     return server.realname;

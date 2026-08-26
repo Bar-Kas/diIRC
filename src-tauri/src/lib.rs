@@ -36,6 +36,19 @@ struct IrcStatusEvent {
 }
 
 #[derive(Serialize, Clone)]
+struct IrcWelcomeNickEvent {
+    server_id: String,
+    welcome_nick: String,
+}
+
+#[derive(Serialize, Clone)]
+struct IrcNickChangeEvent {
+    server_id: String,
+    old_nick: String,
+    new_nick: String,
+}
+
+#[derive(Serialize, Clone)]
 struct IrcTopicEvent {
     server_id: String,
     channel: String,
@@ -1393,6 +1406,13 @@ async fn connect_irc(
                                     .lock()
                                     .await
                                     .insert(stream_server_id.clone(), welcome_nick.clone());
+                                let _ = app_clone.emit(
+                                    "irc_welcome_nick",
+                                    IrcWelcomeNickEvent {
+                                        server_id: stream_server_id.clone(),
+                                        welcome_nick: welcome_nick.clone(),
+                                    },
+                                );
                             }
                             let _ = app_clone.emit(
                                 "irc_status",
@@ -1975,6 +1995,13 @@ async fn connect_irc(
                                     is_system: true,
                                 };
                                 let _ = app_clone.emit("irc_message", msg_payload);
+
+                                let nick_change_payload = IrcNickChangeEvent {
+                                    server_id: stream_server_id.clone(),
+                                    old_nick: sender_name.clone(),
+                                    new_nick: new_nick.clone(),
+                                };
+                                let _ = app_clone.emit("irc_nick_change", nick_change_payload);
 
                                 let mut nicks = nicknames_clone.lock().await;
                                 let is_own = nicks
