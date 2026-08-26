@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useModal } from "@/hooks/use-modal-store";
 import { EmojiPicker } from "@/components/emoji-picker";
 import { Member } from "@/types";
-import { useMockStore, getServerSelfMember } from "@/lib/mock-store";
+import { useMockStore, getServerSelfMember, getServerActiveNick } from "@/lib/mock-store";
 import { getHighestChannelRole } from "@/components/user-role-icon";
 import { uploadImage } from "@/lib/upload/services";
 import { ImageContextMenu } from "@/components/image-context-menu";
@@ -99,7 +99,7 @@ export const ChatInput = ({
 
   let currentMember = activeServer ? getServerSelfMember(activeServer, currentProfile.id) : undefined;
 
-  const primaryNick = activeServer?.nicknames?.[0];
+  const primaryNick = activeServer ? getServerActiveNick(activeServer) : undefined;
   if (primaryNick && currentMember) {
     currentMember = {
       ...currentMember,

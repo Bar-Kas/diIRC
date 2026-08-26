@@ -5,7 +5,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { useMockStore, getServerSelfMember } from "@/lib/mock-store";
+import { useMockStore, getServerSelfMember, getServerActiveNick } from "@/lib/mock-store";
 import { getMemberDisplayName } from "@/components/user-hover-card";
 import { cn } from "@/lib/utils";
 import { ServerHeader } from "./server-header";
@@ -84,11 +84,12 @@ export const ServerSidebar = ({
 
   const currentMember = getServerSelfMember(server, currentProfile?.id) || server.members[0];
 
+  const activeNickLower = getServerActiveNick(server).toLowerCase();
   const otherMembers = (server.members || []).filter(
     (m) =>
       m.id !== currentMember?.id &&
       m.profileId !== currentProfile?.id &&
-      m.profile?.name?.toLowerCase() !== server.nicknames?.[0]?.toLowerCase() &&
+      m.profile?.name?.toLowerCase() !== activeNickLower &&
       !m.id.startsWith("self-")
   );
 

@@ -192,6 +192,7 @@ export interface Server {
   host?: string;
   port?: number;
   nicknames?: string[];
+  currentNick?: string;
   realname?: string;
   password?: string;
   useTls?: boolean;
@@ -202,6 +203,7 @@ export interface Server {
   notificationSettings?: NotificationOverride;
   motd?: string[];
   motdPolicy?: ServerMotdDisplayPolicy;
+  parseLegacyZncTimestamps?: boolean;
 }
 
 export type ServerWithMembersWithProfiles = Server;

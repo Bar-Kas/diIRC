@@ -12,7 +12,7 @@ import {
 import { useModal } from "@/hooks/use-modal-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useMockStore } from "@/lib/mock-store";
+import { useMockStore, getServerActiveNick } from "@/lib/mock-store";
 
 export const EditTopicModal = () => {
   const { isOpen, onClose, type, data } = useModal();
@@ -32,7 +32,7 @@ export const EditTopicModal = () => {
   const isConnected = !!(server?.id && ircConnectedServers[server.id]);
 
   // Permission check
-  const ourNick = server?.nicknames?.[0] || currentProfile.name;
+  const ourNick = server ? getServerActiveNick(server) : currentProfile.name;
   const isServerOwner = server?.profileId === currentProfile.id;
   const isChannelOwner = channel?.profileId === currentProfile.id;
 

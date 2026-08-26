@@ -2,7 +2,7 @@ import { Channel, Member, Server } from "@/types";
 import { UserAvatar } from "@/components/user-avatar";
 import { UserHoverCard, getMemberDisplayName } from "@/components/user-hover-card";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useMockStore } from "@/lib/mock-store";
+import { useMockStore, getServerActiveNick } from "@/lib/mock-store";
 import { cn } from "@/lib/utils";
 import { UserRoleIcon, getHighestChannelRole } from "@/components/user-role-icon";
 import { useUIStore } from "@/hooks/use-ui-store";
@@ -36,9 +36,8 @@ export const ChatMembersSidebar = ({
 
   const isConnected = !!ircConnectedServers[server.id];
 
-  // Our nickname always comes from the server settings (server.nicknames[0])
-  // and we create a synthetic entry from currentProfile + IRC nick
-  const ourNick = server.nicknames?.[0] || currentProfile.name;
+  // Active nickname for the server connection
+  const ourNick = getServerActiveNick(server);
   // Look for the actual member matching our nick or profileId
   const selfMemberFromStore = server.members.find(
     (m) =>

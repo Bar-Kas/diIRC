@@ -8,7 +8,7 @@ import {
 import { useModal } from "@/hooks/use-modal-store";
 import { AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useMockStore } from "@/lib/mock-store";
+import { useMockStore, getServerActiveNick } from "@/lib/mock-store";
 import { invoke } from "@tauri-apps/api/core";
 
 export const AlreadyAwayModal = () => {
@@ -26,7 +26,7 @@ export const AlreadyAwayModal = () => {
       }
       const store = useMockStore.getState();
       const server = store.servers.find((s) => s.id === serverId);
-      const ourNick = server?.nicknames?.[0] || store.currentProfile.name;
+      const ourNick = server ? getServerActiveNick(server) : store.currentProfile.name;
       store.setUserAway(serverId, ourNick, false);
       store.setSelfAway(serverId, false);
     }

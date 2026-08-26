@@ -155,7 +155,13 @@ export const ChatMessages = ({
       if (/https?:\/\/[^\s]+/i.test(content)) return 140;
 
       const prev = items[msgIndex - 1];
-      const isSameAuthor = prev && prev.member?.id === msg.member?.id;
+      const isSameAuthor = Boolean(
+        prev &&
+          (prev.member?.id === msg.member?.id ||
+            (prev.member?.profile?.name &&
+              msg.member?.profile?.name &&
+              prev.member.profile.name.toLowerCase() === msg.member.profile.name.toLowerCase()))
+      );
       const isWithin5Min = prev && (new Date(msg.createdAt).getTime() - new Date(prev.createdAt).getTime() < 300000);
       const isCompact = Boolean(isSameAuthor && isWithin5Min && !prev.deleted && !prev.isSystem && !msg.isSystem);
 
@@ -742,7 +748,13 @@ export const ChatMessages = ({
             if (!message) return null;
 
             const prevMessage = items[messageIndex - 1];
-            const isSameAuthor = prevMessage?.member?.id === message.member?.id;
+            const isSameAuthor = Boolean(
+              prevMessage &&
+                (prevMessage.member?.id === message.member?.id ||
+                  (prevMessage.member?.profile?.name &&
+                    message.member?.profile?.name &&
+                    prevMessage.member.profile.name.toLowerCase() === message.member.profile.name.toLowerCase()))
+            );
             const isWithinTimeLimit = prevMessage
               && new Date(message.createdAt).getTime() - new Date(prevMessage.createdAt).getTime() < 300000;
             const isCompact = Boolean(
