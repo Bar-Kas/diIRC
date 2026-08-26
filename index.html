@@ -2,12 +2,21 @@
 <html lang="en" class="dark" style="color-scheme: dark;">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
+    <link rel="icon" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>diIRC</title>
+    <link rel="stylesheet" href="/boot-splash.css" />
+    <script src="/boot-theme.js"></script>
   </head>
   <body class="bg-[#313338] text-white overflow-hidden antialiased">
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot-splash" aria-busy="true" aria-label="Loading diIRC">
+        <div class="boot-brand">
+          <img src="/app-icon.png" alt="" width="32" height="32" />
+          <span class="boot-title">diIRC</span>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

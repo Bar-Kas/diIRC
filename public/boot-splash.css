@@ -1,0 +1,35 @@
+#boot-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #313338;
+  color: #f2f3f5;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+}
+
+#boot-splash .boot-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+#boot-splash img {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+}
+
+#boot-splash .boot-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1;
+}
+
+html.oled #boot-splash {
+  background: #000;
+}
