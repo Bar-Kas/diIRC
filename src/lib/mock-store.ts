@@ -30,7 +30,7 @@ import { v4 as uuidv4 } from "uuid";
 import { ImageUploadConfig, UrlAuthRule } from "./upload/types";
 import { MESSAGE_DEDUPLICATION_MODE } from "./config";
 
-export const MAX_HISTORY_WINDOW = 600;
+export const MAX_HISTORY_WINDOW = 1200;
 export const MAX_PENDING_LIVE = 100;
 
 export function computeMotdHash(lines: string[]): string {
@@ -88,6 +88,7 @@ const EMPTY_HISTORY_WINDOW: HistoryWindow = {
   unreadCount: 0,
   lastSeenTailId: null,
   tailPinned: true,
+  firstUnreadMessageId: null,
   ready: false,
 };
 
@@ -288,6 +289,7 @@ export type { StatusDisplayMode };
 export interface UnreadInfo {
   count: number;
   hasMention: boolean;
+  lastReadMessageId?: string | null;
 }
 
 interface MockState {
@@ -1542,6 +1544,22 @@ export const useMockStore = create<MockState>()(
       loadChatHistory: async (type, chatId, serverId, target) => {
         const requestedKey = chatKey(type, chatId);
         const requestToken = get().historyLoadToken + 1;
+        let initialUnreadInfo = get().unreadState[requestedKey];
+        if (!initialUnreadInfo && type === "conversation") {
+          const convId = chatId;
+          for (const [uKey, info] of Object.entries(get().unreadState)) {
+            if (uKey.startsWith("conversation:")) {
+              const parts = uKey.split(":");
+              const raw = parts.length >= 3 ? parts.slice(2).join(":") : uKey.replace("conversation:", "");
+              if (raw === convId || convId.includes(raw) || raw.includes(convId)) {
+                initialUnreadInfo = info;
+                break;
+              }
+            }
+          }
+        }
+        const initialUnreadCount = initialUnreadInfo?.count || 0;
+        const lastReadId = initialUnreadInfo?.lastReadMessageId || null;
 
         // Reset the sliding window: only the active chat is buffered in memory and the native
         // log is the source of truth. Offsetless (optimistic/local-only) messages are preserved.
@@ -1557,7 +1575,13 @@ export const useMockStore = create<MockState>()(
             ...pending,
           ]);
           const nextUnreads = { ...state.unreadState };
-          delete nextUnreads[requestedKey];
+          if (nextUnreads[requestedKey]) {
+            nextUnreads[requestedKey] = {
+              ...nextUnreads[requestedKey],
+              count: 0,
+              hasMention: false,
+            };
+          }
           if (type === "conversation") {
             const convId = chatId;
             for (const uKey of Object.keys(nextUnreads)) {
@@ -1568,13 +1592,25 @@ export const useMockStore = create<MockState>()(
                   if (sId === serverId) {
                     const raw = parts.slice(2).join(":");
                     if (raw === convId || convId.includes(raw) || raw.includes(convId)) {
-                      delete nextUnreads[uKey];
+                      if (nextUnreads[uKey]) {
+                        nextUnreads[uKey] = {
+                          ...nextUnreads[uKey],
+                          count: 0,
+                          hasMention: false,
+                        };
+                      }
                     }
                   }
                 } else {
                   const raw = uKey.replace("conversation:", "");
                   if (raw === convId || convId.includes(raw) || raw.includes(convId)) {
-                    delete nextUnreads[uKey];
+                    if (nextUnreads[uKey]) {
+                      nextUnreads[uKey] = {
+                        ...nextUnreads[uKey],
+                        count: 0,
+                        hasMention: false,
+                      };
+                    }
                   }
                 }
               }
@@ -1601,6 +1637,7 @@ export const useMockStore = create<MockState>()(
               unreadCount: 0,
               lastSeenTailId: null,
               tailPinned: true,
+              firstUnreadMessageId: null,
               ready: false,
             },
             messages: type === "channel" ? (isSameChat ? state.messages : { [chatId]: preservedLive as Message[] }) : {},
@@ -1629,11 +1666,28 @@ export const useMockStore = create<MockState>()(
           const combined = trimWindow([...fetched, ...keptLive]);
           const newestOffset = lastLogOffset(combined);
 
+          let firstUnreadId: string | null = null;
+          if (initialUnreadCount > 0) {
+            if (lastReadId) {
+              const lastReadIndex = combined.findIndex((m) => m.id === lastReadId);
+              if (lastReadIndex !== -1 && lastReadIndex + 1 < combined.length) {
+                firstUnreadId = combined[lastReadIndex + 1].id;
+              } else if (lastReadIndex === -1) {
+                const startIdx = Math.max(0, combined.length - initialUnreadCount);
+                firstUnreadId = combined[startIdx]?.id || null;
+              }
+            } else {
+              const startIdx = Math.max(0, combined.length - initialUnreadCount);
+              firstUnreadId = combined[startIdx]?.id || null;
+            }
+          }
+
           applyWindow(set, type, chatId, combined, {
             hasOlder: page.nextOffset !== null,
             olderCursor: page.nextOffset,
             hasNewer: false,
             newerCursor: newestOffset,
+            firstUnreadMessageId: firstUnreadId,
             ready: true,
           });
         } catch (error) {
@@ -1698,10 +1752,10 @@ export const useMockStore = create<MockState>()(
           applyWindow(set, type, chatId, combined, {
             loadingOlder: false,
             hasOlder: page.nextOffset !== null,
-            olderCursor: page.nextOffset ?? oldestOffset,
-            // If the buffer was trimmed, we definitely have newer messages in the transcript
-            hasNewer: wasTrimmed ? true : current.historyWindow.hasNewer,
-            newerCursor: wasTrimmed ? newestOffset : current.historyWindow.newerCursor,
+            olderCursor: page.nextOffset,
+            // If the buffer was trimmed or we are in history, we have newer messages
+            hasNewer: wasTrimmed ? true : (current.historyWindow.hasNewer || newestOffset !== null),
+            newerCursor: wasTrimmed ? newestOffset : (current.historyWindow.newerCursor ?? newestOffset),
             ready: true,
           });
           return true;
@@ -1758,14 +1812,14 @@ export const useMockStore = create<MockState>()(
           const combined = trimWindow(merged);
           const oldestOffset = firstLogOffset(combined);
           const newestOffset = lastLogOffset(combined);
-          const isAtLogTail = page.nextOffset === null;
+          const isAtLogTail = page.nextAfter === null || page.nextAfter === undefined || page.entries.length === 0;
 
           applyWindow(set, type, chatId, combined, {
             loadingNewer: false,
             hasOlder: wasTrimmed ? true : current.historyWindow.hasOlder,
             olderCursor: wasTrimmed ? oldestOffset : current.historyWindow.olderCursor,
             hasNewer: !isAtLogTail,
-            newerCursor: isAtLogTail ? newestOffset : page.nextOffset,
+            newerCursor: isAtLogTail ? newestOffset : (page.nextAfter ?? newestOffset),
             ready: true,
           });
 
@@ -1841,6 +1895,7 @@ export const useMockStore = create<MockState>()(
               unreadCount: state.historyWindow.unreadCount,
               lastSeenTailId: state.historyWindow.lastSeenTailId,
               tailPinned: false,
+              firstUnreadMessageId: state.historyWindow.firstUnreadMessageId,
               ready: false,
             },
             messages: type === "channel" ? { [chatId]: [] } : {},
@@ -1938,8 +1993,31 @@ export const useMockStore = create<MockState>()(
       markTailSeen: (tailId) =>
         set((state) => {
           const win = state.historyWindow;
-          if (win.unreadCount !== 0 || win.lastSeenTailId !== tailId) {
-            return { historyWindow: { ...win, lastSeenTailId: tailId, unreadCount: 0 } };
+          const key = state.activeChatKey;
+          const nextUnreads = key && tailId ? {
+            ...state.unreadState,
+            [key]: {
+              ...(state.unreadState[key] || { hasMention: false }),
+              count: 0,
+              lastReadMessageId: tailId,
+            },
+          } : state.unreadState;
+
+          if (
+            win.unreadCount !== 0 ||
+            win.lastSeenTailId !== tailId ||
+            win.firstUnreadMessageId !== null ||
+            (key && (state.unreadState[key]?.count !== 0 || state.unreadState[key]?.lastReadMessageId !== tailId))
+          ) {
+            return {
+              unreadState: nextUnreads,
+              historyWindow: {
+                ...win,
+                lastSeenTailId: tailId,
+                unreadCount: 0,
+                firstUnreadMessageId: null,
+              },
+            };
           }
           return {};
         }),
@@ -1998,11 +2076,15 @@ export const useMockStore = create<MockState>()(
           set((s) => {
             if (s.activeChatKey !== key) return {};
             const nextPending = [...s.historyWindow.pendingLive, newMessage].slice(-MAX_PENDING_LIVE);
+            const firstUnread = shouldCountUnread
+              ? (s.historyWindow.firstUnreadMessageId || newMessage.id)
+              : s.historyWindow.firstUnreadMessageId;
             return {
               historyWindow: {
                 ...s.historyWindow,
                 pendingLive: nextPending,
                 unreadCount: shouldCountUnread ? s.historyWindow.unreadCount + 1 : s.historyWindow.unreadCount,
+                firstUnreadMessageId: firstUnread,
               },
             };
           });
@@ -2010,6 +2092,9 @@ export const useMockStore = create<MockState>()(
           set((state2) => {
             if (state2.activeChatKey !== key) return {};
             const nextMsgs = trimWindow([...(state2.messages[channelId] || []), newMessage]) as Message[];
+            const firstUnread = shouldCountUnread
+              ? (state2.historyWindow.firstUnreadMessageId || newMessage.id)
+              : state2.historyWindow.firstUnreadMessageId;
             return {
               messages: {
                 ...state2.messages,
@@ -2018,6 +2103,7 @@ export const useMockStore = create<MockState>()(
               historyWindow: {
                 ...state2.historyWindow,
                 unreadCount: shouldCountUnread ? state2.historyWindow.unreadCount + 1 : state2.historyWindow.unreadCount,
+                firstUnreadMessageId: firstUnread,
               },
             };
           });
@@ -2263,11 +2349,15 @@ export const useMockStore = create<MockState>()(
           set((s) => {
             if (s.activeChatKey !== key) return {};
             const nextPending = [...s.historyWindow.pendingLive, newDm].slice(-MAX_PENDING_LIVE);
+            const firstUnread = shouldCountUnread
+              ? (s.historyWindow.firstUnreadMessageId || newDm.id)
+              : s.historyWindow.firstUnreadMessageId;
             return {
               historyWindow: {
                 ...s.historyWindow,
                 pendingLive: nextPending,
                 unreadCount: shouldCountUnread ? s.historyWindow.unreadCount + 1 : s.historyWindow.unreadCount,
+                firstUnreadMessageId: firstUnread,
               },
             };
           });
@@ -2275,6 +2365,9 @@ export const useMockStore = create<MockState>()(
           set((state2) => {
             if (state2.activeChatKey !== key) return {};
             const nextDms = trimWindow([...(state2.directMessages[conversationId] || []), newDm]) as DirectMessage[];
+            const firstUnread = shouldCountUnread
+              ? (state2.historyWindow.firstUnreadMessageId || newDm.id)
+              : state2.historyWindow.firstUnreadMessageId;
             return {
               directMessages: {
                 ...state2.directMessages,
@@ -2283,6 +2376,7 @@ export const useMockStore = create<MockState>()(
               historyWindow: {
                 ...state2.historyWindow,
                 unreadCount: shouldCountUnread ? state2.historyWindow.unreadCount + 1 : state2.historyWindow.unreadCount,
+                firstUnreadMessageId: firstUnread,
               },
             };
           });

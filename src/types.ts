@@ -156,6 +156,8 @@ export interface HistoryWindow {
   lastSeenTailId: string | null;
   /** Live flag mirrored from ChatMessages: is the user currently following the tail? */
   tailPinned: boolean;
+  /** Id of the first unread message in the active session for rendering the "New messages" divider. */
+  firstUnreadMessageId: string | null;
   /** True once the initial tail page is loaded or failed. */
   ready: boolean;
 }
