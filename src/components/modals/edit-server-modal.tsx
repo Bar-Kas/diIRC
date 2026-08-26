@@ -268,7 +268,7 @@ export const EditServerModal = () => {
           onOpenAutoFocus={(e) => e.preventDefault()}
           className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden sm:max-w-lg max-h-[90vh] flex flex-col border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl"
         >
-          <DialogHeader className="pt-6 px-6 space-y-1">
+          <DialogHeader className="pt-6 px-6 space-y-1 shrink-0">
             <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
               Edit server settings
             </DialogTitle>
@@ -277,7 +277,8 @@ export const EditServerModal = () => {
             </DialogDescription>
           </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onFormSubmit)} className="space-y-4 flex-1 overflow-y-auto px-6 py-2">
+            <form onSubmit={form.handleSubmit(onFormSubmit)} className="flex flex-col flex-1 min-h-0">
+              <div className="space-y-4 flex-1 overflow-y-auto px-6 py-2 min-h-0">
               <FormField
                 control={form.control}
                 name="name"
@@ -629,8 +630,9 @@ export const EditServerModal = () => {
                   else if (field === "taskbar") setTaskbarOverride(val);
                 }}
               />
+              </div>
 
-              <DialogFooter className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 -mx-6 -mb-2 px-6 py-4 mt-4 flex items-center justify-between">
+              <DialogFooter className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 px-6 py-4 flex items-center justify-between shrink-0">
                 <Button
                   type="button"
                   variant="ghost"
