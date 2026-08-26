@@ -85,7 +85,7 @@ export const ChatHeader = ({
   };
 
   return (
-    <div className="text-md font-semibold px-3 flex items-center h-12 border-neutral-200 dark:border-neutral-800 border-b-2 gap-x-2 min-w-0">
+    <div className="text-md font-semibold px-3 flex items-center h-12 border-neutral-200 dark:border-neutral-800 border-b-2 gap-x-2 min-w-0 relative z-20 bg-white dark:bg-[#313338]">
       <MobileToggle serverId={serverId} />
       
       <ActionTooltip 

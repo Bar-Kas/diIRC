@@ -1,3 +1,4 @@
+import { useParams } from "react-router-dom";
 import { useConnectionStatus } from "@/hooks/use-connection-status";
 import { useMockStore } from "@/lib/mock-store";
 import { useModal } from "@/hooks/use-modal-store";
@@ -5,7 +6,8 @@ import { ActionTooltip } from "@/components/action-tooltip";
 import { cn } from "@/lib/utils";
 
 export const ConnectionStatus = () => {
-  const { irc, ircError, resourceServer, internet } = useConnectionStatus();
+  const { serverId } = useParams();
+  const { irc, ircError, resourceServer, internet } = useConnectionStatus(serverId);
   const statusDisplayMode = useMockStore((state) => state.statusDisplayMode) || "always";
   const { onOpen } = useModal();
 
@@ -45,9 +47,9 @@ export const ConnectionStatus = () => {
   ];
 
   return (
-    <div className="relative group">
+    <div className="relative group z-30">
       <div
-        onClick={() => onOpen("connectionDetails")}
+        onClick={() => onOpen("connectionDetails", { serverId })}
         className={cn(
           "flex items-center gap-x-2.5 px-3 py-1.5 rounded-full",
           "border border-zinc-200 dark:border-zinc-700/80",

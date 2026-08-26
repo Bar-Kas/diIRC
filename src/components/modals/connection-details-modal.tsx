@@ -15,16 +15,21 @@ import { useMockStore } from "@/lib/mock-store";
 import { AlertCircle, CheckCircle2, RefreshCw, Shield, Wifi, Globe } from "lucide-react";
 
 export const ConnectionDetailsModal = () => {
-  const { isOpen, onClose, type } = useModal();
-  const { serverId } = useParams();
-  const { irc, ircError, resourceServer, internet } = useConnectionStatus();
-
+  const { isOpen, onClose, type, data } = useModal();
+  const { serverId: routeServerId } = useParams();
   const servers = useMockStore((state) => state.servers);
+
+  const urlMatch = typeof window !== "undefined" ? window.location.pathname.match(/\/servers\/([^\/]+)/) : null;
+  const urlServerId = urlMatch ? urlMatch[1] : undefined;
+
+  const targetServerId = data?.serverId || data?.server?.id || routeServerId || urlServerId;
+  const { irc, ircError, resourceServer, internet } = useConnectionStatus(targetServerId);
+
   const currentProfile = useMockStore((state) => state.currentProfile);
   const uploadConfig = useMockStore((state) => state.uploadConfig);
   const setIrcConnected = useMockStore((state) => state.setIrcConnected);
 
-  const activeServer = (serverId ? servers.find((s) => s.id === serverId) : null) || servers[0];
+  const activeServer = (targetServerId ? servers.find((s) => s.id === targetServerId) : null) || servers[0];
   const [isReconnecting, setIsReconnecting] = useState(false);
 
   const isModalOpen = isOpen && type === "connectionDetails";

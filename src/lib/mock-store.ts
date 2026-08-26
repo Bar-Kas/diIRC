@@ -2,13 +2,13 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { invoke } from "@tauri-apps/api/core";
 import { format } from "date-fns";
-import { 
-  Server, 
-  Channel, 
-  Member, 
-  Message, 
-  DirectMessage, 
-  Profile, 
+import {
+  Server,
+  Channel,
+  Member,
+  Message,
+  DirectMessage,
+  Profile,
   ChannelType,
   LogPage,
   StatusDisplayMode,
@@ -20,11 +20,11 @@ import {
   MotdDisplayPolicy,
   ServerMotdDisplayPolicy,
 } from "@/types";
-import { 
-  INITIAL_SERVERS, 
-  INITIAL_MESSAGES, 
-  INITIAL_DIRECT_MESSAGES, 
-  MOCK_PROFILE 
+import {
+  INITIAL_SERVERS,
+  INITIAL_MESSAGES,
+  INITIAL_DIRECT_MESSAGES,
+  MOCK_PROFILE
 } from "./mock-data";
 import { v4 as uuidv4 } from "uuid";
 import { ImageUploadConfig, UrlAuthRule } from "./upload/types";
@@ -134,8 +134,8 @@ export const formatMessageDate = (
   dateFormatPreset: string = "d MMM yyyy, HH:mm",
   customDateFormat: string = "yyyy/MM/dd HH:mm"
 ): string => {
-  const pattern = dateFormatPreset === "custom" 
-    ? (customDateFormat.trim() || "d MMM yyyy, HH:mm") 
+  const pattern = dateFormatPreset === "custom"
+    ? (customDateFormat.trim() || "d MMM yyyy, HH:mm")
     : dateFormatPreset;
   try {
     const d = typeof date === "string" || typeof date === "number" ? new Date(date) : date;
@@ -181,9 +181,25 @@ const mapLogEntries = (
   type: "channel" | "conversation",
   chatId: string,
 ): (Message | DirectMessage)[] => entries.map((entry) => {
+  const isSys = entry.sender.toLowerCase() === "system" || entry.sender === "*system*" || entry.sender === "*";
   const member = server?.members.find(
     (item) => item.profile.name.toLowerCase() === entry.sender.toLowerCase()
-  ) || createIrcMember(serverId, entry.sender);
+  ) || (isSys ? {
+    id: "system",
+    profileId: "system",
+    profile: {
+      id: "system",
+      userId: "system",
+      name: "System",
+      imageUrl: "",
+      email: "system@irc.local",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    serverId,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } : createIrcMember(serverId, entry.sender));
   const createdAt = parseLogTimestamp(entry.timestamp);
   const stableId = entry.offset !== undefined
     ? `log-${serverId}-${chatId}-${entry.offset}`
@@ -201,6 +217,7 @@ const mapLogEntries = (
     deleted: false,
     createdAt,
     updatedAt: createdAt,
+    isSystem: isSys,
   } as Message | DirectMessage;
 });
 
@@ -353,9 +370,9 @@ interface MockState {
 
   // Message Actions
   loadChatHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<void>;
-      loadOlderHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<boolean>;
-      loadNewerHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<boolean>;
-      jumpToLatest: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<void>;
+  loadOlderHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<boolean>;
+  loadNewerHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<boolean>;
+  jumpToLatest: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<void>;
   /**
    * Re-centers the sliding window around a native log line (search jump-to-message).
    * Loads the page ending at `offset` and forward-fills newer context, then marks the
@@ -560,12 +577,12 @@ export const useMockStore = create<MockState>()(
           servers: state.servers.map((s) =>
             s.id === serverId
               ? {
-                  ...s,
-                  notificationSettings: {
-                    ...(s.notificationSettings || {}),
-                    ...settings,
-                  },
-                }
+                ...s,
+                notificationSettings: {
+                  ...(s.notificationSettings || {}),
+                  ...settings,
+                },
+              }
               : s
           ),
         })),
@@ -575,19 +592,19 @@ export const useMockStore = create<MockState>()(
           servers: state.servers.map((s) =>
             s.id === serverId
               ? {
-                  ...s,
-                  channels: s.channels.map((c) =>
-                    c.id === channelId
-                      ? {
-                          ...c,
-                          notificationSettings: {
-                            ...(c.notificationSettings || {}),
-                            ...settings,
-                          },
-                        }
-                      : c
-                  ),
-                }
+                ...s,
+                channels: s.channels.map((c) =>
+                  c.id === channelId
+                    ? {
+                      ...c,
+                      notificationSettings: {
+                        ...(c.notificationSettings || {}),
+                        ...settings,
+                      },
+                    }
+                    : c
+                ),
+              }
               : s
           ),
         })),
@@ -737,16 +754,16 @@ export const useMockStore = create<MockState>()(
 
               const updatedChannels = optionsOrName.autoJoinChannels && optionsOrName.autoJoinChannels.length > 0
                 ? optionsOrName.autoJoinChannels.map((ch) => {
-                    const cleanName = ch.trim().replace(/^#/, "").toLowerCase().replace(/\s+/g, "-");
-                    const existing = s.channels.find((c) => c.name.trim().replace(/^#/, "").toLowerCase() === cleanName);
-                    return existing || {
-                      id: `channel-${uuidv4().slice(0, 8)}`,
-                      name: cleanName,
-                      type: ChannelType.TEXT,
-                      profileId: get().currentProfile.id,
-                      serverId,
-                    };
-                  })
+                  const cleanName = ch.trim().replace(/^#/, "").toLowerCase().replace(/\s+/g, "-");
+                  const existing = s.channels.find((c) => c.name.trim().replace(/^#/, "").toLowerCase() === cleanName);
+                  return existing || {
+                    id: `channel-${uuidv4().slice(0, 8)}`,
+                    name: cleanName,
+                    type: ChannelType.TEXT,
+                    profileId: get().currentProfile.id,
+                    serverId,
+                  };
+                })
                 : s.channels;
 
               const updatedRealname = optionsOrName.realname ?? s.realname;
@@ -826,8 +843,8 @@ export const useMockStore = create<MockState>()(
         const channelIdsToRemove = new Set(targetServer?.channels.map((c) => c.id) || []);
 
         try {
-          invoke("disconnect_irc", { serverId }).catch(() => {});
-        } catch (_) {}
+          invoke("disconnect_irc", { serverId }).catch(() => { });
+        } catch (_) { }
 
         set((state) => {
           const nextMessages = { ...state.messages };
@@ -873,13 +890,13 @@ export const useMockStore = create<MockState>()(
                 servers: state.servers.map((s) =>
                   s.id === serverId
                     ? {
-                        ...s,
-                        channels: s.channels.map((c) =>
-                          c.id === existingChannel.id
-                            ? { ...c, isTemporary: false }
-                            : c
-                        ),
-                      }
+                      ...s,
+                      channels: s.channels.map((c) =>
+                        c.id === existingChannel.id
+                          ? { ...c, isTemporary: false }
+                          : c
+                      ),
+                    }
                     : s
                 ),
               }));
@@ -914,13 +931,13 @@ export const useMockStore = create<MockState>()(
           servers: state.servers.map((s) =>
             s.id === serverId
               ? {
-                  ...s,
-                  channels: s.channels.map((c) =>
-                    c.id === channelId
-                      ? { ...c, name: name.toLowerCase().replace(/\s+/g, "-"), type }
-                      : c
-                  ),
-                }
+                ...s,
+                channels: s.channels.map((c) =>
+                  c.id === channelId
+                    ? { ...c, name: name.toLowerCase().replace(/\s+/g, "-"), type }
+                    : c
+                ),
+              }
               : s
           ),
         }));
@@ -931,11 +948,11 @@ export const useMockStore = create<MockState>()(
           servers: state.servers.map((s) =>
             s.id === serverId
               ? {
-                  ...s,
-                  channels: s.channels.map((c) =>
-                    c.id === channelId ? { ...c, topic } : c
-                  ),
-                }
+                ...s,
+                channels: s.channels.map((c) =>
+                  c.id === channelId ? { ...c, topic } : c
+                ),
+              }
               : s
           ),
         }));
@@ -947,11 +964,11 @@ export const useMockStore = create<MockState>()(
           servers: state.servers.map((s) =>
             s.id === serverId
               ? {
-                  ...s,
-                  channels: s.channels.map((c) =>
-                    c.name.toLowerCase() === cleanName ? { ...c, topic } : c
-                  ),
-                }
+                ...s,
+                channels: s.channels.map((c) =>
+                  c.name.toLowerCase() === cleanName ? { ...c, topic } : c
+                ),
+              }
               : s
           ),
         }));
@@ -962,13 +979,13 @@ export const useMockStore = create<MockState>()(
           servers: state.servers.map((s) =>
             s.id === serverId
               ? {
-                  ...s,
-                  channels: s.channels.map((c) =>
-                    c.id === channelId || c.name.toLowerCase() === channelId.toLowerCase().replace(/^#/, "")
-                      ? { ...c, key: key || undefined }
-                      : c
-                  ),
-                }
+                ...s,
+                channels: s.channels.map((c) =>
+                  c.id === channelId || c.name.toLowerCase() === channelId.toLowerCase().replace(/^#/, "")
+                    ? { ...c, key: key || undefined }
+                    : c
+                ),
+              }
               : s
           ),
         }));
@@ -1009,13 +1026,13 @@ export const useMockStore = create<MockState>()(
           servers: state.servers.map((s) =>
             s.id === serverId
               ? {
-                  ...s,
-                  channels: s.channels.map((c) =>
-                    c.name.toLowerCase().replace(/^#/, "") === cleanChan
-                      ? { ...c, isTemporary }
-                      : c
-                  ),
-                }
+                ...s,
+                channels: s.channels.map((c) =>
+                  c.name.toLowerCase().replace(/^#/, "") === cleanChan
+                    ? { ...c, isTemporary }
+                    : c
+                ),
+              }
               : s
           ),
         }));
@@ -1056,11 +1073,11 @@ export const useMockStore = create<MockState>()(
                 servers: state.servers.map((serv) =>
                   serv.id === serverId
                     ? {
-                        ...serv,
-                        members: serv.members.map((m) =>
-                          m.id === exists.id ? updatedMember : m
-                        ),
-                      }
+                      ...serv,
+                      members: serv.members.map((m) =>
+                        m.id === exists.id ? updatedMember : m
+                      ),
+                    }
                     : serv
                 ),
               };
@@ -1341,17 +1358,17 @@ export const useMockStore = create<MockState>()(
           const updatedServers = state.servers.map((s) =>
             s.id === serverId
               ? {
-                  ...s,
-                  channels: s.channels.map((c) =>
-                    c.id === chId
-                      ? {
-                          ...c,
-                          isTemporary: isInviteOnly,
-                          modes: updatedFlags,
-                        }
-                      : c
-                  ),
-                }
+                ...s,
+                channels: s.channels.map((c) =>
+                  c.id === chId
+                    ? {
+                      ...c,
+                      isTemporary: isInviteOnly,
+                      modes: updatedFlags,
+                    }
+                    : c
+                ),
+              }
               : s
           );
 
@@ -2038,7 +2055,7 @@ export const useMockStore = create<MockState>()(
             }
           }
           const currentActive = state.activeConversations[serverId] || [];
-          
+
           const newActive = currentActive.includes(memberId) ? currentActive : [...currentActive, memberId];
 
           if (currentActive.length === newActive.length) return state;
@@ -2056,7 +2073,7 @@ export const useMockStore = create<MockState>()(
         set((state) => {
           const currentHistorical = state.historicalConversations[serverId] || [];
           if (currentHistorical.includes(memberId)) return state;
-          
+
           return {
             historicalConversations: {
               ...state.historicalConversations,
@@ -2350,20 +2367,20 @@ export const useMockStore = create<MockState>()(
             autoJoinChannels: Array.isArray(s.autoJoinChannels) ? s.autoJoinChannels : ["general", "test"],
             customCommands: Array.isArray(s.customCommands)
               ? s.customCommands
-                  .map((c: any) => ({
-                    trigger: String(c?.trigger || "").replace(/^\//, "").trim(),
-                    message: String(c?.message || "").trim(),
-                    description: String(c?.description || "").trim() || undefined,
-                    suggestions: Array.isArray(c?.suggestions)
-                      ? c.suggestions.map((x: any) => String(x || "").trim()).filter(Boolean)
-                      : typeof c?.suggestions === "string"
+                .map((c: any) => ({
+                  trigger: String(c?.trigger || "").replace(/^\//, "").trim(),
+                  message: String(c?.message || "").trim(),
+                  description: String(c?.description || "").trim() || undefined,
+                  suggestions: Array.isArray(c?.suggestions)
+                    ? c.suggestions.map((x: any) => String(x || "").trim()).filter(Boolean)
+                    : typeof c?.suggestions === "string"
                       ? String(c.suggestions)
-                          .split(",")
-                          .map((x: string) => x.trim())
-                          .filter(Boolean)
+                        .split(",")
+                        .map((x: string) => x.trim())
+                        .filter(Boolean)
                       : [],
-                  }))
-                  .filter((c: CustomCommand) => c.trigger && c.message)
+                }))
+                .filter((c: CustomCommand) => c.trigger && c.message)
               : [],
           };
         });
