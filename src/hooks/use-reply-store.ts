@@ -38,14 +38,73 @@ const previewText = (content: string, max = 120) => {
 
 export const buildReplyPreview = previewText;
 
-/** Classic IRC / HexChat-compatible highlight reply. */
-export const formatHexChatReply = (nick: string, message: string) => {
-  const body = message.trim();
-  const prefix = `${nick}: `;
-  if (body.toLowerCase().startsWith(prefix.toLowerCase())) {
+const IRC_NICK_RE = /^[A-Za-z0-9[\]\\`_^{}|-]{1,64}$/;
+const COMPAT_QUOTE_MARK = ": <";
+const COMPAT_REPLY_SEP = "> << ";
+
+const isIrcNick = (nick: string) => IRC_NICK_RE.test(nick);
+
+const sanitizeReplyPreview = (preview: string) =>
+  preview
+    .replace(/[<>\u001e\r\n]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+export const replyTagOverheadBytes = (msgid?: string) => {
+  const id = msgid?.trim();
+  if (!id) return 0;
+  return new TextEncoder().encode(`@+draft/reply=${id} `).length;
+};
+
+const utf8Len = (text: string) => new TextEncoder().encode(text).length;
+
+/** Legacy-visible reply: `nick: <preview> << message`. Shrinks preview to fit `maxBytes`. */
+export const formatCompatReply = (
+  nick: string,
+  preview: string,
+  message: string,
+  maxBytes: number
+) => {
+  const body = message.replace(/\r?\n/g, "\u0085");
+  if (!isIrcNick(nick) || body.startsWith("/") || body.startsWith("\x01")) {
     return body;
   }
-  return `${prefix}${body}`;
+
+  const nickPrefix = `${nick}: `;
+  if (body.toLowerCase().startsWith(nickPrefix.toLowerCase())) {
+    return body;
+  }
+
+  const fits = (value: string) => utf8Len(value) <= maxBytes;
+  let safePreview = sanitizeReplyPreview(preview);
+
+  while (safePreview.length > 0) {
+    const candidate = `${nickPrefix}<${safePreview}${COMPAT_REPLY_SEP}${body}`;
+    if (fits(candidate)) return candidate;
+    safePreview = safePreview.slice(0, -1);
+  }
+
+  const nickOnly = `${nickPrefix}${body}`;
+  if (fits(nickOnly)) return nickOnly;
+  return body;
+};
+
+/** Inverse of `formatCompatReply`. Leaves classic `Nick: text` untouched. */
+export const stripCompatReply = (content: string) => {
+  const colon = content.indexOf(COMPAT_QUOTE_MARK);
+  if (colon <= 0) return { body: content };
+  const nick = content.slice(0, colon).trim();
+  if (!isIrcNick(nick)) return { body: content };
+  const after = content.slice(colon + COMPAT_QUOTE_MARK.length);
+  const end = after.indexOf(COMPAT_REPLY_SEP);
+  if (end < 0) return { body: content };
+  const preview = after.slice(0, end);
+  if (preview.includes("<") || preview.includes("\u001e")) return { body: content };
+  return {
+    body: after.slice(end + COMPAT_REPLY_SEP.length),
+    nick,
+    preview,
+  };
 };
 
 export const focusChatMessage = (messageId: string) => {

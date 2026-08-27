@@ -26,7 +26,7 @@ import { ImageContextMenu } from "@/components/image-context-menu";
 import { isMediaUrl } from "@/lib/image-utils";
 import { commandRegistry, expandCustomCommand, listSlashSuggestions } from "@/lib/commands/command-system";
 import { useDraftStore, AttachedImage } from "@/hooks/use-draft-store";
-import { formatHexChatReply, useReplyStore } from "@/hooks/use-reply-store";
+import { formatCompatReply, replyTagOverheadBytes, useReplyStore } from "@/hooks/use-reply-store";
 
 export const getIrcByteCount = (text: string): number => {
   if (!text) return 0;
@@ -182,7 +182,24 @@ export const ChatInput = ({
   const serverUser = activeServer?.realname || currentNick;
 
   const maxBytes = getIrcMaxMessageBytes(targetName, currentNick, serverUser, serverHost);
-  const currentBytes = getIrcByteCount(content);
+  const wireBytesFor = useCallback(
+    (text: string) => {
+      if (!pendingReply || text.trim().startsWith("/")) {
+        return getIrcByteCount(text);
+      }
+      const tagBytes = replyTagOverheadBytes(pendingReply.msgid);
+      const bodyBudget = Math.max(0, maxBytes - tagBytes);
+      const wire = formatCompatReply(
+        pendingReply.nick,
+        pendingReply.preview,
+        text,
+        bodyBudget
+      );
+      return getIrcByteCount(wire) + tagBytes;
+    },
+    [pendingReply, maxBytes]
+  );
+  const currentBytes = wireBytesFor(content);
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const pasteText = e.clipboardData.getData("text");
@@ -194,7 +211,7 @@ export const ChatInput = ({
     const currentVal = form.getValues("content") || "";
 
     const nextVal = currentVal.slice(0, selectionStart) + pasteText + currentVal.slice(selectionEnd);
-    const nextBytes = getIrcByteCount(nextVal);
+    const nextBytes = wireBytesFor(nextVal);
 
     if (nextBytes > maxBytes) {
       e.preventDefault();
@@ -640,12 +657,7 @@ export const ChatInput = ({
 
     const linesToSend: string[] = [];
     if (textContent) {
-      // HexChat-compatible highlight reply in the same channel/DM.
-      linesToSend.push(
-        replyTarget && !textContent.startsWith("/")
-          ? formatHexChatReply(replyTarget.nick, textContent)
-          : textContent
-      );
+      linesToSend.push(textContent);
     }
     readyImages.forEach((img) => {
       if (img.url) linesToSend.push(img.url);
@@ -972,7 +984,7 @@ export const ChatInput = ({
                       {...field}
                       onChange={(e) => {
                         const newVal = e.target.value;
-                        const bytes = getIrcByteCount(newVal);
+                        const bytes = wireBytesFor(newVal);
                         if (bytes <= maxBytes) {
                           field.onChange(e);
                         }
@@ -1020,7 +1032,7 @@ export const ChatInput = ({
                         onChange={(emoji: string) => {
                           const currentVal = field.value || "";
                           const newText = `${currentVal ? currentVal + " " : ""}${emoji}`;
-                          const bytes = getIrcByteCount(newText);
+                          const bytes = wireBytesFor(newText);
                           if (bytes <= maxBytes) {
                             field.onChange(newText);
                             form.setFocus("content");

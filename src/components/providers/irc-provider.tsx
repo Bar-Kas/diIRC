@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useMockStore, getServerSelfMember, getServerActiveNick } from "@/lib/mock-store";
 import { useModalStore } from "@/hooks/use-modal-store";
 import { useDraftStore } from "@/hooks/use-draft-store";
-import { useReplyStore } from "@/hooks/use-reply-store";
+import { stripCompatReply, useReplyStore } from "@/hooks/use-reply-store";
 import { Server, ChannelType } from "@/types";
 import { extractFlag } from "@/lib/flag-tips";
 import {
@@ -26,6 +26,10 @@ interface IrcMessagePayload {
   msgid?: string | null;
   reply_to_msgid?: string | null;
   replyToMsgid?: string | null;
+  reply_nick?: string | null;
+  replyNick?: string | null;
+  reply_preview?: string | null;
+  replyPreview?: string | null;
   timestamp?: string;
 }
 
@@ -343,27 +347,41 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   const processIncomingPayload = useCallback(async (payload: IrcMessagePayload) => {
     const { sender, channel } = payload;
     const rawContent = payload.content;
-    const content = rawContent ? rawContent.replace(/\u0085/g, "\n") : "";
+    const incoming = rawContent ? rawContent.replace(/\u0085/g, "\n") : "";
+    const stripped = stripCompatReply(incoming);
+    const content = stripped.body;
     const serverId = payload.serverId || payload.server_id;
     const isSystem = payload.isSystem ?? payload.is_system;
     const msgid = payload.msgid || null;
     const replyToMsgid = payload.reply_to_msgid || payload.replyToMsgid || null;
+    const quoteNick = payload.reply_nick || payload.replyNick || stripped.nick;
+    const quotePreview = payload.reply_preview || payload.replyPreview || stripped.preview;
     const parent = replyToMsgid
       ? useReplyStore.getState().findByMsgid(replyToMsgid)
       : undefined;
+
+    let replyTo: { messageId: string; nick: string; preview: string; msgid?: string } | undefined;
+    if (parent) {
+      replyTo = {
+        messageId: parent.messageId,
+        nick: parent.nick,
+        preview: parent.preview,
+        msgid: replyToMsgid || undefined,
+      };
+    } else if (quoteNick) {
+      replyTo = {
+        messageId: "",
+        nick: quoteNick,
+        preview: quotePreview || "",
+        msgid: replyToMsgid || undefined,
+      };
+    }
     const ircMeta =
-      msgid || replyToMsgid || parent
+      msgid || replyToMsgid || replyTo
         ? {
             msgid: msgid || undefined,
             replyToMsgid: replyToMsgid || undefined,
-            replyTo: parent
-              ? {
-                  messageId: parent.messageId,
-                  nick: parent.nick,
-                  preview: parent.preview,
-                  msgid: replyToMsgid || undefined,
-                }
-              : undefined,
+            replyTo,
           }
         : undefined;
 
