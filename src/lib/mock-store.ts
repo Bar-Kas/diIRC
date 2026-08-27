@@ -217,6 +217,30 @@ const createIrcMember = (serverId: string, name: string, host?: string): Member 
   updatedAt: new Date().toISOString(),
 });
 
+export const isSystemMessage = (sender?: string, content?: string, isSystemFlag?: boolean): boolean => {
+  if (isSystemFlag) return true;
+  if (!sender && !content) return false;
+
+  const s = (sender || "").trim().toLowerCase();
+  if (s === "system" || s === "***" || s.startsWith("*")) return true;
+
+  if (content) {
+    if (
+      /\bhas joined\b/i.test(content) ||
+      /\bhas left\b/i.test(content) ||
+      /\bhas quit\b/i.test(content) ||
+      /\bis now known as\b/i.test(content) ||
+      /\bchanged topic to\b/i.test(content) ||
+      /\bwas kicked by\b/i.test(content) ||
+      /\bset mode\b/i.test(content)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 const mapLogEntries = (
   entries: LogPage["entries"],
   server: Server | undefined,
@@ -257,6 +281,7 @@ const mapLogEntries = (
       channelId: type === "channel" ? chatId : undefined,
       conversationId: type === "conversation" ? chatId : undefined,
       deleted: false,
+      isSystem: isSystemMessage(entry.sender, entry.content),
       createdAt,
       updatedAt: createdAt,
       ircMsgid: entry.msgid,
@@ -586,6 +611,7 @@ export const useMockStore = create<MockState>()(
         soundEnabled: true,
         soundPreset: "chime",
         dmSoundPreset: "chime",
+        soundCooldownMs: 3000,
         popupEnabled: true,
         taskbarHighlightEnabled: true,
         channelNotifications: "mentions",
@@ -2151,13 +2177,14 @@ export const useMockStore = create<MockState>()(
         }),
 
       addMessage: (channelId, member, content, fileUrl, isSystem, extras) => {
+        const effectiveIsSystem = isSystemMessage(member?.profile?.name, content, isSystem);
         const key = chatKey("channel", channelId);
         const state = get();
         const activeMsgs = state.activeChatKey === key ? (state.messages[channelId] || []) : [];
         const lastMsg = activeMsgs[activeMsgs.length - 1];
         if (MESSAGE_DEDUPLICATION_MODE === "A") {
           if (
-            isSystem &&
+            effectiveIsSystem &&
             lastMsg &&
             lastMsg.isSystem &&
             lastMsg.content === content &&
@@ -2176,7 +2203,7 @@ export const useMockStore = create<MockState>()(
           member,
           channelId,
           deleted: false,
-          isSystem,
+          isSystem: effectiveIsSystem,
           createdAt: msgTime,
           updatedAt: msgTime,
           ircMsgid: extras?.msgid,
@@ -2424,6 +2451,7 @@ export const useMockStore = create<MockState>()(
       },
 
       addDirectMessage: (conversationId, member, content, fileUrl, isSystem, extras) => {
+        const effectiveIsSystem = isSystemMessage(member?.profile?.name, content, isSystem);
         const msgTime = extras?.createdAt || new Date().toISOString();
         const newDm: DirectMessage = {
           id: `dm-${uuidv4().slice(0, 8)}`,
@@ -2433,7 +2461,7 @@ export const useMockStore = create<MockState>()(
           member,
           conversationId,
           deleted: false,
-          isSystem,
+          isSystem: effectiveIsSystem,
           createdAt: msgTime,
           updatedAt: msgTime,
           ircMsgid: extras?.msgid,

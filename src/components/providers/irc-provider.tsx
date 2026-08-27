@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useMockStore, getServerSelfMember, getServerActiveNick } from "@/lib/mock-store";
+import { useMockStore, getServerSelfMember, getServerActiveNick, isSystemMessage } from "@/lib/mock-store";
 import { useModalStore } from "@/hooks/use-modal-store";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { stripCompatReply, useReplyStore } from "@/hooks/use-reply-store";
@@ -12,6 +12,7 @@ import {
   resolveEffectiveNotificationSettings,
   triggerIncomingNotification,
   clearNotificationGroup,
+  checkIsMention,
 } from "@/lib/notification-service";
 import { IrcMultilineAccumulator } from "@/lib/irc-multiline-accumulator";
 
@@ -395,7 +396,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     const isChannelMsg = channel.startsWith("#") || channel.startsWith("&");
     const msgTimestamp = payload.timestamp;
     const isDummySender = sender === "***" || !sender || !sender.trim();
-    const effectiveIsSystem = isSystem || isDummySender;
+    const effectiveIsSystem = isSystemMessage(sender, content, isSystem || isDummySender);
 
     if (isDummySender && !isChannelMsg) {
       const store = useMockStore.getState();
@@ -687,9 +688,17 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
         // Fallback to document.hasFocus()
       }
 
-      const ourNick = targetServer.nicknames?.[0] || store.currentProfile.name;
-      const escapedNick = ourNick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const hasMention = new RegExp(`\\b${escapedNick}\\b`, "i").test(content);
+      const myNicks = Array.from(
+        new Set(
+          [
+            getServerActiveNick(targetServer),
+            targetServer.currentNick,
+            ...(targetServer.nicknames || []),
+            store.currentProfile?.name,
+          ].filter(Boolean) as string[]
+        )
+      );
+      const hasMention = checkIsMention(content, myNicks);
 
       if (!isCurrentChat || !isWindowFocused) {
         if (targetChannel?.id) {
@@ -715,6 +724,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             body: content,
             sender,
             tag: `chan:${targetServer.id}:${targetChannel?.id || channel}`,
+            hasMention,
             effectiveSettings,
           });
         }

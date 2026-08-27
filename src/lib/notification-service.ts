@@ -32,7 +32,7 @@ export function resolveEffectiveNotificationSettings(
     soundEnabled: global?.soundEnabled ?? true,
     soundPreset: global?.soundPreset ?? "chime",
     dmSoundPreset: global?.dmSoundPreset ?? "chime",
-    soundCooldownMs: global?.soundCooldownMs ?? 2500,
+    soundCooldownMs: global?.soundCooldownMs ?? 3000,
     popupEnabled: global?.popupEnabled ?? true,
     taskbarHighlightEnabled: global?.taskbarHighlightEnabled ?? true,
     channelNotifications: global?.channelNotifications ?? "mentions",
@@ -63,7 +63,7 @@ export function resolveEffectiveNotificationSettings(
     sound = channelOverride.sound === "enabled";
   }
 
-  let soundCooldownMs = globalDefaults.soundCooldownMs ?? 2500;
+  let soundCooldownMs = globalDefaults.soundCooldownMs ?? 3000;
   if (serverOverride?.soundCooldown !== undefined && serverOverride.soundCooldown !== "default") {
     soundCooldownMs = typeof serverOverride.soundCooldown === "number" ? serverOverride.soundCooldown : soundCooldownMs;
   }
@@ -141,11 +141,24 @@ export function resolveEffectiveNotificationSettings(
   };
 }
 
+export function checkIsMention(content: string, myNicks: string[]): boolean {
+  if (!content || !myNicks || myNicks.length === 0) return false;
+  return myNicks.some((nick) => {
+    if (!nick || !nick.trim()) return false;
+    const escaped = nick.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return (
+      new RegExp(`(?:^|\\s|@)${escaped}(?:[:,]?(?:\\s|$))`, "i").test(content) ||
+      new RegExp(`\\b${escaped}\\b`, "i").test(content)
+    );
+  });
+}
+
 export interface TriggerNotificationParams {
   title: string;
   body: string;
   sender?: string;
   tag?: string;
+  hasMention?: boolean;
   effectiveSettings: {
     sound: boolean;
     popup: boolean;
@@ -214,17 +227,18 @@ export async function triggerIncomingNotification({
   body,
   sender,
   tag = "default",
+  hasMention = false,
   effectiveSettings,
   soundPreset,
 }: TriggerNotificationParams): Promise<void> {
   const { sound, popup, taskbar, soundCooldownMs, customSoundUrl } = effectiveSettings;
   const toneToPlay = soundPreset || effectiveSettings.soundPreset || "chime";
 
-  // 1. Play Sound with Throttle/Cooldown per Tag
+  // 1. Play Sound with Throttle/Cooldown per Tag (mentions bypass cooldown)
   if (sound) {
     const now = Date.now();
     const lastPlayed = lastSoundPlayedByTag.get(tag) || 0;
-    if (now - lastPlayed >= soundCooldownMs) {
+    if (hasMention || now - lastPlayed >= soundCooldownMs) {
       lastSoundPlayedByTag.set(tag, now);
       playNotificationSound(toneToPlay, customSoundUrl);
     }
@@ -250,7 +264,7 @@ export async function triggerIncomingNotification({
 
     const now = Date.now();
     const lastPopup = lastPopupPlayedByTag.get(tag) || 0;
-    if (now - lastPopup >= soundCooldownMs) {
+    if (hasMention || now - lastPopup >= soundCooldownMs) {
       lastPopupPlayedByTag.set(tag, now);
 
       let finalTitle = group.baseTitle;

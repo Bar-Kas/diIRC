@@ -17,6 +17,7 @@ import { openExternalUrl } from "@/lib/system-utils";
 import { MarkdownRenderer } from "@/lib/markdown/markdown-renderer";
 import { extractUrlsFromMarkdownText, stripTrailingPunct, hasMarkdownSyntax } from "@/lib/markdown/markdown-utils";
 import { isBrokenHeader, stripSteganography } from "@/lib/markdown/multiline-steganography";
+import { checkIsMention } from "@/lib/notification-service";
 
 interface ChatItemProps {
   id: string;
@@ -166,13 +167,7 @@ const ChatItemInner = ({
 
   const isMention = useMemo(() => {
     if (isSystem || deleted || isSelf || !content) return false;
-    return myNicks.some((nick) => {
-      const escaped = nick.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      return (
-        new RegExp(`(?:^|\\s|@)${escaped}(?:[:,]?(?:\\s|$))`, "i").test(content) ||
-        new RegExp(`\\b${escaped}\\b`, "i").test(content)
-      );
-    });
+    return checkIsMention(content, myNicks);
   }, [content, isSystem, deleted, isSelf, myNicks]);
 
   const hasBrokenHeader = isBrokenHeader(content);

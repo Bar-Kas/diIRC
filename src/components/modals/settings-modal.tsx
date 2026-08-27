@@ -212,7 +212,7 @@ export const SettingsModal = () => {
               dmSoundPreset: notificationSettings.dmSoundPreset || "chime",
               customSoundUrl: notificationSettings.customSoundUrl,
               customDmSoundUrl: notificationSettings.customDmSoundUrl,
-              soundCooldown: notificationSettings.soundCooldownMs ?? 2500,
+              soundCooldown: notificationSettings.soundCooldownMs ?? 3000,
               popup: notificationSettings.popupEnabled,
               taskbar: notificationSettings.taskbarHighlightEnabled,
             }}

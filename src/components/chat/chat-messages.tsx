@@ -148,6 +148,7 @@ export const ChatMessages = ({
       const msgIndex = hasWelcome ? index - 1 : index;
       const msg = items[msgIndex];
       if (!msg) return 48;
+      if (msg.isSystem) return 28;
       if (msg.fileUrl) return 260;
       const content = msg.content || "";
       if (/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=))/i.test(content)) return 280;
