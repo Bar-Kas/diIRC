@@ -553,6 +553,7 @@ export const useMockStore = create<MockState>()(
         soundEnabled: true,
         soundPreset: "chime",
         dmSoundPreset: "chime",
+        soundCooldownMs: 3000,
         popupEnabled: true,
         taskbarHighlightEnabled: true,
         channelNotifications: "mentions",

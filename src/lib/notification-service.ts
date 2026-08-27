@@ -32,7 +32,7 @@ export function resolveEffectiveNotificationSettings(
     soundEnabled: global?.soundEnabled ?? true,
     soundPreset: global?.soundPreset ?? "chime",
     dmSoundPreset: global?.dmSoundPreset ?? "chime",
-    soundCooldownMs: global?.soundCooldownMs ?? 2500,
+    soundCooldownMs: global?.soundCooldownMs ?? 3000,
     popupEnabled: global?.popupEnabled ?? true,
     taskbarHighlightEnabled: global?.taskbarHighlightEnabled ?? true,
     channelNotifications: global?.channelNotifications ?? "mentions",
@@ -63,7 +63,7 @@ export function resolveEffectiveNotificationSettings(
     sound = channelOverride.sound === "enabled";
   }
 
-  let soundCooldownMs = globalDefaults.soundCooldownMs ?? 2500;
+  let soundCooldownMs = globalDefaults.soundCooldownMs ?? 3000;
   if (serverOverride?.soundCooldown !== undefined && serverOverride.soundCooldown !== "default") {
     soundCooldownMs = typeof serverOverride.soundCooldown === "number" ? serverOverride.soundCooldown : soundCooldownMs;
   }

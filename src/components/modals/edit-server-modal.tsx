@@ -105,7 +105,7 @@ export const EditServerModal = () => {
   const inheritedSoundStr = globalNotif?.soundEnabled ? "Enabled" : "Muted";
   const inheritedPopupStr = globalNotif?.popupEnabled ? "Enabled" : "Off";
   const inheritedTaskbarStr = globalNotif?.taskbarHighlightEnabled ? "Enabled" : "Off";
-  const inheritedCooldownSec = ((globalNotif?.soundCooldownMs ?? 2500) / 1000).toFixed(1);
+  const inheritedCooldownSec = ((globalNotif?.soundCooldownMs ?? 3000) / 1000).toFixed(1);
   const inheritedSoundPresetStr = globalNotif?.soundPreset || "chime";
   const inheritedDmSoundPresetStr = globalNotif?.dmSoundPreset || "chime";
 
