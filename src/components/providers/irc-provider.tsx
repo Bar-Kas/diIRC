@@ -11,6 +11,7 @@ import {
   resolveEffectiveNotificationSettings,
   triggerIncomingNotification,
   clearNotificationGroup,
+  checkIsMention,
 } from "@/lib/notification-service";
 import { IrcMultilineAccumulator } from "@/lib/irc-multiline-accumulator";
 
@@ -585,9 +586,17 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
         // Fallback to document.hasFocus()
       }
 
-      const ourNick = targetServer.nicknames?.[0] || store.currentProfile.name;
-      const escapedNick = ourNick.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const hasMention = new RegExp(`\\b${escapedNick}\\b`, "i").test(content);
+      const myNicks = Array.from(
+        new Set(
+          [
+            getServerActiveNick(targetServer),
+            targetServer.currentNick,
+            ...(targetServer.nicknames || []),
+            store.currentProfile?.name,
+          ].filter(Boolean) as string[]
+        )
+      );
+      const hasMention = checkIsMention(content, myNicks);
 
       if (!isCurrentChat || !isWindowFocused) {
         if (targetChannel?.id) {
@@ -613,6 +622,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             body: content,
             sender,
             tag: `chan:${targetServer.id}:${targetChannel?.id || channel}`,
+            hasMention,
             effectiveSettings,
           });
         }
