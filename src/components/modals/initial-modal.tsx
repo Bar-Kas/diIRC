@@ -36,7 +36,6 @@ const formSchema = z.object({
   username: z.string().optional(),
   realname: z.string().optional(),
   password: z.string().optional(),
-  channels: z.string().optional(),
   useTls: z.boolean().default(false),
   autoConnect: z.boolean().default(true),
   autoReconnect: z.boolean().default(true),
@@ -63,7 +62,6 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
       username: "",
       realname: "",
       password: "",
-      channels: "#test, #general",
       useTls: false,
       autoConnect: true,
       autoReconnect: true,
@@ -75,10 +73,6 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
-      const channelArray = values.channels
-        ? values.channels.split(",").map((c) => c.trim()).filter(Boolean)
-        : ["test", "general"];
-
       const newServer = addServer({
         name: values.name,
         host: values.host,
@@ -90,7 +84,6 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
         useTls: values.useTls,
         autoConnect: values.autoConnect,
         autoReconnect: values.autoReconnect,
-        autoJoinChannels: channelArray,
         imageUrl: values.imageUrl || "",
       });
 
@@ -117,7 +110,7 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
             Connect to your first IRC server
           </DialogTitle>
           <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400 text-xs sm:text-sm">
-            Configure host, port, nickname, and channels to connect to your IRC server.
+            Configure host, port, and nickname to connect to your IRC server.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -296,27 +289,6 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
                 )}
               />
             </div>
-
-            <FormField
-              control={form.control}
-              name="channels"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
-                    Channels (comma separated)
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      disabled={isLoading}
-                      className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10"
-                      placeholder="#test, #general"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
 
             <FormField
               control={form.control}

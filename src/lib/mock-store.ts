@@ -277,7 +277,6 @@ export interface AddServerOptions {
   realname?: string;
   password?: string;
   useTls: boolean;
-  autoJoinChannels?: string[];
   imageUrl?: string;
   autoConnect?: boolean;
   autoReconnect?: boolean;
@@ -296,7 +295,6 @@ export interface UpdateServerOptions {
   realname?: string;
   password?: string;
   useTls: boolean;
-  autoJoinChannels?: string[];
   imageUrl?: string;
   autoConnect?: boolean;
   autoReconnect?: boolean;
@@ -867,7 +865,6 @@ export const useMockStore = create<MockState>()(
         let useTls = false;
         let autoConnect = true;
         let autoReconnect = true;
-        let autoJoinChannels: string[] = ["general", "test"];
         let imageUrl = imageUrlParam || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80";
         let customCommands: CustomCommand[] = [];
 
@@ -882,10 +879,6 @@ export const useMockStore = create<MockState>()(
           useTls = optionsOrName.useTls ?? false;
           autoConnect = optionsOrName.autoConnect ?? true;
           autoReconnect = optionsOrName.autoReconnect ?? true;
-          const parseLegacyZncTimestamps = optionsOrName.parseLegacyZncTimestamps ?? false;
-          if (optionsOrName.autoJoinChannels && optionsOrName.autoJoinChannels.length > 0) {
-            autoJoinChannels = optionsOrName.autoJoinChannels;
-          }
           if (optionsOrName.imageUrl) {
             imageUrl = optionsOrName.imageUrl;
           }
@@ -894,27 +887,6 @@ export const useMockStore = create<MockState>()(
           }
         } else {
           name = optionsOrName;
-        }
-
-        const initialChannels: Channel[] = autoJoinChannels.map((ch) => {
-          const cleanName = ch.trim().replace(/^#/, "").toLowerCase().replace(/\s+/g, "-");
-          return {
-            id: `channel-${uuidv4().slice(0, 8)}`,
-            name: cleanName || "general",
-            type: ChannelType.TEXT,
-            profileId: get().currentProfile.id,
-            serverId: newServerId,
-          };
-        });
-
-        if (initialChannels.length === 0) {
-          initialChannels.push({
-            id: `channel-${uuidv4().slice(0, 8)}`,
-            name: "general",
-            type: ChannelType.TEXT,
-            profileId: get().currentProfile.id,
-            serverId: newServerId,
-          });
         }
 
         const primaryNick = nicknames[0] || get().currentProfile.name.replace(/\s+/g, "") || "ReactUser";
@@ -932,12 +904,11 @@ export const useMockStore = create<MockState>()(
           autoConnect,
           autoReconnect,
           parseLegacyZncTimestamps: typeof optionsOrName === "object" ? (optionsOrName.parseLegacyZncTimestamps ?? false) : false,
-          autoJoinChannels,
           customCommands,
           imageUrl,
           inviteCode: `invite-${uuidv4().slice(0, 8)}`,
           profileId: get().currentProfile.id,
-          channels: initialChannels,
+          channels: [],
           members: [
             {
               id: newMemberId,
@@ -969,20 +940,6 @@ export const useMockStore = create<MockState>()(
                 ? optionsOrName.nicknames
                 : s.nicknames;
               const primaryNick = newNicknames && newNicknames.length > 0 ? newNicknames[0] : "ReactUser";
-
-              const updatedChannels = optionsOrName.autoJoinChannels && optionsOrName.autoJoinChannels.length > 0
-                ? optionsOrName.autoJoinChannels.map((ch) => {
-                    const cleanName = ch.trim().replace(/^#/, "").toLowerCase().replace(/\s+/g, "-");
-                    const existing = s.channels.find((c) => c.name.trim().replace(/^#/, "").toLowerCase() === cleanName);
-                    return existing || {
-                      id: `channel-${uuidv4().slice(0, 8)}`,
-                      name: cleanName,
-                      type: ChannelType.TEXT,
-                      profileId: get().currentProfile.id,
-                      serverId,
-                    };
-                  })
-                : s.channels;
 
               const updatedUsername = optionsOrName.username ?? s.username;
               const updatedRealname = optionsOrName.realname ?? s.realname;
@@ -1035,10 +992,9 @@ export const useMockStore = create<MockState>()(
                 autoConnect: optionsOrName.autoConnect ?? s.autoConnect ?? true,
                 autoReconnect: optionsOrName.autoReconnect ?? s.autoReconnect ?? true,
                 parseLegacyZncTimestamps: optionsOrName.parseLegacyZncTimestamps ?? s.parseLegacyZncTimestamps,
-                autoJoinChannels: optionsOrName.autoJoinChannels || s.autoJoinChannels,
                 customCommands: optionsOrName.customCommands ?? s.customCommands,
                 imageUrl: optionsOrName.imageUrl || s.imageUrl,
-                channels: updatedChannels,
+                channels: s.channels,
                 members: updatedMembers,
                 notificationSettings: optionsOrName.notificationSettings ?? s.notificationSettings,
                 motdPolicy: optionsOrName.motdPolicy ?? s.motdPolicy,
@@ -2593,7 +2549,6 @@ export const useMockStore = create<MockState>()(
             channels: Array.isArray(s.channels) ? s.channels : [],
             members,
             useTls: s.useTls ?? false,
-            autoJoinChannels: Array.isArray(s.autoJoinChannels) ? s.autoJoinChannels : ["general", "test"],
             customCommands: Array.isArray(s.customCommands)
               ? s.customCommands
                   .map((c: any) => ({

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { spawn, execSync } from 'node:child_process';
 import net from 'node:net';
 
-const tauriBinary = path.resolve('./src-tauri/target/release/app');
+const tauriBinary = path.resolve('./src-tauri/target/debug/app');
 const screenshotDir = path.resolve('./test/reports/screenshots');
 
 let driverAliceProcess = null;

@@ -16,9 +16,7 @@ export const ServerPage = () => {
 
   useEffect(() => {
     if (server) {
-      const initialChannel = 
-        server.channels.find((c) => c.name === "general" && c.type === ChannelType.TEXT) ||
-        server.channels[0];
+      const initialChannel = server.channels[0];
 
       if (initialChannel) {
         navigate(`/servers/${server.id}/channels/${initialChannel.id}`, { replace: true });

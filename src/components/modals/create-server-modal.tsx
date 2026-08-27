@@ -23,7 +23,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { ChannelInput } from "@/components/ui/channel-input";
 import { Plus, Trash } from "lucide-react";
 import { useModal } from "@/hooks/use-modal-store";
 import { useMockStore } from "@/lib/mock-store";
@@ -46,7 +45,6 @@ const formSchema = z.object({
   username: z.string().optional(),
   realname: z.string().optional(),
   password: z.string().optional(),
-  channels: z.array(z.object({ value: z.string() })).min(1),
   useTls: z.boolean().default(false),
   autoConnect: z.boolean().default(true),
   autoReconnect: z.boolean().default(true),
@@ -79,7 +77,6 @@ export const CreateServerModal = () => {
       username: "",
       realname: "",
       password: "",
-      channels: [{ value: "test" }, { value: "general" }],
       useTls: false,
       autoConnect: true,
       autoReconnect: true,
@@ -93,11 +90,6 @@ export const CreateServerModal = () => {
     control: form.control,
   });
 
-  const { fields: channelFields, append: appendChannel, remove: removeChannel } = useFieldArray({
-    name: "channels",
-    control: form.control,
-  });
-
   useEffect(() => {
     if (isModalOpen) {
       form.reset({
@@ -107,7 +99,6 @@ export const CreateServerModal = () => {
         nicknames: [{ value: currentProfile.name.replace(/\s+/g, "") || "ReactUser" }],
         realname: "",
         password: "",
-        channels: [{ value: "test" }, { value: "general" }],
         useTls: false,
         autoConnect: true,
         autoReconnect: true,
@@ -121,10 +112,6 @@ export const CreateServerModal = () => {
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
-      const channelArray = values.channels
-        .map(c => c.value.trim().replace(/^#/, ""))
-        .filter(Boolean);
-
       const nickArray = values.nicknames
         .map(n => n.value.trim())
         .filter(Boolean);
@@ -141,7 +128,6 @@ export const CreateServerModal = () => {
         autoConnect: values.autoConnect,
         autoReconnect: values.autoReconnect,
         parseLegacyZncTimestamps: values.parseLegacyZncTimestamps,
-        autoJoinChannels: channelArray,
         customCommands: normalizeCustomCommandsFromForm(values.customCommands),
       });
 
@@ -169,7 +155,7 @@ export const CreateServerModal = () => {
             Add IRC server
           </DialogTitle>
           <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400 text-xs sm:text-sm">
-            Configure host, port, nickname, and channels to connect to your IRC server.
+            Configure host, port, and nickname to connect to your IRC server.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -349,43 +335,6 @@ export const CreateServerModal = () => {
                             <Trash 
                               className="w-4 h-4 cursor-pointer text-zinc-400 hover:text-rose-500 transition shrink-0" 
                               onClick={() => removeNick(index)} 
-                            />
-                          )}
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              ))}
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider flex items-center justify-between">
-                Channels
-                <Plus 
-                  className="w-4 h-4 cursor-pointer text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100 transition" 
-                  onClick={() => appendChannel({ value: "" })} 
-                />
-              </FormLabel>
-              {channelFields.map((field, index) => (
-                <FormField
-                  key={field.id}
-                  control={form.control}
-                  name={`channels.${index}.value`}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <div className="flex items-center gap-2">
-                          <ChannelInput
-                            disabled={isLoading}
-                            placeholder="general"
-                            {...field}
-                          />
-                          {index > 0 && (
-                            <Trash 
-                              className="w-4 h-4 cursor-pointer text-zinc-400 hover:text-rose-500 transition shrink-0" 
-                              onClick={() => removeChannel(index)} 
                             />
                           )}
                         </div>

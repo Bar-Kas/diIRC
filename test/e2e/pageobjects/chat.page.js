@@ -16,8 +16,8 @@ class ChatPage {
     const nameInput = await browserInstance.$('input[name="name"]');
     await nameInput.waitForExist({ timeout: 25000 });
 
-    // Fill and submit the form directly via DOM to bypass flaky WebKitGTK input simulation
-    await browserInstance.execute((nickVal, chanVal, portVal) => {
+    // Fill and submit initial server connection form directly via DOM
+    await browserInstance.execute((nickVal, portVal) => {
         const setReactValue = (selector, value) => {
             const el = document.querySelector(selector);
             if (!el) return;
@@ -32,13 +32,55 @@ class ChatPage {
         setReactValue('input[name="host"]', '127.0.0.1');
         setReactValue('input[name="port"]', portVal);
         setReactValue('input[name="nickname"]', nickVal);
-        setReactValue('input[name="channels"]', chanVal);
 
         const form = document.querySelector('form');
         if (form) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    }, nick, channelName, port.toString());
+    }, nick, port.toString());
 
-    // 8. Wait for the chat textarea to become available, indicating successful login & navigation
+    await browserInstance.pause(500);
+
+    // If channel is not yet joined, open join channel modal & submit channelName
+    await browserInstance.execute((chanVal) => {
+        const setReactValue = (selector, value) => {
+            const el = document.querySelector(selector);
+            if (!el) return;
+            const lastValue = el.value;
+            el.value = value;
+            const tracker = el._valueTracker;
+            if (tracker) tracker.setValue(lastValue);
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+
+        const textarea = document.querySelector('textarea');
+        if (!textarea) {
+            const buttons = Array.from(document.querySelectorAll('button'));
+            const joinBtn = buttons.find(b => b.textContent.includes('Join') || b.textContent.includes('channel'));
+            if (joinBtn) joinBtn.click();
+        }
+    }, channelName);
+
+    await browserInstance.pause(500);
+
+    await browserInstance.execute((chanVal) => {
+        const setReactValue = (selector, value) => {
+            const el = document.querySelector(selector);
+            if (!el) return;
+            const lastValue = el.value;
+            el.value = value;
+            const tracker = el._valueTracker;
+            if (tracker) tracker.setValue(lastValue);
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+
+        const channelInput = document.querySelector('input[name="name"]');
+        if (channelInput) {
+            setReactValue('input[name="name"]', chanVal);
+            const form = channelInput.closest('form');
+            if (form) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        }
+    }, channelName);
+
+    // Wait for the chat textarea to become available, indicating successful login & navigation
     let textarea;
     try {
       textarea = await browserInstance.$('textarea');

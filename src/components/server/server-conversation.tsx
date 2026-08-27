@@ -60,7 +60,7 @@ export const ServerConversation = ({
     e.stopPropagation();
     closeConversation(server.id, member.id);
     if (isSelected) {
-      const defaultChannel = server.channels.find((c) => c.name === "general") || server.channels[0];
+      const defaultChannel = server.channels[0];
       if (defaultChannel) {
         navigate(`/servers/${server.id}/channels/${defaultChannel.id}`);
       } else {
