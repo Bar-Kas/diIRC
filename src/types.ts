@@ -179,6 +179,9 @@ export interface CustomCommand {
 export type MotdDisplayPolicy = "always" | "on_change" | "never";
 export type ServerMotdDisplayPolicy = "default" | "always" | "on_change" | "never" | "never_globally";
 
+export type UserDisplayNameMode = "nickname" | "realname" | "username";
+export type ServerUserDisplayNameMode = "default" | "nickname" | "realname" | "username";
+
 export interface Server {
   id: string;
   name: string;
@@ -203,12 +206,14 @@ export interface Server {
   notificationSettings?: NotificationOverride;
   motd?: string[];
   motdPolicy?: ServerMotdDisplayPolicy;
+  displayNameMode?: ServerUserDisplayNameMode;
   parseLegacyZncTimestamps?: boolean;
 }
 
 export type ServerWithMembersWithProfiles = Server;
 
 export type StatusDisplayMode = "always" | "on_error" | "disabled";
+
 
 
 

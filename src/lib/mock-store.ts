@@ -19,6 +19,8 @@ import {
   CustomCommand,
   MotdDisplayPolicy,
   ServerMotdDisplayPolicy,
+  UserDisplayNameMode,
+  ServerUserDisplayNameMode,
 } from "@/types";
 import { 
   INITIAL_SERVERS, 
@@ -281,6 +283,7 @@ export interface AddServerOptions {
   parseLegacyZncTimestamps?: boolean;
   customCommands?: CustomCommand[];
   notificationSettings?: NotificationOverride;
+  displayNameMode?: ServerUserDisplayNameMode;
 }
 
 export interface UpdateServerOptions {
@@ -299,6 +302,7 @@ export interface UpdateServerOptions {
   customCommands?: CustomCommand[];
   notificationSettings?: NotificationOverride;
   motdPolicy?: ServerMotdDisplayPolicy;
+  displayNameMode?: ServerUserDisplayNameMode;
 }
 
 export type { StatusDisplayMode };
@@ -348,6 +352,8 @@ interface MockState {
   dmSortOrder: "opening" | "alphabetical";
   setSortDmByUnread: (enabled: boolean) => void;
   setDmSortOrder: (order: "opening" | "alphabetical") => void;
+  userDisplayNameMode: UserDisplayNameMode;
+  setUserDisplayNameMode: (mode: UserDisplayNameMode) => void;
 
   // Connection Actions
   setIrcConnected: (serverId: string, isConnected: boolean, error?: string | null) => void;
@@ -581,6 +587,8 @@ export const useMockStore = create<MockState>()(
           },
         })),
       serverMotdSeenHashes: {},
+      userDisplayNameMode: "nickname",
+      setUserDisplayNameMode: (mode: UserDisplayNameMode) => set({ userDisplayNameMode: mode }),
       markServerMotdSeen: (serverId: string, motd: string[]) => {
         const hash = computeMotdHash(motd);
         if (!hash) return;
@@ -1027,6 +1035,7 @@ export const useMockStore = create<MockState>()(
                 members: updatedMembers,
                 notificationSettings: optionsOrName.notificationSettings ?? s.notificationSettings,
                 motdPolicy: optionsOrName.motdPolicy ?? s.motdPolicy,
+                displayNameMode: optionsOrName.displayNameMode ?? s.displayNameMode,
               };
             } else {
               return {
@@ -2598,6 +2607,7 @@ export const useMockStore = create<MockState>()(
           };
         });
         return {
+          userDisplayNameMode: "nickname",
           ...persistedState,
           servers: sanitizedServers,
           messages: {},

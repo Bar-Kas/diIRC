@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ChannelInput } from "@/components/ui/channel-input";
-import { Plus, Trash, Bell, Volume2, Monitor, Clock, ScrollText } from "lucide-react";
+import { Plus, Trash, Bell, Volume2, Monitor, Clock, ScrollText, Sparkles } from "lucide-react";
 import { useModal } from "@/hooks/use-modal-store";
 import { useMockStore } from "@/lib/mock-store";
 import {
@@ -33,6 +33,7 @@ import {
   ChannelNotificationOverrideValue,
   DmNotificationOverrideValue,
   ServerMotdDisplayPolicy,
+  ServerUserDisplayNameMode,
 } from "@/types";
 import { NotificationSettingsFields } from "@/components/notifications/notification-settings-fields";
 import { CustomCommandsFields, normalizeCustomCommandsFromForm } from "@/components/server/custom-commands-fields";
@@ -84,6 +85,7 @@ export const EditServerModal = () => {
 
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
   const [motdPolicyOverride, setMotdPolicyOverride] = useState<ServerMotdDisplayPolicy>("default");
+  const [displayNameModeOverride, setDisplayNameModeOverride] = useState<ServerUserDisplayNameMode>("default");
   const [channelNotificationsOverride, setChannelNotificationsOverride] = useState<ChannelNotificationOverrideValue>("default");
   const [dmNotificationsOverride, setDmNotificationsOverride] = useState<DmNotificationOverrideValue>("default");
   const [soundOverride, setSoundOverride] = useState<NotificationOverrideValue>("default");
@@ -161,6 +163,7 @@ export const EditServerModal = () => {
           ? serverMotdPolicies[server.id]
           : server.motdPolicy || "default"
       );
+      setDisplayNameModeOverride(server.displayNameMode || "default");
 
       form.reset({
         name: server.name || "",
@@ -211,6 +214,7 @@ export const EditServerModal = () => {
         autoJoinChannels: channelArray,
         customCommands: normalizeCustomCommandsFromForm(values.customCommands),
         motdPolicy: motdPolicyOverride,
+        displayNameMode: displayNameModeOverride,
         notificationSettings: {
           channelNotifications: channelNotificationsOverride,
           dmNotifications: dmNotificationsOverride,
@@ -615,6 +619,31 @@ export const EditServerModal = () => {
                   <option value="always">Always show on connect</option>
                   <option value="never">Don't show again (this server)</option>
                   <option value="never_globally">Don't show again (all servers)</option>
+                </select>
+              </div>
+
+              {/* SECTION: DISPLAY NAME MODE OVERRIDE */}
+              <div className="flex flex-col rounded-xl border border-zinc-300/80 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-3.5 space-y-2.5 shadow-sm">
+                <div className="flex items-center gap-x-2">
+                  <Sparkles className="w-4 h-4 text-indigo-500" />
+                  <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-200">
+                    User display name format
+                  </label>
+                </div>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                  Select how member names are displayed for this server.
+                </p>
+                <select
+                  value={displayNameModeOverride}
+                  onChange={(e) => setDisplayNameModeOverride(e.target.value as ServerUserDisplayNameMode)}
+                  className="w-full bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  <option value="default">
+                    Default (Use app setting)
+                  </option>
+                  <option value="nickname">Nickname</option>
+                  <option value="realname">RealName</option>
+                  <option value="username">Username</option>
                 </select>
               </div>
 

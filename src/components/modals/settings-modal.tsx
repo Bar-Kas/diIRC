@@ -42,7 +42,7 @@ import {
   ScrollText,
 } from "lucide-react";
 import { StatusDisplayMode, formatMessageDate } from "@/lib/mock-store";
-import { MotdDisplayPolicy } from "@/types";
+import { MotdDisplayPolicy, UserDisplayNameMode } from "@/types";
 import { playNotificationSound, SoundPreset } from "@/lib/notification-sound";
 import { requestDesktopNotificationPermission } from "@/lib/notification-service";
 import { NotificationSettingsFields } from "@/components/notifications/notification-settings-fields";
@@ -108,6 +108,9 @@ export const SettingsModal = () => {
 
   const globalMotdPolicy = useMockStore((state) => state.globalMotdPolicy) || "on_change";
   const setGlobalMotdPolicy = useMockStore((state) => state.setGlobalMotdPolicy);
+
+  const userDisplayNameMode = useMockStore((state) => state.userDisplayNameMode) || "nickname";
+  const setUserDisplayNameMode = useMockStore((state) => state.setUserDisplayNameMode);
 
   const [checkStatus, setCheckStatus] = useState<"idle" | "checking" | "upToDate" | "available" | "error">("idle");
   const [foundUpdate, setFoundUpdate] = useState<Update | null>(null);
@@ -379,6 +382,29 @@ export const SettingsModal = () => {
               </div>
             </div>
           </div>
+
+          {/* SECTION: USER DISPLAY NAME FORMAT */}
+          <div className="flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-3 shadow-sm transition">
+            <div className="flex items-center gap-x-2">
+              <Sparkles className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
+              <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                User display name format
+              </label>
+            </div>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+              Select default member name format across chat messages, user lists, and hover cards.
+            </p>
+            <select
+              value={userDisplayNameMode}
+              onChange={(e) => setUserDisplayNameMode(e.target.value as UserDisplayNameMode)}
+              className="w-full bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              <option value="nickname">Nickname</option>
+              <option value="realname">RealName (fallback to nickname)</option>
+              <option value="username">Username (fallback to nickname)</option>
+            </select>
+          </div>
+
           {/* Compact Mode */}
           <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
             <div className="space-y-0.5 pr-4">

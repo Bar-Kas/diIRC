@@ -18,12 +18,9 @@ interface UserHoverCardProps {
   align?: "start" | "center" | "end";
 }
 
-export const getMemberDisplayName = (
-  member: Member & { profile: Profile },
-  _server?: Server
-): string => {
-  return member.profile.name;
-};
+import { getMemberDisplayName } from "@/lib/display-name-utils";
+export { getMemberDisplayName };
+
 
 export const UserHoverCard = ({
   member,
