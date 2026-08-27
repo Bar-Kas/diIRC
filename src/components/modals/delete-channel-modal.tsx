@@ -50,7 +50,7 @@ export const DeleteChannelModal = () => {
           </DialogTitle>
           <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400">
             Are you sure you want to leave <span className="text-indigo-600 dark:text-indigo-400 font-semibold">#{channel?.name}</span>? <br />
-            All messages in this channel will be permanently deleted.
+            Messages sent to this channel will no longer reach you.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 px-6 py-4 flex items-center justify-between">
