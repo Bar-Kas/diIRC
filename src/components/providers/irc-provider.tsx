@@ -167,6 +167,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
           host: server.host || "127.0.0.1",
           port: server.port || 6667,
           nicknames: nicks,
+          username: server.username || "",
           realname: server.realname || "",
           password: server.password || "",
           channels: server.channels.map(c => ({
@@ -216,6 +217,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
         host: server.host || "127.0.0.1",
         port: server.port || 6667,
         nicks,
+        username: server.username || "",
         realname: server.realname || "",
         password: server.password || "",
         useTls: server.useTls || false,

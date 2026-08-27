@@ -273,6 +273,7 @@ export interface AddServerOptions {
   host: string;
   port: number;
   nicknames: string[];
+  username?: string;
   realname?: string;
   password?: string;
   useTls: boolean;
@@ -291,6 +292,7 @@ export interface UpdateServerOptions {
   host: string;
   port: number;
   nicknames?: string[];
+  username?: string;
   realname?: string;
   password?: string;
   useTls: boolean;
@@ -859,6 +861,7 @@ export const useMockStore = create<MockState>()(
         let host = "127.0.0.1";
         let port = 6667;
         let nicknames = [get().currentProfile.name.replace(/\s+/g, "") || "ReactUser"];
+        let username = "";
         let realname = "";
         let password = "";
         let useTls = false;
@@ -873,6 +876,7 @@ export const useMockStore = create<MockState>()(
           host = optionsOrName.host || host;
           port = optionsOrName.port || port;
           nicknames = optionsOrName.nicknames || nicknames;
+          username = optionsOrName.username || "";
           realname = optionsOrName.realname || "";
           password = optionsOrName.password || "";
           useTls = optionsOrName.useTls ?? false;
@@ -921,6 +925,7 @@ export const useMockStore = create<MockState>()(
           host,
           port,
           nicknames,
+          username,
           realname,
           password,
           useTls,
@@ -979,6 +984,7 @@ export const useMockStore = create<MockState>()(
                   })
                 : s.channels;
 
+              const updatedUsername = optionsOrName.username ?? s.username;
               const updatedRealname = optionsOrName.realname ?? s.realname;
               const updatedMembers = s.members.map((m) => {
                 if (m.profileId === get().currentProfile.id || m.id.startsWith("member-")) {
@@ -1022,6 +1028,7 @@ export const useMockStore = create<MockState>()(
                 host: optionsOrName.host || s.host,
                 port: optionsOrName.port || s.port,
                 nicknames: newNicknames,
+                username: updatedUsername,
                 realname: updatedRealname,
                 password: optionsOrName.password ?? s.password,
                 useTls: optionsOrName.useTls ?? s.useTls,

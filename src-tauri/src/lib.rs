@@ -263,6 +263,8 @@ struct IrcConnectParams {
     port: u16,
     nicknames: Vec<String>,
     #[serde(default)]
+    username: Option<String>,
+    #[serde(default)]
     realname: Option<String>,
     #[serde(default)]
     password: Option<String>,
@@ -1111,7 +1113,10 @@ async fn connect_irc(
 
     let config = Config {
         nickname: Some(primary_nickname.clone()),
-        username: Some(primary_nickname.clone()),
+        username: params
+            .username
+            .filter(|s| !s.is_empty())
+            .or(Some(primary_nickname.clone())),
         realname: params
             .realname
             .filter(|s| !s.is_empty())

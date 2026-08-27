@@ -49,6 +49,7 @@ const formSchema = z.object({
         .refine((val) => !/\s/.test(val), { message: "Nickname cannot contain spaces." }),
     })
   ).min(1),
+  username: z.string().optional(),
   realname: z.string().optional(),
   password: z.string().optional(),
   channels: z.array(z.object({ value: z.string() })).min(1),
@@ -170,6 +171,7 @@ export const EditServerModal = () => {
         host: server.host || "127.0.0.1",
         port: server.port || 6667,
         nicknames: defaultNicks,
+        username: server.username || "",
         realname: server.realname || "",
         password: server.password || "",
         channels: defaultChannels,
@@ -205,6 +207,7 @@ export const EditServerModal = () => {
         host: values.host,
         port: values.port,
         nicknames: nickArray,
+        username: values.username || "",
         realname: values.realname || "",
         password: values.password || "",
         useTls: values.useTls,
@@ -383,6 +386,27 @@ export const EditServerModal = () => {
                         disabled={isLoading}
                         className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10 w-full"
                         placeholder="Optional"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="username"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
+                      Username (optional)
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        disabled={isLoading}
+                        className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10 w-full"
+                        placeholder="Ident (defaults to primary nickname)"
                         {...field}
                       />
                     </FormControl>

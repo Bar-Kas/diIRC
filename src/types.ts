@@ -196,6 +196,7 @@ export interface Server {
   port?: number;
   nicknames?: string[];
   currentNick?: string;
+  username?: string;
   realname?: string;
   password?: string;
   useTls?: boolean;

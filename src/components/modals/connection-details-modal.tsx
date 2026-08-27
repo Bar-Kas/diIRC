@@ -47,6 +47,7 @@ export const ConnectionDetailsModal = () => {
           host: activeServer.host || "127.0.0.1",
           port: activeServer.port || 6667,
           nicknames: nicks,
+          username: activeServer.username || "",
           realname: activeServer.realname || "",
           password: activeServer.password || "",
           channels: activeServer.channels.map((c) => ({
@@ -96,6 +97,11 @@ export const ConnectionDetailsModal = () => {
                     {activeServer?.name} ({activeServer?.host || "127.0.0.1"}:{activeServer?.port || 6667})
                     {activeServer?.useTls && " • TLS"}
                   </p>
+                  {activeServer?.username && (
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 font-mono">
+                      Username: {activeServer.username}
+                    </p>
+                  )}
                 </div>
               </div>
 

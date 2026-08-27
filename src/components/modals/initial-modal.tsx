@@ -33,6 +33,7 @@ const formSchema = z.object({
   nickname: z.string()
     .min(1, { message: "Nickname is required." })
     .refine((val) => !/\s/.test(val), { message: "Nickname cannot contain spaces." }),
+  username: z.string().optional(),
   realname: z.string().optional(),
   password: z.string().optional(),
   channels: z.string().optional(),
@@ -59,6 +60,7 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
       host: "127.0.0.1",
       port: 6667,
       nickname: currentProfile.name.replace(/\s+/g, "") || "ReactUser",
+      username: "",
       realname: "",
       password: "",
       channels: "#test, #general",
@@ -82,6 +84,7 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
         host: values.host,
         port: values.port,
         nicknames: [values.nickname],
+        username: values.username || "",
         realname: values.realname || "",
         password: values.password || "",
         useTls: values.useTls,
@@ -206,6 +209,27 @@ export const InitialModal = ({ isOpen = true, onClose }: { isOpen?: boolean; onC
                 />
               </div>
             </div>
+
+            <FormField
+              control={form.control}
+              name="username"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
+                    Username (optional)
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      disabled={isLoading}
+                      className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10"
+                      placeholder="Ident (defaults to primary nickname)"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <FormField
               control={form.control}
