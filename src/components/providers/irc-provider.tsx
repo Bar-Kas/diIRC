@@ -624,7 +624,6 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     if (targetChannel) {
-    if (targetChannel) {
       const created = addMessage(
         targetChannel.id,
         mockMember as any,
