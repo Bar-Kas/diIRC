@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useMockStore, getServerSelfMember, getServerActiveNick } from "@/lib/mock-store";
+import { useMockStore, getServerSelfMember, getServerActiveNick, isSystemMessage } from "@/lib/mock-store";
 import { useModalStore } from "@/hooks/use-modal-store";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { Server, ChannelType } from "@/types";
@@ -325,7 +325,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     const isChannelMsg = channel.startsWith("#") || channel.startsWith("&");
     const msgTimestamp = payload.timestamp;
     const isDummySender = sender === "***" || !sender || !sender.trim();
-    const effectiveIsSystem = isSystem || isDummySender;
+    const effectiveIsSystem = isSystemMessage(sender, content, isSystem || isDummySender);
 
     if (isDummySender && !isChannelMsg) {
       const store = useMockStore.getState();
