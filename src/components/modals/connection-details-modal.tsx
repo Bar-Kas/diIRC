@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useModal } from "@/hooks/use-modal-store";
 import { useConnectionStatus } from "@/hooks/use-connection-status";
 import { useMockStore } from "@/lib/mock-store";
-import { AlertCircle, CheckCircle2, RefreshCw, Shield, Wifi, Globe } from "lucide-react";
+import { AlertCircle, CheckCircle2, RefreshCw, Shield, Wifi, Globe, Unplug } from "lucide-react";
 
 export const ConnectionDetailsModal = () => {
   const { isOpen, onClose, type, data } = useModal();
@@ -22,6 +22,8 @@ export const ConnectionDetailsModal = () => {
   const currentProfile = useMockStore((state) => state.currentProfile);
   const uploadConfig = useMockStore((state) => state.uploadConfig);
   const setIrcConnected = useMockStore((state) => state.setIrcConnected);
+  const disconnectServer = useMockStore((state) => state.disconnectServer);
+  const connectServer = useMockStore((state) => state.connectServer);
 
   const targetServerId = data?.serverId || data?.server?.id || params?.serverId;
   const activeServer = (targetServerId ? servers.find((s) => s.id === targetServerId) : null) || servers[0];
@@ -34,34 +36,10 @@ export const ConnectionDetailsModal = () => {
     if (!activeServer || isReconnecting) return;
     setIsReconnecting(true);
 
-    const nicks = activeServer.nicknames && activeServer.nicknames.length > 0
-      ? activeServer.nicknames
-      : [activeServer.nicknames?.[0] || currentProfile.name.replace(/\s+/g, "") || "ReactUser"];
-
     try {
-      await invoke("disconnect_irc", { serverId: activeServer.id }).catch(() => { });
-      await new Promise((res) => setTimeout(res, 300));
-      await invoke("connect_irc", {
-        params: {
-          serverId: activeServer.id,
-          host: activeServer.host || "127.0.0.1",
-          port: activeServer.port || 6667,
-          nicknames: nicks,
-          username: activeServer.username || "",
-          realname: activeServer.realname || "",
-          password: activeServer.password || "",
-          channels: activeServer.channels.map((c) => ({
-            name: c.name,
-            password: c.key || null,
-          })),
-          useTls: activeServer.useTls || false,
-          parseLegacyZncTimestamps: activeServer.parseLegacyZncTimestamps || false,
-        },
-      });
+      await connectServer(activeServer.id);
     } catch (err: any) {
       console.error("Reconnection failed:", err);
-      const errMsg = err instanceof Error ? err.message : String(err);
-      setIrcConnected(activeServer.id, false, errMsg);
     } finally {
       setIsReconnecting(false);
     }
@@ -116,16 +94,32 @@ export const ConnectionDetailsModal = () => {
                   {irc ? "Connected" : "Disconnected"}
                 </span>
 
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleReconnect}
-                  disabled={isReconnecting}
-                  className="h-8 px-2.5 text-xs gap-x-1"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isReconnecting ? "animate-spin" : ""}`} />
-                  {isReconnecting ? "Connecting..." : "Reconnect"}
-                </Button>
+                {irc ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      if (activeServer) {
+                        await disconnectServer(activeServer.id);
+                      }
+                    }}
+                    className="h-8 px-2.5 text-xs gap-x-1 border-rose-200 dark:border-rose-900/50 hover:bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                  >
+                    <Unplug className="w-3.5 h-3.5" />
+                    Disconnect
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleReconnect}
+                    disabled={isReconnecting}
+                    className="h-8 px-2.5 text-xs gap-x-1"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isReconnecting ? "animate-spin" : ""}`} />
+                    {isReconnecting ? "Connecting..." : "Connect"}
+                  </Button>
+                )}
               </div>
             </div>
 

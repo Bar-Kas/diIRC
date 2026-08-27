@@ -332,6 +332,7 @@ interface MockState {
   urlAuthRules: UrlAuthRule[];
   ircConnectedServers: Record<string, boolean>;
   ircConnectionErrors: Record<string, string | null>;
+  manuallyDisconnectedServers: Record<string, boolean>;
   statusDisplayMode: StatusDisplayMode;
   dateFormatPreset: string;
   customDateFormat: string;
@@ -358,6 +359,8 @@ interface MockState {
   // Connection Actions
   setIrcConnected: (serverId: string, isConnected: boolean, error?: string | null) => void;
   setIrcConnectionError: (serverId: string, error: string | null) => void;
+  disconnectServer: (serverId: string) => Promise<void>;
+  connectServer: (serverId: string) => Promise<void>;
   setServerActiveNick: (serverId: string, activeNick: string) => void;
   handleNickChange: (serverId: string, oldNick: string, newNick: string) => void;
   setStatusDisplayMode: (mode: StatusDisplayMode) => void;
@@ -552,6 +555,7 @@ export const useMockStore = create<MockState>()(
       urlAuthRules: [],
       ircConnectedServers: {},
       ircConnectionErrors: {},
+      manuallyDisconnectedServers: {},
       statusDisplayMode: "always",
       dateFormatPreset: "d MMM yyyy, HH:mm",
       customDateFormat: "yyyy/MM/dd HH:mm",
@@ -644,6 +648,59 @@ export const useMockStore = create<MockState>()(
             [serverId]: error,
           },
         })),
+
+      disconnectServer: async (serverId: string) => {
+        set((state) => ({
+          manuallyDisconnectedServers: {
+            ...state.manuallyDisconnectedServers,
+            [serverId]: true,
+          },
+        }));
+        try {
+          await invoke("disconnect_irc", { serverId }).catch(() => {});
+        } catch (_) {}
+        get().setIrcConnected(serverId, false, null);
+      },
+
+      connectServer: async (serverId: string) => {
+        set((state) => ({
+          manuallyDisconnectedServers: {
+            ...state.manuallyDisconnectedServers,
+            [serverId]: false,
+          },
+        }));
+        get().setIrcConnectionError(serverId, null);
+        const server = get().servers.find((s) => s.id === serverId);
+        if (server) {
+          const currentProfile = get().currentProfile;
+          const nicks = server.nicknames && server.nicknames.length > 0
+            ? server.nicknames
+            : [server.nicknames?.[0] || currentProfile.name.replace(/\s+/g, "") || "ReactUser"];
+          try {
+            await invoke("connect_irc", {
+              params: {
+                serverId: server.id,
+                host: server.host || "127.0.0.1",
+                port: server.port || 6667,
+                nicknames: nicks,
+                username: server.username || "",
+                realname: server.realname || "",
+                password: server.password || "",
+                channels: server.channels.map((c) => ({
+                  name: c.name,
+                  password: c.key || null,
+                })),
+                useTls: server.useTls || false,
+                parseLegacyZncTimestamps: server.parseLegacyZncTimestamps || false,
+              },
+            });
+          } catch (e) {
+            console.error(`Failed to connect IRC server ${server.name}:`, e);
+            const errMsg = e instanceof Error ? e.message : String(e);
+            get().setIrcConnected(serverId, false, errMsg);
+          }
+        }
+      },
 
       setServerActiveNick: (serverId: string, activeNick: string) => {
         set((state) => {
@@ -924,6 +981,9 @@ export const useMockStore = create<MockState>()(
 
         set((state) => ({
           servers: [...state.servers, newServer],
+          manuallyDisconnectedServers: newServer.autoConnect === false
+            ? { ...state.manuallyDisconnectedServers, [newServerId]: true }
+            : state.manuallyDisconnectedServers,
         }));
 
         return newServer;
@@ -932,6 +992,8 @@ export const useMockStore = create<MockState>()(
       updateServer: (serverId, optionsOrName, imageUrlParam) => {
         set((state) => {
           const nextMessages = { ...state.messages };
+          let nextManuallyDisconnected = { ...state.manuallyDisconnectedServers };
+          
           const updatedServers = state.servers.map((s) => {
             if (s.id !== serverId) return s;
 
@@ -979,7 +1041,7 @@ export const useMockStore = create<MockState>()(
                 }
               });
 
-              return {
+              const newServer = {
                 ...s,
                 name: optionsOrName.name || s.name,
                 host: optionsOrName.host || s.host,
@@ -1000,6 +1062,14 @@ export const useMockStore = create<MockState>()(
                 motdPolicy: optionsOrName.motdPolicy ?? s.motdPolicy,
                 displayNameMode: optionsOrName.displayNameMode ?? s.displayNameMode,
               };
+
+              if (newServer.autoConnect === false && s.autoConnect !== false) {
+                nextManuallyDisconnected[s.id] = true;
+              } else if (newServer.autoConnect === true && s.autoConnect === false) {
+                delete nextManuallyDisconnected[s.id];
+              }
+
+              return newServer;
             } else {
               return {
                 ...s,
@@ -1012,6 +1082,7 @@ export const useMockStore = create<MockState>()(
           return {
             servers: updatedServers,
             messages: nextMessages,
+            manuallyDisconnectedServers: nextManuallyDisconnected,
           };
         });
       },
@@ -1027,10 +1098,13 @@ export const useMockStore = create<MockState>()(
         set((state) => {
           const nextMessages = { ...state.messages };
           channelIdsToRemove.forEach((id) => delete nextMessages[id]);
+          const nextManuallyDisconnected = { ...state.manuallyDisconnectedServers };
+          delete nextManuallyDisconnected[serverId];
 
           return {
             servers: state.servers.filter((s) => s.id !== serverId),
             messages: nextMessages,
+            manuallyDisconnectedServers: nextManuallyDisconnected,
           };
         });
       },
@@ -2503,6 +2577,9 @@ export const useMockStore = create<MockState>()(
         directMessages: {},
         activeChatKey: null,
         unreadState: {},
+        manuallyDisconnectedServers: {},
+        ircConnectedServers: {},
+        ircConnectionErrors: {},
         historyLoadToken: 0,
         historyWindow: EMPTY_HISTORY_WINDOW,
         servers: state.servers.map((s) => ({
@@ -2518,6 +2595,7 @@ export const useMockStore = create<MockState>()(
             directMessages: {},
             activeChatKey: null,
             unreadState: {},
+            manuallyDisconnectedServers: {},
             historyLoadToken: 0,
             historyWindow: EMPTY_HISTORY_WINDOW,
           };
@@ -2568,6 +2646,14 @@ export const useMockStore = create<MockState>()(
               : [],
           };
         });
+
+        const manuallyDisconnectedServers: Record<string, boolean> = {};
+        sanitizedServers.forEach((s: any) => {
+          if (s.autoConnect === false) {
+            manuallyDisconnectedServers[s.id] = true;
+          }
+        });
+
         return {
           userDisplayNameMode: "nickname",
           ...persistedState,
@@ -2575,6 +2661,9 @@ export const useMockStore = create<MockState>()(
           messages: {},
           directMessages: {},
           activeChatKey: null,
+          manuallyDisconnectedServers,
+          ircConnectedServers: {},
+          ircConnectionErrors: {},
           historyLoadToken: 0,
           historyWindow: EMPTY_HISTORY_WINDOW,
         };

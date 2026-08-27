@@ -206,8 +206,9 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     servers.forEach(async (server) => {
-      // Respect autoConnect setting on startup/config load
+      // Respect autoConnect setting and manual disconnect flag
       if (server.autoConnect === false) return;
+      if (useMockStore.getState().manuallyDisconnectedServers[server.id]) return;
 
       const nicks = server.nicknames && server.nicknames.length > 0 
         ? server.nicknames 
@@ -270,12 +271,14 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   // Auto-reconnect loop with exponential backoff & error throttling for disconnected servers
   useEffect(() => {
     const interval = setInterval(() => {
-      const { ircConnectedServers, ircConnectionErrors, servers: currentServers } = useMockStore.getState();
+      const { ircConnectedServers, ircConnectionErrors, manuallyDisconnectedServers, servers: currentServers } = useMockStore.getState();
       const now = Date.now();
 
       currentServers.forEach((server) => {
-        // Skip if server auto-reconnect is disabled
+        // Skip if server auto-connect or auto-reconnect is disabled, or manually disconnected
+        if (server.autoConnect === false) return;
         if (server.autoReconnect === false) return;
+        if (manuallyDisconnectedServers[server.id]) return;
 
         // Skip if already connected or currently connecting
         if (ircConnectedServers[server.id] || connectingRef.current.has(server.id)) {

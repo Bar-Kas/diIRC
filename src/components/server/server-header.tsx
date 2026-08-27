@@ -1,10 +1,11 @@
 import { ServerWithMembersWithProfiles } from "@/types";
 import { 
   ChevronDown, 
-  LogOut, 
   PlusCircle, 
   Settings, 
-  Trash
+  Trash,
+  Unplug,
+  Radio,
 } from "lucide-react";
 
 import { 
@@ -15,6 +16,7 @@ import {
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { useModal } from "@/hooks/use-modal-store";
+import { useMockStore } from "@/lib/mock-store";
 
 interface ServerHeaderProps {
   server: ServerWithMembersWithProfiles;
@@ -24,6 +26,8 @@ export const ServerHeader = ({
   server
 }: ServerHeaderProps) => {
   const { onOpen } = useModal();
+  const isIrcConnected = useMockStore((state) => !!state.ircConnectedServers[server.id]);
+  const connectServer = useMockStore((state) => state.connectServer);
 
   return (
     <DropdownMenu>
@@ -55,6 +59,23 @@ export const ServerHeader = ({
           Join channel
           <PlusCircle className="h-4 w-4 ml-auto" />
         </DropdownMenuItem>
+        {isIrcConnected ? (
+          <DropdownMenuItem
+            onSelect={() => setTimeout(() => onOpen("leaveServer", { server }), 0)}
+            className="px-3 py-2 text-sm cursor-pointer text-amber-600 dark:text-amber-400"
+          >
+            Disconnect from server
+            <Unplug className="h-4 w-4 ml-auto" />
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem
+            onSelect={() => connectServer(server.id)}
+            className="px-3 py-2 text-sm cursor-pointer text-emerald-600 dark:text-emerald-400 font-semibold"
+          >
+            Connect to server
+            <Radio className="h-4 w-4 ml-auto" />
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={() => setTimeout(() => onOpen("deleteServer", { server }), 0)}

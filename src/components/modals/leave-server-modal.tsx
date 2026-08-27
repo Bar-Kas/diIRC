@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 
 import {
   Dialog,
@@ -15,8 +14,7 @@ import { useMockStore } from "@/lib/mock-store";
 
 export const LeaveServerModal = () => {
   const { isOpen, onClose, type, data } = useModal();
-  const navigate = useNavigate();
-  const deleteServer = useMockStore((state) => state.deleteServer);
+  const disconnectServer = useMockStore((state) => state.disconnectServer);
 
   const isModalOpen = isOpen && type === "leaveServer";
   const { server } = data;
@@ -27,10 +25,9 @@ export const LeaveServerModal = () => {
     try {
       setIsLoading(true);
       if (server?.id) {
-        deleteServer(server.id);
+        await disconnectServer(server.id);
       }
       onClose();
-      navigate("/");
     } catch (error) {
       console.log(error);
     } finally {
@@ -43,10 +40,10 @@ export const LeaveServerModal = () => {
       <DialogContent className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden max-w-md border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl">
         <DialogHeader className="pt-6 px-6 space-y-2">
           <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
-            Leave server
+            Disconnect from server
           </DialogTitle>
           <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400">
-            Are you sure you want to leave <span className="font-semibold text-indigo-600 dark:text-indigo-400">{server?.name}</span>?
+            Are you sure you want to disconnect from <span className="font-semibold text-indigo-600 dark:text-indigo-400">{server?.name}</span>? You can reconnect at any time.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 px-6 py-4 flex items-center justify-between">
@@ -63,7 +60,7 @@ export const LeaveServerModal = () => {
             onClick={onClick}
             className="bg-rose-600 hover:bg-rose-700 text-white font-medium px-6 shadow-sm"
           >
-            Leave server
+            Disconnect
           </Button>
         </DialogFooter>
       </DialogContent>
