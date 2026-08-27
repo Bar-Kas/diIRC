@@ -5,7 +5,7 @@ import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
 import { MessageSquare } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useMockStore } from "@/lib/mock-store";
+import { useMockStore, getServerActiveNick } from "@/lib/mock-store";
 import { UserRoleIcon, getHighestChannelRole } from "@/components/user-role-icon";
 import { UserContextMenu } from "@/components/user-context-menu";
 
@@ -20,22 +20,8 @@ interface UserHoverCardProps {
 
 export const getMemberDisplayName = (
   member: Member & { profile: Profile },
-  server?: Server
+  _server?: Server
 ): string => {
-  const currentProfile = useMockStore.getState().currentProfile;
-  const isSelf =
-    member.profileId === currentProfile.id ||
-    (server?.nicknames?.[0] &&
-      member.profile.name.toLowerCase() === server.nicknames[0].toLowerCase());
-
-  if (isSelf && server?.realname && server.realname.trim().length > 0 && server.realname.toLowerCase() !== "realname") {
-    return server.realname;
-  }
-
-  if (member.profile.realname && member.profile.realname.trim().length > 0 && member.profile.realname.toLowerCase() !== "realname") {
-    return member.profile.realname;
-  }
-
   return member.profile.name;
 };
 

@@ -122,8 +122,8 @@ export const ChannelSettingsModal = () => {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
-      <DialogContent className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden sm:max-w-lg border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-2xl">
-        <DialogHeader className="pt-6 px-6 space-y-1">
+      <DialogContent className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden sm:max-w-lg max-h-[90vh] flex flex-col border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-2xl">
+        <DialogHeader className="pt-6 px-6 space-y-1 shrink-0">
           <DialogTitle className="text-xl text-center font-bold flex items-center justify-center gap-x-2 text-zinc-900 dark:text-zinc-100">
             <Settings className="w-5 h-5 text-indigo-500" />
             {isDm ? "Private Conversation Settings" : "Channel Settings"}
@@ -133,7 +133,7 @@ export const ChannelSettingsModal = () => {
           </p>
         </DialogHeader>
 
-        <div className="px-6 py-4 max-h-[70vh] overflow-y-auto">
+        <div className="px-6 py-4 flex-1 min-h-0 overflow-y-auto">
           <NotificationSettingsFields
             mode={isDm ? "dm" : "channel"}
             values={{
@@ -168,7 +168,7 @@ export const ChannelSettingsModal = () => {
           />
         </div>
 
-        <div className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 px-6 py-4 flex items-center justify-between">
+        <div className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 px-6 py-4 flex items-center justify-between shrink-0">
           <Button
             type="button"
             variant="ghost"

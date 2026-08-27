@@ -58,6 +58,7 @@ export function App() {
       defaultTheme="dark"
       enableSystem={false}
       storageKey="discord-theme"
+      themes={["light", "dark", "oled"]}
     >
       <SocketProvider>
         <BrowserRouter>

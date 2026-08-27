@@ -85,6 +85,7 @@ export const ChatMessages = ({
   const jumpToLatest = useMockStore((state) => state.jumpToLatest);
   const clearHistoryLoading = useMockStore((state) => state.clearHistoryLoading);
   const markTailSeen = useMockStore((state) => state.markTailSeen);
+  const clearUnreadMarker = useMockStore((state) => state.clearUnreadMarker);
   const setTailPinned = useMockStore((state) => state.setTailPinned);
   const unreadCount = useMockStore((state) => state.historyWindow.unreadCount);
   const firstUnreadMessageId = useMockStore((state) => state.historyWindow.firstUnreadMessageId);
@@ -160,7 +161,13 @@ export const ChatMessages = ({
       if (/https?:\/\/[^\s]+/i.test(content)) return 140 + extraHeight;
 
       const prev = items[msgIndex - 1];
-      const isSameAuthor = prev && prev.member?.id === msg.member?.id;
+      const isSameAuthor = Boolean(
+        prev &&
+          (prev.member?.id === msg.member?.id ||
+            (prev.member?.profile?.name &&
+              msg.member?.profile?.name &&
+              prev.member.profile.name.toLowerCase() === msg.member.profile.name.toLowerCase()))
+      );
       const isWithin5Min = prev && (new Date(msg.createdAt).getTime() - new Date(prev.createdAt).getTime() < 300000);
       const isCompact = Boolean(!isFirstUnread && isSameAuthor && isWithin5Min && !prev.deleted && !prev.isSystem && !msg.isSystem);
 
@@ -641,7 +648,8 @@ export const ChatMessages = ({
   const handleMarkAsRead = useCallback(() => {
     const lastMsgId = items.length > 0 ? items[items.length - 1].id : null;
     markTailSeen(lastMsgId);
-  }, [items, markTailSeen]);
+    clearUnreadMarker();
+  }, [items, markTailSeen, clearUnreadMarker]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -757,7 +765,7 @@ export const ChatMessages = ({
 
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
-      {firstUnreadMessageId !== null && unreadCount > 0 && (
+      {unreadCount > 0 && (
         <TopUnreadBar
           unreadCount={unreadCount}
           onJumpToUnread={handleJumpToUnread}
@@ -794,7 +802,13 @@ export const ChatMessages = ({
             if (!message) return null;
 
             const prevMessage = items[messageIndex - 1];
-            const isSameAuthor = prevMessage?.member?.id === message.member?.id;
+            const isSameAuthor = Boolean(
+              prevMessage &&
+                (prevMessage.member?.id === message.member?.id ||
+                  (prevMessage.member?.profile?.name &&
+                    message.member?.profile?.name &&
+                    prevMessage.member.profile.name.toLowerCase() === message.member.profile.name.toLowerCase()))
+            );
             const isWithinTimeLimit = prevMessage
               && new Date(message.createdAt).getTime() - new Date(prevMessage.createdAt).getTime() < 300000;
             const isFirstUnread = firstUnreadMessageId !== null && message.id === firstUnreadMessageId;

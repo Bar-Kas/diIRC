@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useMockStore, getServerSelfMember } from "@/lib/mock-store";
+import { useMockStore, getServerSelfMember, getServerActiveNick } from "@/lib/mock-store";
 import { useModalStore } from "@/hooks/use-modal-store";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { Server, ChannelType } from "@/types";
@@ -22,6 +22,7 @@ interface IrcMessagePayload {
   channel: string;
   isSystem?: boolean;
   is_system?: boolean;
+  timestamp?: string;
 }
 
 interface IrcUserEventPayload {
@@ -172,6 +173,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             password: c.key || null
           })),
           useTls: server.useTls || false,
+          parseLegacyZncTimestamps: server.parseLegacyZncTimestamps || false,
         }
       });
       console.log(`Initiated IRC connection for server ${server.name} (${server.id}) with nicks:`, nicks);
@@ -321,6 +323,34 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     if (!targetServer) return;
 
     const isChannelMsg = channel.startsWith("#") || channel.startsWith("&");
+    const msgTimestamp = payload.timestamp;
+    const isDummySender = sender === "***" || !sender || !sender.trim();
+    const effectiveIsSystem = isSystem || isDummySender;
+
+    if (isDummySender && !isChannelMsg) {
+      const store = useMockStore.getState();
+      const targetChan = targetServer.channels.find((c) => `channel:${c.id}` === store.activeChatKey) || targetServer.channels[0];
+      if (targetChan) {
+        const dummyMember = {
+          id: `irc-${sender || "System"}`,
+          profileId: `profile-${sender || "System"}`,
+          profile: {
+            id: `profile-${sender || "System"}`,
+            userId: `user-${sender || "System"}`,
+            name: sender || "System",
+            imageUrl: "",
+            email: "system@irc.local",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          serverId: targetServer.id,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        addMessage(targetChan.id, dummyMember as any, content, null, true, msgTimestamp);
+      }
+      return;
+    }
 
     if (!isChannelMsg) {
       // Private Message (PM)
@@ -391,7 +421,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               .catch(console.error);
           }
 
-          store.addDirectMessage(conversationId, systemMember as any, content, null, true);
+          store.addDirectMessage(conversationId, systemMember as any, content, null, true, msgTimestamp);
           store.openConversation(targetServer.id, targetMember.id);
           if (!isSendError) {
             store.addToHistoricalConversations(targetServer.id, targetMember.id);
@@ -400,26 +430,28 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
         return;
       }
 
-      let senderMember = store.addServerMember(targetServer.id, sender);
       const currentMember = getServerSelfMember(targetServer, store.currentProfile.id);
+      const isSelf =
+        (targetServer.nicknames && targetServer.nicknames.some((n) => n.toLowerCase() === sender.toLowerCase())) ||
+        (currentMember?.profile?.name && currentMember.profile.name.toLowerCase() === sender.toLowerCase());
 
-      if (senderMember && currentMember) {
-        const conversationId = [currentMember.id, senderMember.id].sort().join("-");
-        store.addDirectMessage(conversationId, senderMember, content, null);
-        store.openConversation(targetServer.id, senderMember.id);
-        store.addToHistoricalConversations(targetServer.id, senderMember.id);
+      const otherNick = isSelf ? channel : sender;
+      let otherMember = store.addServerMember(targetServer.id, otherNick);
 
-        // Trigger notification for DM
-        const isSelf =
-          (targetServer.nicknames && targetServer.nicknames.some((n) => n.toLowerCase() === sender.toLowerCase())) ||
-          (currentMember.profile?.name && currentMember.profile.name.toLowerCase() === sender.toLowerCase());
+      if (otherMember && currentMember) {
+        const conversationId = [currentMember.id, otherMember.id].sort().join("-");
+        const authorMember = isSelf ? currentMember : otherMember;
+
+        store.addDirectMessage(conversationId, authorMember, content, null, false, msgTimestamp);
+        store.openConversation(targetServer.id, otherMember.id);
+        store.addToHistoricalConversations(targetServer.id, otherMember.id);
 
         if (!isSelf) {
           const activeKey = store.activeChatKey;
           const isCurrentChat =
-            activeKey === `conversation:${targetServer.id}:${senderMember.id}` ||
+            activeKey === `conversation:${targetServer.id}:${otherMember.id}` ||
             activeKey === `conversation:${targetServer.id}:${conversationId}` ||
-            activeKey === `conversation:${senderMember.id}` ||
+            activeKey === `conversation:${otherMember.id}` ||
             activeKey === `conversation:${conversationId}`;
           let isWindowFocused = typeof document !== "undefined" && document.hasFocus();
           
@@ -452,7 +484,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
                 title: `${sender} (Private Message)`,
                 body: content,
                 sender,
-                tag: `dm:${targetServer.id}:${senderMember.id}`,
+                tag: `dm:${targetServer.id}:${otherMember.id}`,
                 effectiveSettings,
               });
             }
@@ -524,9 +556,9 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     if (targetChannel) {
-      addMessage(targetChannel.id, mockMember as any, content, null, isSystem);
+      addMessage(targetChannel.id, mockMember as any, content, null, effectiveIsSystem, msgTimestamp);
     } else if (targetServer.channels.length > 0) {
-      addMessage(targetServer.channels[0].id, mockMember as any, content, null, isSystem);
+      addMessage(targetServer.channels[0].id, mockMember as any, content, null, effectiveIsSystem, msgTimestamp);
     }
 
     // Trigger notification for channel message
@@ -739,6 +771,56 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     setupStatusListener();
+
+    let unlistenWelcomeNickFn: (() => void) | null = null;
+    const setupWelcomeNickListener = async () => {
+      try {
+        const unlistenWelcomeNick = await listen<{ server_id: string; welcome_nick: string }>(
+          "irc_welcome_nick",
+          (event) => {
+            const { server_id, welcome_nick } = event.payload;
+            if (server_id && welcome_nick) {
+              useMockStore.getState().setServerActiveNick(server_id, welcome_nick);
+            }
+          }
+        );
+
+        if (isCancelled) {
+          unlistenWelcomeNick();
+        } else {
+          unlistenWelcomeNickFn = unlistenWelcomeNick;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC welcome nick listener:", error);
+      }
+    };
+
+    setupWelcomeNickListener();
+
+    let unlistenNickChangeFn: (() => void) | null = null;
+    const setupNickChangeListener = async () => {
+      try {
+        const unlistenNickChange = await listen<{ server_id: string; old_nick: string; new_nick: string }>(
+          "irc_nick_change",
+          (event) => {
+            const { server_id, old_nick, new_nick } = event.payload;
+            if (server_id && old_nick && new_nick) {
+              useMockStore.getState().handleNickChange(server_id, old_nick, new_nick);
+            }
+          }
+        );
+
+        if (isCancelled) {
+          unlistenNickChange();
+        } else {
+          unlistenNickChangeFn = unlistenNickChange;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC nick change listener:", error);
+      }
+    };
+
+    setupNickChangeListener();
 
     let unlistenTopicFn: (() => void) | null = null;
     const setupTopicListener = async () => {
@@ -1018,7 +1100,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             store.setUserAway(server_id, nick, away, reason);
 
             const server = store.servers.find((s) => s.id === server_id);
-            const ourNick = server?.nicknames?.[0] || store.currentProfile.name;
+            const ourNick = server ? getServerActiveNick(server) : store.currentProfile.name;
             if (nick.toLowerCase() === ourNick.toLowerCase()) {
               store.setSelfAway(server_id, away);
             }
@@ -1039,48 +1121,22 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
     return () => {
       isCancelled = true;
-      if (unlistenFn) {
-        unlistenFn();
-      }
-      if (unlistenUsersFn) {
-        unlistenUsersFn();
-      }
-      if (unlistenStatusFn) {
-        unlistenStatusFn();
-      }
-      if (unlistenTopicFn) {
-        unlistenTopicFn();
-      }
-      if (unlistenOpsFn) {
-        unlistenOpsFn();
-      }
-      if (unlistenTopicErrorFn) {
-        unlistenTopicErrorFn();
-      }
-      if (unlistenBadKeyFn) {
-        unlistenBadKeyFn();
-      }
-      if (unlistenInviteOnlyFn) {
-        unlistenInviteOnlyFn();
-      }
-      if (unlistenInvitedFn) {
-        unlistenInvitedFn();
-      }
-      if (unlistenModeFn) {
-        unlistenModeFn();
-      }
-      if (unlistenModeErrorFn) {
-        unlistenModeErrorFn();
-      }
-      if (unlistenMotdFn) {
-        unlistenMotdFn();
-      }
-      if (unlistenAwayFn) {
-        unlistenAwayFn();
-      }
-      if (unlistenHostFn) {
-        unlistenHostFn();
-      }
+      if (unlistenFn) unlistenFn();
+      if (unlistenUsersFn) unlistenUsersFn();
+      if (unlistenHostFn) unlistenHostFn();
+      if (unlistenStatusFn) unlistenStatusFn();
+      if (unlistenWelcomeNickFn) unlistenWelcomeNickFn();
+      if (unlistenNickChangeFn) unlistenNickChangeFn();
+      if (unlistenTopicFn) unlistenTopicFn();
+      if (unlistenOpsFn) unlistenOpsFn();
+      if (unlistenTopicErrorFn) unlistenTopicErrorFn();
+      if (unlistenBadKeyFn) unlistenBadKeyFn();
+      if (unlistenInviteOnlyFn) unlistenInviteOnlyFn();
+      if (unlistenInvitedFn) unlistenInvitedFn();
+      if (unlistenModeFn) unlistenModeFn();
+      if (unlistenModeErrorFn) unlistenModeErrorFn();
+      if (unlistenMotdFn) unlistenMotdFn();
+      if (unlistenAwayFn) unlistenAwayFn();
     };
   }, [addMessage, addServerMember, removeServerMember, setIrcConnected]);
 
