@@ -1,4 +1,4 @@
-import { useParams, Outlet, useNavigate } from "react-router-dom";
+import { useParams, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { NavigationSidebar } from "@/components/navigation/navigation-sidebar";
 import { ServerSidebar } from "@/components/server/server-sidebar";
@@ -9,21 +9,24 @@ import { cn } from "@/lib/utils";
 
 export const MainLayout = () => {
   const { serverId } = useParams();
+  const location = useLocation();
   const servers = useMockStore((state) => state.servers);
   const navigate = useNavigate();
   const showNavigationSidebar = useUIStore((state) => state.showNavigationSidebar);
   const showServerSidebar = useUIStore((state) => state.showServerSidebar);
 
-  const activeServer = servers.find((s) => s.id === serverId) || servers[0];
+  const activeServer = servers.find((s) => s.id === serverId) || (serverId ? undefined : servers[0]);
   const activeMotd = useMockStore((state) => (activeServer ? state.serverMotds[activeServer.id] : undefined));
 
   useEffect(() => {
     if (!servers || servers.length === 0) {
-      navigate("/", { replace: true });
+      if (location.pathname !== "/") {
+        navigate("/", { replace: true });
+      }
     } else if (!activeServer) {
       navigate(`/servers/${servers[0].id}`, { replace: true });
     }
-  }, [serverId, activeServer, servers, navigate]);
+  }, [serverId, activeServer, servers, navigate, location.pathname]);
 
   // Auto-display MOTD when clicking/selecting a server if policy permits
   useEffect(() => {
@@ -39,10 +42,6 @@ export const MainLayout = () => {
       store.markServerMotdSeen(activeServer.id, activeMotd);
     }
   }, [activeServer?.id, activeMotd]);
-
-  if (!activeServer) {
-    return null;
-  }
 
   // Calculate dynamic left padding for main content
   let mainPaddingClass = "md:pl-0";
@@ -66,7 +65,7 @@ export const MainLayout = () => {
           "hidden md:flex h-full w-60 z-20 flex-col fixed inset-y-0 transition-all duration-200",
           showNavigationSidebar ? "left-[72px]" : "left-0"
         )}>
-          <ServerSidebar serverId={activeServer.id} />
+          <ServerSidebar serverId={activeServer?.id ?? ""} />
         </div>
       )}
       <main className={cn(

@@ -13,10 +13,20 @@ class ChatPage {
     // WebKitGTK blocks localStorage injection from WDIO (The operation is insecure),
     // so we automate the actual login form instead.
 
+    // If server form is not visible yet, click 'Add server' button
+    await browserInstance.execute(() => {
+      const nameInput = document.querySelector('input[name="name"]');
+      if (!nameInput) {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const addBtn = buttons.find(b => b.textContent.includes('Add server') || b.textContent.includes('Add a server'));
+        if (addBtn) addBtn.click();
+      }
+    });
+
     const nameInput = await browserInstance.$('input[name="name"]');
     await nameInput.waitForExist({ timeout: 25000 });
 
-    // Fill and submit initial server connection form directly via DOM
+    // Fill and submit server connection form directly via DOM
     await browserInstance.execute((nickVal, portVal) => {
         const setReactValue = (selector, value) => {
             const el = document.querySelector(selector);
@@ -31,6 +41,7 @@ class ChatPage {
         setReactValue('input[name="name"]', 'E2E Server');
         setReactValue('input[name="host"]', '127.0.0.1');
         setReactValue('input[name="port"]', portVal);
+        setReactValue('input[name="nicknames.0.value"]', nickVal);
         setReactValue('input[name="nickname"]', nickVal);
 
         const form = document.querySelector('form');

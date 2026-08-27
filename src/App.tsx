@@ -65,15 +65,17 @@ export function App() {
           <IrcProvider>
             <ModalProvider />
             <Routes>
-              <Route path="/" element={<SetupPage />} />
-            <Route path="/invite/:inviteCode" element={<InvitePage />} />
-            <Route path="/servers/:serverId" element={<MainLayout />}>
-              <Route index element={<ServerPage />} />
-              <Route path="channels/:channelId" element={<ChannelPage />} />
-              <Route path="conversations/:memberId" element={<ConversationPage />} />
-              <Route path="invites/:channelName" element={<InvitePreviewPage />} />
-            </Route>
-            <Route path="*" element={<SetupPage />} />
+              <Route path="/invite/:inviteCode" element={<InvitePage />} />
+              <Route element={<MainLayout />}>
+                <Route path="/" element={<SetupPage />} />
+                <Route path="/servers/:serverId">
+                  <Route index element={<ServerPage />} />
+                  <Route path="channels/:channelId" element={<ChannelPage />} />
+                  <Route path="conversations/:memberId" element={<ConversationPage />} />
+                  <Route path="invites/:channelName" element={<InvitePreviewPage />} />
+                </Route>
+                <Route path="*" element={<SetupPage />} />
+              </Route>
             </Routes>
           </IrcProvider>
         </BrowserRouter>
