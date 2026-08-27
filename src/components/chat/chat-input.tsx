@@ -865,7 +865,7 @@ export const ChatInput = ({
                         <p className="text-xs font-semibold text-indigo-500 dark:text-indigo-400">
                           Replying to {pendingReply.nick}
                         </p>
-                        <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                        <p className="text-xs italic text-zinc-500 dark:text-zinc-400 truncate">
                           {pendingReply.preview}
                         </p>
                       </div>

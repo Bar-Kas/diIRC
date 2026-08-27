@@ -372,7 +372,7 @@ const ChatItemInner = ({
                 <span className="text-xs font-semibold text-indigo-500 dark:text-indigo-400 truncate">
                   {replyMeta.nick}
                 </span>
-                <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate group-hover/reply:text-zinc-700 dark:group-hover/reply:text-zinc-300 transition">
+                <span className="text-xs italic text-zinc-500 dark:text-zinc-400 truncate group-hover/reply:text-zinc-700 dark:group-hover/reply:text-zinc-300 transition">
                   {replyMeta.preview}
                 </span>
               </div>

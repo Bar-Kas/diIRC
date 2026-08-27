@@ -41,14 +41,24 @@ export const buildReplyPreview = previewText;
 const IRC_NICK_RE = /^[A-Za-z0-9[\]\\`_^{}|-]{1,64}$/;
 const COMPAT_QUOTE_MARK = ": <";
 const COMPAT_REPLY_SEP = "> << ";
+/** mIRC italic + grey (14) around the quoted preview for HexChat / legacy clients. */
+const COMPAT_QUOTE_STYLE_OPEN = "\u001d\u000314";
+const COMPAT_QUOTE_STYLE_CLOSE = "\u000f";
 
 const isIrcNick = (nick: string) => IRC_NICK_RE.test(nick);
 
+/** Strip mIRC formatting codes from a string. */
+const stripIrcCodes = (text: string) =>
+  text.replace(/\u0003(?:\d{1,2}(?:,\d{1,2})?)?|[\u0002\u000f\u0016\u001d\u001e\u001f]/g, "");
+
 const sanitizeReplyPreview = (preview: string) =>
-  preview
-    .replace(/[<>\u001e\r\n]/g, "")
+  stripIrcCodes(preview)
+    .replace(/[<>\r\n]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+
+const styleCompatPreview = (preview: string) =>
+  `${COMPAT_QUOTE_STYLE_OPEN}${preview}${COMPAT_QUOTE_STYLE_CLOSE}`;
 
 export const replyTagOverheadBytes = (msgid?: string) => {
   const id = msgid?.trim();
@@ -58,7 +68,7 @@ export const replyTagOverheadBytes = (msgid?: string) => {
 
 const utf8Len = (text: string) => new TextEncoder().encode(text).length;
 
-/** Legacy-visible reply: `nick: <preview> << message`. Shrinks preview to fit `maxBytes`. */
+/** Legacy-visible reply: `nick: <styled-preview> << message`. Shrinks preview to fit `maxBytes`. */
 export const formatCompatReply = (
   nick: string,
   preview: string,
@@ -79,7 +89,7 @@ export const formatCompatReply = (
   let safePreview = sanitizeReplyPreview(preview);
 
   while (safePreview.length > 0) {
-    const candidate = `${nickPrefix}<${safePreview}${COMPAT_REPLY_SEP}${body}`;
+    const candidate = `${nickPrefix}<${styleCompatPreview(safePreview)}${COMPAT_REPLY_SEP}${body}`;
     if (fits(candidate)) return candidate;
     safePreview = safePreview.slice(0, -1);
   }
@@ -98,8 +108,9 @@ export const stripCompatReply = (content: string) => {
   const after = content.slice(colon + COMPAT_QUOTE_MARK.length);
   const end = after.indexOf(COMPAT_REPLY_SEP);
   if (end < 0) return { body: content };
-  const preview = after.slice(0, end);
-  if (preview.includes("<") || preview.includes("\u001e")) return { body: content };
+  const rawPreview = after.slice(0, end);
+  const preview = stripIrcCodes(rawPreview);
+  if (preview.includes("<")) return { body: content };
   return {
     body: after.slice(end + COMPAT_REPLY_SEP.length),
     nick,

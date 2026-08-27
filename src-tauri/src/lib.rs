@@ -177,10 +177,45 @@ fn is_irc_nick(nick: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || "-[]\\`_^{}|".contains(c))
 }
 
+/// Strip mIRC formatting codes (\x02 bold, \x03 color, \x0f reset, etc.).
+fn strip_irc_codes(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            0x03 => {
+                i += 1;
+                // Optional foreground color digits
+                let mut digits = 0;
+                while digits < 2 && i < bytes.len() && bytes[i].is_ascii_digit() {
+                    i += 1;
+                    digits += 1;
+                }
+                if i < bytes.len() && bytes[i] == b',' {
+                    i += 1;
+                    let mut bg = 0;
+                    while bg < 2 && i < bytes.len() && bytes[i].is_ascii_digit() {
+                        i += 1;
+                        bg += 1;
+                    }
+                }
+            }
+            0x02 | 0x0f | 0x16 | 0x1d | 0x1e | 0x1f => i += 1,
+            _ => {
+                let ch = text[i..].chars().next().unwrap();
+                out.push(ch);
+                i += ch.len_utf8();
+            }
+        }
+    }
+    out
+}
+
 fn sanitize_reply_preview(preview: &str) -> String {
-    preview
+    strip_irc_codes(preview)
         .chars()
-        .filter(|c| *c != '<' && *c != '>' && *c != '\u{001e}' && *c != '\n' && *c != '\r')
+        .filter(|c| *c != '<' && *c != '>' && *c != '\n' && *c != '\r')
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -201,8 +236,15 @@ fn reply_body_budget(nick: &str, channel: &str, tag_bytes: usize) -> usize {
 
 const COMPAT_QUOTE_MARK: &str = ": <";
 const COMPAT_REPLY_SEP: &str = "> << ";
+/// mIRC italic + grey (14) around the quoted preview for HexChat / legacy clients.
+const COMPAT_QUOTE_STYLE_OPEN: &str = "\u{001d}\u{0003}14";
+const COMPAT_QUOTE_STYLE_CLOSE: &str = "\u{000f}";
 
-/// Legacy-visible reply on one IRC line: `nick: <preview> << message`.
+fn style_compat_preview(preview: &str) -> String {
+    format!("{COMPAT_QUOTE_STYLE_OPEN}{preview}{COMPAT_QUOTE_STYLE_CLOSE}")
+}
+
+/// Legacy-visible reply on one IRC line: `nick: <styled-preview> << message`.
 fn format_compat_reply(
     nick: Option<&str>,
     preview: Option<&str>,
@@ -226,7 +268,8 @@ fn format_compat_reply(
 
     let mut safe_preview = sanitize_reply_preview(preview.unwrap_or(""));
     while !safe_preview.is_empty() {
-        let candidate = format!("{nick_prefix}<{safe_preview}{COMPAT_REPLY_SEP}{message}");
+        let styled = style_compat_preview(&safe_preview);
+        let candidate = format!("{nick_prefix}<{styled}{COMPAT_REPLY_SEP}{message}");
         if candidate.len() <= max_bytes {
             return candidate;
         }
@@ -254,14 +297,14 @@ fn strip_compat_reply(content: &str) -> (String, Option<String>, Option<String>)
     let Some(end) = after.find(COMPAT_REPLY_SEP) else {
         return (content.to_string(), None, None);
     };
-    let preview = &after[..end];
-    if preview.contains('<') || preview.contains('\u{001e}') {
+    let preview = strip_irc_codes(&after[..end]);
+    if preview.contains('<') {
         return (content.to_string(), None, None);
     }
     (
         after[end + COMPAT_REPLY_SEP.len()..].to_string(),
         Some(nick.to_string()),
-        Some(preview.to_string()),
+        Some(preview),
     )
 }
 
@@ -3595,9 +3638,21 @@ mod reply_compat_tests {
         );
         assert_eq!(
             wire,
-            "ben_vulpes: <does it have naughty dog> << nah this version"
+            format!(
+                "ben_vulpes: <{COMPAT_QUOTE_STYLE_OPEN}does it have naughty dog{COMPAT_QUOTE_STYLE_CLOSE}> << nah this version"
+            )
         );
         let (body, nick, preview) = strip_compat_reply(&wire);
+        assert_eq!(body, "nah this version");
+        assert_eq!(nick.as_deref(), Some("ben_vulpes"));
+        assert_eq!(preview.as_deref(), Some("does it have naughty dog"));
+    }
+
+    #[test]
+    fn strip_accepts_plain_legacy_quote() {
+        let (body, nick, preview) = strip_compat_reply(
+            "ben_vulpes: <does it have naughty dog> << nah this version",
+        );
         assert_eq!(body, "nah this version");
         assert_eq!(nick.as_deref(), Some("ben_vulpes"));
         assert_eq!(preview.as_deref(), Some("does it have naughty dog"));
