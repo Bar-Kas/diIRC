@@ -53,6 +53,7 @@ export const ConnectionDetailsModal = () => {
             password: c.key || null,
           })),
           useTls: activeServer.useTls || false,
+          parseLegacyZncTimestamps: activeServer.parseLegacyZncTimestamps || false,
         },
       });
     } catch (err: any) {

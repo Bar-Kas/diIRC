@@ -31,6 +31,13 @@ import { v4 as uuidv4 } from "uuid";
 import { ImageUploadConfig, UrlAuthRule } from "./upload/types";
 import { MESSAGE_DEDUPLICATION_MODE } from "./config";
 
+type IncomingMessageMeta = {
+  createdAt?: string;
+  msgid?: string;
+  replyToMsgid?: string;
+  replyTo?: import("@/types").MessageReplyTo;
+};
+
 export const MAX_HISTORY_WINDOW = 600;
 export const MAX_PENDING_LIVE = 100;
 
@@ -44,12 +51,18 @@ export function computeMotdHash(lines: string[]): string {
   return (hash >>> 0).toString(16);
 }
 
+export function getServerActiveNick(server: Server): string {
+  return server.currentNick || server.nicknames?.[0] || "ReactUser";
+}
+
 export function getServerSelfMember(server: Server, currentProfileId?: string): Member {
+  const activeNick = getServerActiveNick(server);
   const currentMember = server.members.find(
     (m) =>
       (currentProfileId && m.profileId === currentProfileId) ||
       m.id.startsWith("member-") ||
       m.id === `${server.id}:self` ||
+      m.profile?.name?.toLowerCase() === activeNick.toLowerCase() ||
       (server.nicknames && server.nicknames.some((n) => n.toLowerCase() === m.profile?.name?.toLowerCase()))
   );
   return (
@@ -60,7 +73,7 @@ export function getServerSelfMember(server: Server, currentProfileId?: string): 
       profile: {
         id: currentProfileId || "self",
         userId: currentProfileId || "self",
-        name: server.nicknames?.[0] || "ReactUser",
+        name: activeNick,
         imageUrl: "",
         email: "user@irc.local",
         createdAt: new Date().toISOString(),
@@ -298,6 +311,7 @@ export interface AddServerOptions {
   imageUrl?: string;
   autoConnect?: boolean;
   autoReconnect?: boolean;
+  parseLegacyZncTimestamps?: boolean;
   customCommands?: CustomCommand[];
   notificationSettings?: NotificationOverride;
 }
@@ -314,6 +328,7 @@ export interface UpdateServerOptions {
   imageUrl?: string;
   autoConnect?: boolean;
   autoReconnect?: boolean;
+  parseLegacyZncTimestamps?: boolean;
   customCommands?: CustomCommand[];
   notificationSettings?: NotificationOverride;
   motdPolicy?: ServerMotdDisplayPolicy;
@@ -369,6 +384,9 @@ interface MockState {
 
   // Connection Actions
   setIrcConnected: (serverId: string, isConnected: boolean, error?: string | null) => void;
+  setIrcConnectionError: (serverId: string, error: string | null) => void;
+  setServerActiveNick: (serverId: string, activeNick: string) => void;
+  handleNickChange: (serverId: string, oldNick: string, newNick: string) => void;
   setStatusDisplayMode: (mode: StatusDisplayMode) => void;
 
   // Unread Actions
@@ -454,7 +472,7 @@ interface MockState {
   clearHistoryLoading: () => void;
   markTailSeen: (tailId: string | null) => void;
   setTailPinned: (pinned: boolean) => void;
-  addMessage: (channelId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean, ircMeta?: { msgid?: string; replyToMsgid?: string; replyTo?: import("@/types").MessageReplyTo }) => Message;
+  addMessage: (channelId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean, extras?: IncomingMessageMeta) => Message;
   deleteMessage: (channelId: string, messageId: string) => void;
 
   activeConversations: Record<string, string[]>;
@@ -464,7 +482,7 @@ interface MockState {
   closeConversation: (serverId: string, memberId: string) => void;
   syncActiveConversationsWithDisk: (serverId: string, loggedNicks: string[]) => void;
 
-  addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean, ircMeta?: { msgid?: string; replyToMsgid?: string; replyTo?: import("@/types").MessageReplyTo }) => DirectMessage;
+  addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean, extras?: IncomingMessageMeta) => DirectMessage;
   removeLastMessageFromChannel: (channelId: string, memberId: string) => string | null;
   removeLastDirectMessageFromMember: (conversationId: string, memberId: string) => string | null;
   deleteDirectMessage: (conversationId: string, messageId: string) => void;
@@ -643,6 +661,143 @@ export const useMockStore = create<MockState>()(
           },
         })),
 
+      setIrcConnectionError: (serverId: string, error: string | null) =>
+        set((state) => ({
+          ircConnectionErrors: {
+            ...state.ircConnectionErrors,
+            [serverId]: error,
+          },
+        })),
+
+      setServerActiveNick: (serverId: string, activeNick: string) => {
+        set((state) => {
+          const serverIndex = state.servers.findIndex((s) => s.id === serverId);
+          if (serverIndex === -1) return state;
+
+          const targetServer = state.servers[serverIndex];
+          const cleanNick = activeNick.trim();
+          if (!cleanNick) return state;
+
+          const activeNickLower = cleanNick.toLowerCase();
+          const updatedServers = [...state.servers];
+          const serverCopy = { ...targetServer, currentNick: cleanNick };
+
+          const updatedMembers = serverCopy.members.map((m) => {
+            if (
+              m.profileId === state.currentProfile.id ||
+              m.id === `${serverId}:self` ||
+              m.id.startsWith("member-") ||
+              (targetServer.nicknames && targetServer.nicknames.some((n) => n.toLowerCase() === m.profile?.name?.toLowerCase()))
+            ) {
+              return {
+                ...m,
+                profile: {
+                  ...m.profile,
+                  name: cleanNick,
+                },
+              };
+            }
+            return m;
+          });
+
+          const selfMember = updatedMembers.find(
+            (m) => m.profileId === state.currentProfile.id || m.id === `${serverId}:self` || m.id.startsWith("member-")
+          );
+          serverCopy.members = updatedMembers.filter((m) => {
+            if (selfMember && m.id !== selfMember.id && m.profile?.name?.toLowerCase() === activeNickLower) {
+              return false;
+            }
+            return true;
+          });
+
+          updatedServers[serverIndex] = serverCopy;
+          return { servers: updatedServers };
+        });
+      },
+
+      handleNickChange: (serverId: string, oldNick: string, newNick: string) => {
+        set((state) => {
+          const oldNickLower = oldNick.toLowerCase();
+          const newNickLower = newNick.toLowerCase();
+
+          // 1. Update server.currentNick and server.members
+          const updatedServers = state.servers.map((s) => {
+            if (s.id !== serverId) return s;
+
+            // Did the active nick change?
+            const ourNick = getServerActiveNick(s);
+            let nextCurrentNick = s.currentNick;
+            if (ourNick.toLowerCase() === oldNickLower) {
+              nextCurrentNick = newNick;
+            }
+
+            const nextMembers = s.members.map((m) => {
+              if (m.profile.name.toLowerCase() === oldNickLower) {
+                return { ...m, profile: { ...m.profile, name: newNick } };
+              }
+              return m;
+            });
+
+            return { ...s, currentNick: nextCurrentNick, members: nextMembers };
+          });
+
+          // 2. Update channelMembers, channelOps, channelUserModes
+          const nextChannelMembers = { ...state.channelMembers };
+          const nextChannelOps = { ...state.channelOps };
+          const nextChannelUserModes = { ...state.channelUserModes };
+
+          Object.keys(nextChannelMembers).forEach((chanId) => {
+            const chanMembers = nextChannelMembers[chanId] || [];
+            if (chanMembers.some((n) => n.toLowerCase() === oldNickLower)) {
+              nextChannelMembers[chanId] = chanMembers.map((n) =>
+                n.toLowerCase() === oldNickLower ? newNick : n
+              );
+            }
+          });
+
+          Object.keys(nextChannelOps).forEach((chanId) => {
+            const ops = nextChannelOps[chanId] || [];
+            if (ops.some((n) => n.toLowerCase() === oldNickLower)) {
+              nextChannelOps[chanId] = ops.map((n) =>
+                n.toLowerCase() === oldNickLower ? newNick : n
+              );
+            }
+          });
+
+          Object.keys(nextChannelUserModes).forEach((chanId) => {
+            const modesMap = { ...nextChannelUserModes[chanId] };
+            if (modesMap[oldNickLower]) {
+              modesMap[newNickLower] = modesMap[oldNickLower];
+              delete modesMap[oldNickLower];
+              nextChannelUserModes[chanId] = modesMap;
+            }
+          });
+
+          // 3. Update away statuses
+          const nextAwayUsers = { ...state.awayUsers };
+          const nextAwayReasons = { ...state.awayReasons };
+
+          if (nextAwayUsers[serverId]?.[oldNickLower]) {
+            nextAwayUsers[serverId] = { ...nextAwayUsers[serverId], [newNickLower]: true };
+            delete nextAwayUsers[serverId][oldNickLower];
+          }
+
+          if (nextAwayReasons[serverId]?.[oldNickLower]) {
+            nextAwayReasons[serverId] = { ...nextAwayReasons[serverId], [newNickLower]: nextAwayReasons[serverId][oldNickLower] };
+            delete nextAwayReasons[serverId][oldNickLower];
+          }
+
+          return {
+            servers: updatedServers,
+            channelMembers: nextChannelMembers,
+            channelOps: nextChannelOps,
+            channelUserModes: nextChannelUserModes,
+            awayUsers: nextAwayUsers,
+            awayReasons: nextAwayReasons,
+          };
+        });
+      },
+
       setStatusDisplayMode: (mode: StatusDisplayMode) => set({ statusDisplayMode: mode }),
       setDateFormatPreset: (preset: string) => set({ dateFormatPreset: preset }),
       setCustomDateFormat: (format: string) => set({ customDateFormat: format }),
@@ -747,6 +902,7 @@ export const useMockStore = create<MockState>()(
           useTls = optionsOrName.useTls ?? false;
           autoConnect = optionsOrName.autoConnect ?? true;
           autoReconnect = optionsOrName.autoReconnect ?? true;
+          const parseLegacyZncTimestamps = optionsOrName.parseLegacyZncTimestamps ?? false;
           if (optionsOrName.autoJoinChannels && optionsOrName.autoJoinChannels.length > 0) {
             autoJoinChannels = optionsOrName.autoJoinChannels;
           }
@@ -794,6 +950,7 @@ export const useMockStore = create<MockState>()(
           useTls,
           autoConnect,
           autoReconnect,
+          parseLegacyZncTimestamps: typeof optionsOrName === "object" ? (optionsOrName.parseLegacyZncTimestamps ?? false) : false,
           autoJoinChannels,
           customCommands,
           imageUrl,
@@ -894,6 +1051,7 @@ export const useMockStore = create<MockState>()(
                 useTls: optionsOrName.useTls ?? s.useTls,
                 autoConnect: optionsOrName.autoConnect ?? s.autoConnect ?? true,
                 autoReconnect: optionsOrName.autoReconnect ?? s.autoReconnect ?? true,
+                parseLegacyZncTimestamps: optionsOrName.parseLegacyZncTimestamps ?? s.parseLegacyZncTimestamps,
                 autoJoinChannels: optionsOrName.autoJoinChannels || s.autoJoinChannels,
                 customCommands: optionsOrName.customCommands ?? s.customCommands,
                 imageUrl: optionsOrName.imageUrl || s.imageUrl,
@@ -1129,6 +1287,7 @@ export const useMockStore = create<MockState>()(
       },
 
       addServerMember: (serverId, name, realname, host) => {
+        if (!name || !name.trim() || name === "***") return undefined;
         let resultMember: Member | undefined;
         set((state) => {
           const s = state.servers.find((s) => s.id === serverId);
@@ -1167,7 +1326,10 @@ export const useMockStore = create<MockState>()(
           }
 
           const currentProfile = state.currentProfile;
-          const isOurNick = s.nicknames && s.nicknames.some((n) => n.toLowerCase() === name.toLowerCase());
+          const activeNick = getServerActiveNick(s);
+          const isOurNick =
+            name.toLowerCase() === activeNick.toLowerCase() ||
+            (s.nicknames && s.nicknames.some((n) => n.toLowerCase() === name.toLowerCase()));
           if (isOurNick) {
             let updatedSelf: Member | undefined;
             const updatedMembers = s.members.map((m) => {
@@ -1988,7 +2150,7 @@ export const useMockStore = create<MockState>()(
           return {};
         }),
 
-      addMessage: (channelId, member, content, fileUrl, isSystem, ircMeta) => {
+      addMessage: (channelId, member, content, fileUrl, isSystem, extras) => {
         const key = chatKey("channel", channelId);
         const state = get();
         const activeMsgs = state.activeChatKey === key ? (state.messages[channelId] || []) : [];
@@ -2005,6 +2167,7 @@ export const useMockStore = create<MockState>()(
           }
         }
 
+        const msgTime = extras?.createdAt || new Date().toISOString();
         const newMessage: Message = {
           id: `msg-${uuidv4().slice(0, 8)}`,
           content,
@@ -2014,11 +2177,11 @@ export const useMockStore = create<MockState>()(
           channelId,
           deleted: false,
           isSystem,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          ircMsgid: ircMeta?.msgid,
-          replyToMsgid: ircMeta?.replyToMsgid,
-          replyTo: ircMeta?.replyTo,
+          createdAt: msgTime,
+          updatedAt: msgTime,
+          ircMsgid: extras?.msgid,
+          replyToMsgid: extras?.replyToMsgid,
+          replyTo: extras?.replyTo,
         };
 
         // Bounded memory: only the active chat window is buffered; inactive chats stay in the native log.
@@ -2197,29 +2360,31 @@ export const useMockStore = create<MockState>()(
           // Ensure members exist for all logged nicks
           const updatedMembers = [...server.members];
           loggedNicks.forEach((nick) => {
-            if (nick && nick.trim()) {
+            if (nick && nick.trim() && nick !== "***") {
               const cleanNick = nick.trim().replace(/^[~&@%+]+/, "");
-              const exists = updatedMembers.find((m) => m.profile.name.toLowerCase() === cleanNick.toLowerCase());
-              if (!exists) {
-                const scopedMemberId = `${serverId}:irc-${cleanNick.toLowerCase()}`;
-                const scopedProfileId = `${serverId}:profile-${cleanNick.toLowerCase()}`;
-                const mockMember: Member = {
-                  id: scopedMemberId,
-                  profileId: scopedProfileId,
-                  profile: {
-                    id: scopedProfileId,
-                    userId: `${serverId}:user-${cleanNick.toLowerCase()}`,
-                    name: cleanNick,
-                    imageUrl: "",
-                    email: `${cleanNick}@irc.local`,
+              if (cleanNick && cleanNick !== "***") {
+                const exists = updatedMembers.find((m) => m.profile.name.toLowerCase() === cleanNick.toLowerCase());
+                if (!exists) {
+                  const scopedMemberId = `${serverId}:irc-${cleanNick.toLowerCase()}`;
+                  const scopedProfileId = `${serverId}:profile-${cleanNick.toLowerCase()}`;
+                  const mockMember: Member = {
+                    id: scopedMemberId,
+                    profileId: scopedProfileId,
+                    profile: {
+                      id: scopedProfileId,
+                      userId: `${serverId}:user-${cleanNick.toLowerCase()}`,
+                      name: cleanNick,
+                      imageUrl: "",
+                      email: `${cleanNick}@irc.local`,
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString(),
+                    },
+                    serverId,
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString(),
-                  },
-                  serverId,
-                  createdAt: new Date().toISOString(),
-                  updatedAt: new Date().toISOString(),
-                };
-                updatedMembers.push(mockMember);
+                  };
+                  updatedMembers.push(mockMember);
+                }
               }
             }
           });
@@ -2230,7 +2395,7 @@ export const useMockStore = create<MockState>()(
 
           // Include members whose log file is non-empty on disk
           updatedMembers.forEach((m) => {
-            if (loggedSet.has(m.profile.name.toLowerCase()) && m.id !== currentMember?.id) {
+            if (m.profile.name && m.profile.name !== "***" && loggedSet.has(m.profile.name.toLowerCase()) && m.id !== currentMember?.id) {
               validMemberIds.add(m.id);
             }
           });
@@ -2258,7 +2423,8 @@ export const useMockStore = create<MockState>()(
         });
       },
 
-      addDirectMessage: (conversationId, member, content, fileUrl, isSystem, ircMeta) => {
+      addDirectMessage: (conversationId, member, content, fileUrl, isSystem, extras) => {
+        const msgTime = extras?.createdAt || new Date().toISOString();
         const newDm: DirectMessage = {
           id: `dm-${uuidv4().slice(0, 8)}`,
           content,
@@ -2268,11 +2434,11 @@ export const useMockStore = create<MockState>()(
           conversationId,
           deleted: false,
           isSystem,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          ircMsgid: ircMeta?.msgid,
-          replyToMsgid: ircMeta?.replyToMsgid,
-          replyTo: ircMeta?.replyTo,
+          createdAt: msgTime,
+          updatedAt: msgTime,
+          ircMsgid: extras?.msgid,
+          replyToMsgid: extras?.replyToMsgid,
+          replyTo: extras?.replyTo,
         };
 
         if (member.serverId && !isSystem) {

@@ -261,8 +261,8 @@ export const ChannelOperatorSettingsModal = () => {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
-      <DialogContent className="bg-white dark:bg-[#313338] text-black dark:text-white p-0 overflow-hidden sm:max-w-lg">
-        <DialogHeader className="pt-6 px-6">
+      <DialogContent className="bg-white dark:bg-[#313338] text-black dark:text-white p-0 overflow-hidden sm:max-w-lg max-h-[90vh] flex flex-col">
+        <DialogHeader className="pt-6 px-6 shrink-0">
           <DialogTitle className="text-xl text-center font-bold flex items-center justify-center gap-2">
             <Sliders className="w-5 h-5 text-indigo-500" />
             Channel settings (operator)
@@ -272,7 +272,7 @@ export const ChannelOperatorSettingsModal = () => {
           </p>
         </DialogHeader>
 
-        <div className="px-6 py-2 max-h-[500px] overflow-y-auto space-y-4 custom-scrollbar">
+        <div className="px-6 py-2 flex-1 min-h-0 overflow-y-auto space-y-4 custom-scrollbar">
           {errorMessage && (
             <div className="flex items-center gap-x-2 text-red-500 bg-red-500/10 p-3 rounded-md border border-red-500/20 text-xs">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -437,7 +437,7 @@ export const ChannelOperatorSettingsModal = () => {
           </div>
         </div>
 
-        <div className="bg-zinc-100 dark:bg-zinc-800/40 px-6 py-3 flex justify-end">
+        <div className="bg-zinc-100 dark:bg-zinc-800/40 px-6 py-3 flex justify-end shrink-0">
           <Button
             type="button"
             variant="ghost"

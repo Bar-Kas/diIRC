@@ -49,6 +49,7 @@ const formSchema = z.object({
   useTls: z.boolean().default(false),
   autoConnect: z.boolean().default(true),
   autoReconnect: z.boolean().default(true),
+  parseLegacyZncTimestamps: z.boolean().default(false),
   customCommands: z.array(
     z.object({
       trigger: z.string(),
@@ -80,6 +81,7 @@ export const CreateServerModal = () => {
       useTls: false,
       autoConnect: true,
       autoReconnect: true,
+      parseLegacyZncTimestamps: false,
       customCommands: [],
     }
   });
@@ -107,6 +109,7 @@ export const CreateServerModal = () => {
         useTls: false,
         autoConnect: true,
         autoReconnect: true,
+        parseLegacyZncTimestamps: false,
         customCommands: [],
       });
     }
@@ -134,6 +137,7 @@ export const CreateServerModal = () => {
         useTls: values.useTls,
         autoConnect: values.autoConnect,
         autoReconnect: values.autoReconnect,
+        parseLegacyZncTimestamps: values.parseLegacyZncTimestamps,
         autoJoinChannels: channelArray,
         customCommands: normalizeCustomCommandsFromForm(values.customCommands),
       });
@@ -157,7 +161,7 @@ export const CreateServerModal = () => {
         onOpenAutoFocus={(e) => e.preventDefault()}
         className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden max-w-md max-h-[90vh] flex flex-col border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl"
       >
-        <DialogHeader className="pt-6 px-6 space-y-1">
+        <DialogHeader className="pt-6 px-6 space-y-1 shrink-0">
           <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
             Add IRC server
           </DialogTitle>
@@ -166,7 +170,8 @@ export const CreateServerModal = () => {
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 flex-1 overflow-y-auto px-6 py-2">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
+            <div className="space-y-4 flex-1 overflow-y-auto px-6 py-2 min-h-0">
             <FormField
               control={form.control}
               name="name"
@@ -448,8 +453,32 @@ export const CreateServerModal = () => {
                 </FormItem>
               )}
             />
+            <FormField
+              control={form.control}
+              name="parseLegacyZncTimestamps"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-zinc-300/80 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-3.5 shadow-sm">
+                  <div className="space-y-0.5">
+                    <FormLabel className="text-sm font-semibold text-zinc-900 dark:text-zinc-200 cursor-pointer">
+                      Parse legacy ZNC timestamps
+                    </FormLabel>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                      Extract timestamps formatted as [HH:MM:SS] from older bouncers without IRCv3 server-time support
+                    </p>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      disabled={isLoading}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            </div>
 
-            <DialogFooter className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 -mx-6 -mb-2 px-6 py-4 mt-4 flex items-center justify-between">
+            <DialogFooter className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 px-6 py-4 flex items-center justify-between shrink-0">
               <Button
                 type="button"
                 variant="ghost"
