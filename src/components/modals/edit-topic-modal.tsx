@@ -13,6 +13,15 @@ import { useModal } from "@/hooks/use-modal-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useMockStore, getServerActiveNick } from "@/lib/mock-store";
+import { ComingSoonModal } from "@/components/modals/coming-soon-modal";
+
+// ==========================================================================
+// TEMPORARY SAFETY GUARD FOR TOPIC EDITING
+// TO REVERT TO NORMAL TOPIC EDITING:
+// 1. Set `SHOW_COMING_SOON` to `false` below (or remove the `if (SHOW_COMING_SOON)` block).
+// 2. Delete `src/components/modals/coming-soon-modal.tsx`.
+// ==========================================================================
+const SHOW_COMING_SOON = true;
 
 export const EditTopicModal = () => {
   const { isOpen, onClose, type, data } = useModal();
@@ -92,6 +101,17 @@ export const EditTopicModal = () => {
       setIsLoading(false);
     }
   };
+
+  if (SHOW_COMING_SOON) {
+    return (
+      <ComingSoonModal
+        isOpen={isModalOpen}
+        onClose={handleClose}
+        title="Coming soon"
+        description="Channel topic editing is temporarily disabled while undergoing maintenance and code restructuring."
+      />
+    );
+  }
 
   return (
     <Dialog open={isModalOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
