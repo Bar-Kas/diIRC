@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useReplyStore } from "@/hooks/use-reply-store";
 import { persist } from "zustand/middleware";
 import { invoke } from "@tauri-apps/api/core";
 import { format } from "date-fns";
@@ -31,6 +32,13 @@ import {
 import { v4 as uuidv4 } from "uuid";
 import { ImageUploadConfig, UrlAuthRule } from "./upload/types";
 import { MESSAGE_DEDUPLICATION_MODE } from "./config";
+
+type IncomingMessageMeta = {
+  createdAt?: string;
+  msgid?: string;
+  replyToMsgid?: string;
+  replyTo?: import("@/types").MessageReplyTo;
+};
 
 export const MAX_HISTORY_WINDOW = 1200;
 export const MAX_PENDING_LIVE = 100;
@@ -259,48 +267,100 @@ const mapLogEntries = (
   serverId: string,
   type: "channel" | "conversation",
   chatId: string,
-): (Message | DirectMessage)[] => entries.map((entry) => {
-  const isSys = entry.sender.toLowerCase() === "system" || entry.sender === "*system*" || entry.sender === "*";
-  const member = server?.members.find(
-    (item) => item.profile.name.toLowerCase() === entry.sender.toLowerCase()
-  ) || (isSys ? {
-    id: "system",
-    profileId: "system",
-    profile: {
+): (Message | DirectMessage)[] => {
+  const mapped = entries.map((entry) => {
+    const isSys = entry.sender.toLowerCase() === "system" || entry.sender === "*system*" || entry.sender === "*";
+    const member = server?.members.find(
+      (item) => item.profile.name.toLowerCase() === entry.sender.toLowerCase()
+    ) || (isSys ? {
       id: "system",
-      userId: "system",
-      name: "System",
-      imageUrl: "",
-      email: "system@irc.local",
+      profileId: "system",
+      profile: {
+        id: "system",
+        userId: "system",
+        name: "System",
+        imageUrl: "",
+        email: "system@irc.local",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      serverId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    },
-    serverId,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  } : createIrcMember(serverId, entry.sender));
-  const createdAt = parseLogTimestamp(entry.timestamp);
-  const stableId = entry.offset !== undefined
-    ? `log-${serverId}-${chatId}-${entry.offset}`
-    : `log-${serverId}-${chatId}-${entry.timestamp}-${entry.sender}`;
+    } : createIrcMember(serverId, entry.sender));
+    const createdAt = parseLogTimestamp(entry.timestamp);
+    const stableId = entry.offset !== undefined
+      ? `log-${serverId}-${chatId}-${entry.offset}`
+      : `log-${serverId}-${chatId}-${entry.timestamp}-${entry.sender}`;
 
-  const isSystem = isSys || isSystemMessage(entry.sender, entry.content);
+    const parentMessageId =
+      entry.replyParentOffset != null
+        ? `log-${serverId}-${chatId}-${entry.replyParentOffset}`
+        : "";
 
-  return {
-    id: stableId,
-    offset: entry.offset,
-    content: entry.content ? entry.content.replace(/\u0085/g, "\n") : "",
-    fileUrl: null,
-    memberId: member.id,
-    member,
-    channelId: type === "channel" ? chatId : undefined,
-    conversationId: type === "conversation" ? chatId : undefined,
-    deleted: false,
-    isSystem,
-    createdAt,
-    updatedAt: createdAt,
-  } as Message | DirectMessage;
-});
+    const replyTo = entry.replyNick
+      ? {
+          messageId: parentMessageId,
+          nick: entry.replyNick,
+          preview: entry.replyPreview || "",
+          msgid: entry.replyToMsgid,
+        }
+      : undefined;
+
+    const isSystem = isSys || isSystemMessage(entry.sender, entry.content);
+
+    return {
+      id: stableId,
+      offset: entry.offset,
+      content: entry.content ? entry.content.replace(/\u0085/g, "\n") : "",
+      fileUrl: null,
+      memberId: member.id,
+      member,
+      channelId: type === "channel" ? chatId : undefined,
+      conversationId: type === "conversation" ? chatId : undefined,
+      deleted: false,
+      isSystem,
+      createdAt,
+      updatedAt: createdAt,
+      ircMsgid: entry.msgid,
+      replyToMsgid: entry.replyToMsgid,
+      replyTo,
+    } as Message | DirectMessage;
+  });
+
+  const replyStore = useReplyStore.getState();
+  for (const message of mapped) {
+    if (message.ircMsgid) {
+      replyStore.indexMsgid(message.ircMsgid, {
+        messageId: message.id,
+        nick: message.member.profile.name,
+        preview: message.content,
+      });
+    }
+  }
+  for (const message of mapped) {
+    if (message.replyTo) {
+      replyStore.rememberSent(message.id, {
+        messageId: message.replyTo.messageId,
+        nick: message.replyTo.nick,
+        preview: message.replyTo.preview,
+        msgid: message.replyTo.msgid,
+      });
+    } else if (message.replyToMsgid) {
+      const parent = replyStore.findByMsgid(message.replyToMsgid);
+      if (parent) {
+        replyStore.rememberSent(message.id, {
+          messageId: parent.messageId,
+          nick: parent.nick,
+          preview: parent.preview,
+          msgid: message.replyToMsgid,
+        });
+      }
+    }
+  }
+
+  return mapped;
+};
 
 export interface AddServerOptions {
   name: string;
@@ -531,7 +591,7 @@ interface MockState {
   markTailSeen: (tailId: string | null) => void;
   clearUnreadMarker: () => void;
   setTailPinned: (pinned: boolean) => void;
-  addMessage: (channelId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean, createdAt?: string) => Message;
+  addMessage: (channelId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean, extras?: IncomingMessageMeta) => Message;
   deleteMessage: (channelId: string, messageId: string) => void;
 
   activeConversations: Record<string, string[]>;
@@ -541,7 +601,7 @@ interface MockState {
   closeConversation: (serverId: string, memberId: string) => void;
   syncActiveConversationsWithDisk: (serverId: string, loggedNicks: string[]) => void;
 
-  addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean, createdAt?: string) => DirectMessage;
+  addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean, extras?: IncomingMessageMeta) => DirectMessage;
   removeLastMessageFromChannel: (channelId: string, memberId: string) => string | null;
   removeLastDirectMessageFromMember: (conversationId: string, memberId: string) => string | null;
   deleteDirectMessage: (conversationId: string, messageId: string) => void;
@@ -2408,7 +2468,7 @@ export const useMockStore = create<MockState>()(
           return {};
         }),
 
-      addMessage: (channelId, member, content, fileUrl, isSystem, createdAt) => {
+      addMessage: (channelId, member, content, fileUrl, isSystem, extras) => {
         const effectiveIsSystem = isSystemMessage(member?.profile?.name, content, isSystem);
         const key = chatKey("channel", channelId);
         const state = get();
@@ -2426,7 +2486,7 @@ export const useMockStore = create<MockState>()(
           }
         }
 
-        const msgTime = createdAt || new Date().toISOString();
+        const msgTime = extras?.createdAt || new Date().toISOString();
         const newMessage: Message = {
           id: `msg-${uuidv4().slice(0, 8)}`,
           content,
@@ -2438,6 +2498,9 @@ export const useMockStore = create<MockState>()(
           isSystem: effectiveIsSystem,
           createdAt: msgTime,
           updatedAt: msgTime,
+          ircMsgid: extras?.msgid,
+          replyToMsgid: extras?.replyToMsgid,
+          replyTo: extras?.replyTo,
         };
 
         // Bounded memory: only the active chat window is buffered; inactive chats stay in the native log.
@@ -2688,9 +2751,9 @@ export const useMockStore = create<MockState>()(
         });
       },
 
-      addDirectMessage: (conversationId, member, content, fileUrl, isSystem, createdAt) => {
+      addDirectMessage: (conversationId, member, content, fileUrl, isSystem, extras) => {
         const effectiveIsSystem = isSystemMessage(member?.profile?.name, content, isSystem);
-        const msgTime = createdAt || new Date().toISOString();
+        const msgTime = extras?.createdAt || new Date().toISOString();
         const newDm: DirectMessage = {
           id: `dm-${uuidv4().slice(0, 8)}`,
           content,
@@ -2702,6 +2765,9 @@ export const useMockStore = create<MockState>()(
           isSystem: effectiveIsSystem,
           createdAt: msgTime,
           updatedAt: msgTime,
+          ircMsgid: extras?.msgid,
+          replyToMsgid: extras?.replyToMsgid,
+          replyTo: extras?.replyTo,
         };
 
         if (member.serverId && !isSystem) {

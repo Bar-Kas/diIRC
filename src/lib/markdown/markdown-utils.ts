@@ -116,7 +116,99 @@ export function hasMarkdownSyntax(text: string): boolean {
   if (/^\s*\d+\.\s/m.test(text)) return true; // ordered list
   if (/\[.+\]\(https?:\/\/[^\s]+\)/.test(text)) return true; // markdown link
   if (/^---\s*$/m.test(text) || /^___\s*$/m.test(text) || /^\*\*\*\s*$/m.test(text)) return true; // hr
-  // Note: plain autolink https://... is handled by both paths, but we don't treat as markdown syntax
-  // to avoid rendering plain URL via markdown when no other markers. LinkPreview will still work.
   return false;
 }
+
+export interface MarkdownContentBlock {
+  id: string;
+  markdown: string;
+  urls: string[];
+}
+
+/**
+ * Parses markdown text into logical content blocks (paragraphs, headings, code blocks, etc.),
+ * extracting media/link URLs per block so that previews can be rendered in-place right below
+ * the section where they are referenced.
+ */
+export function parseMarkdownContentBlocks(
+  content: string,
+  enableLinkPreviews = true
+): MarkdownContentBlock[] {
+  if (!content || !content.trim()) return [];
+
+  const lines = content.split("\n");
+  const blocks: MarkdownContentBlock[] = [];
+  let currentLines: string[] = [];
+  let currentUrls: string[] = [];
+  let inCodeBlock = false;
+  let blockCounter = 0;
+
+  const flushBlock = () => {
+    if (currentLines.length === 0) return;
+    const markdown = currentLines.join("\n");
+    blocks.push({
+      id: `block-${++blockCounter}`,
+      markdown,
+      urls: enableLinkPreviews ? Array.from(new Set(currentUrls)) : [],
+    });
+    currentLines = [];
+    currentUrls = [];
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // 1. Code blocks: ```
+    if (trimmed.startsWith("```")) {
+      if (!inCodeBlock) {
+        flushBlock();
+        inCodeBlock = true;
+        currentLines.push(line);
+      } else {
+        currentLines.push(line);
+        inCodeBlock = false;
+        flushBlock();
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      currentLines.push(line);
+      continue;
+    }
+
+    // 2. Empty line: paragraph separator
+    if (trimmed === "") {
+      flushBlock();
+      continue;
+    }
+
+    // 3. Headings (#, ##, ###, etc.): standalone blocks
+    if (/^#{1,6}\s/.test(trimmed)) {
+      flushBlock();
+      currentLines.push(line);
+      flushBlock();
+      continue;
+    }
+
+    // 4. Regular lines: check for URLs
+    const lineUrls = enableLinkPreviews ? extractUrlsFromMarkdownText(line) : [];
+
+    if (lineUrls.length > 0) {
+      // If current block already contains URLs, flush previous block
+      if (currentUrls.length > 0) {
+        flushBlock();
+      }
+      currentLines.push(line);
+      currentUrls.push(...lineUrls);
+      flushBlock();
+    } else {
+      currentLines.push(line);
+    }
+  }
+
+  flushBlock();
+  return blocks;
+}
+

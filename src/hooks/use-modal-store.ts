@@ -23,7 +23,8 @@ export type ModalType =
   | "privateMessages"
   | "updateAvailable"
   | "motd"
-  | "alreadyAway";
+  | "alreadyAway"
+  | "changelog";
 
 interface ModalData {
   server?: Server;

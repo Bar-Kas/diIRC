@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useMockStore, getServerSelfMember, getServerActiveNick, isSystemMessage } from "@/lib/mock-store";
 import { useModalStore } from "@/hooks/use-modal-store";
 import { useDraftStore } from "@/hooks/use-draft-store";
+import { stripCompatReply, useReplyStore } from "@/hooks/use-reply-store";
 import { Server, ChannelType } from "@/types";
 import { extractFlag } from "@/lib/flag-tips";
 import {
@@ -23,6 +24,13 @@ interface IrcMessagePayload {
   channel: string;
   isSystem?: boolean;
   is_system?: boolean;
+  msgid?: string | null;
+  reply_to_msgid?: string | null;
+  replyToMsgid?: string | null;
+  reply_nick?: string | null;
+  replyNick?: string | null;
+  reply_preview?: string | null;
+  replyPreview?: string | null;
   timestamp?: string;
 }
 
@@ -317,12 +325,74 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
   const multilineAccumulatorRef = useRef<IrcMultilineAccumulator | null>(null);
 
+  const applyIncomingIrcMeta = (
+    messageId: string,
+    sender: string,
+    content: string,
+    msgid?: string | null,
+    replyToMsgid?: string | null
+  ) => {
+    const replyStore = useReplyStore.getState();
+    if (msgid) {
+      replyStore.indexMsgid(msgid, {
+        messageId,
+        nick: sender,
+        preview: content,
+      });
+    }
+    if (replyToMsgid) {
+      const parent = replyStore.findByMsgid(replyToMsgid);
+      if (parent) {
+        replyStore.rememberSent(messageId, {
+          messageId: parent.messageId,
+          nick: parent.nick,
+          preview: parent.preview,
+          msgid: replyToMsgid,
+        });
+      }
+    }
+  };
+
   const processIncomingPayload = useCallback(async (payload: IrcMessagePayload) => {
     const { sender, channel } = payload;
     const rawContent = payload.content;
-    const content = rawContent ? rawContent.replace(/\u0085/g, "\n") : "";
+    const incoming = rawContent ? rawContent.replace(/\u0085/g, "\n") : "";
+    const stripped = stripCompatReply(incoming);
+    const content = stripped.body;
     const serverId = payload.serverId || payload.server_id;
     const isSystem = payload.isSystem ?? payload.is_system;
+    const msgid = payload.msgid || null;
+    const replyToMsgid = payload.reply_to_msgid || payload.replyToMsgid || null;
+    const quoteNick = payload.reply_nick || payload.replyNick || stripped.nick;
+    const quotePreview = payload.reply_preview || payload.replyPreview || stripped.preview;
+    const parent = replyToMsgid
+      ? useReplyStore.getState().findByMsgid(replyToMsgid)
+      : undefined;
+
+    let replyTo: { messageId: string; nick: string; preview: string; msgid?: string } | undefined;
+    if (parent) {
+      replyTo = {
+        messageId: parent.messageId,
+        nick: parent.nick,
+        preview: parent.preview,
+        msgid: replyToMsgid || undefined,
+      };
+    } else if (quoteNick) {
+      replyTo = {
+        messageId: "",
+        nick: quoteNick,
+        preview: quotePreview || "",
+        msgid: replyToMsgid || undefined,
+      };
+    }
+    const ircMeta =
+      msgid || replyToMsgid || replyTo
+        ? {
+            msgid: msgid || undefined,
+            replyToMsgid: replyToMsgid || undefined,
+            replyTo,
+          }
+        : undefined;
 
     if (!serverId) return;
 
@@ -356,7 +426,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
-        addMessage(targetChan.id, dummyMember as any, content, null, true, msgTimestamp);
+        addMessage(targetChan.id, dummyMember as any, content, null, true, { createdAt: msgTimestamp, ...ircMeta });
       }
       return;
     }
@@ -430,7 +500,15 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
               .catch(console.error);
           }
 
-          store.addDirectMessage(conversationId, systemMember as any, content, null, true, msgTimestamp);
+          const created = store.addDirectMessage(
+            conversationId,
+            systemMember as any,
+            content,
+            null,
+            true,
+            { createdAt: msgTimestamp, ...ircMeta }
+          );
+          applyIncomingIrcMeta(created.id, "System", content, msgid, replyToMsgid);
           store.openConversation(targetServer.id, targetMember.id);
           if (!isSendError) {
             store.addToHistoricalConversations(targetServer.id, targetMember.id);
@@ -451,7 +529,15 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
         const conversationId = [currentMember.id, otherMember.id].sort().join("-");
         const authorMember = isSelf ? currentMember : otherMember;
 
-        store.addDirectMessage(conversationId, authorMember, content, null, false, msgTimestamp);
+        const created = store.addDirectMessage(
+          conversationId,
+          authorMember,
+          content,
+          null,
+          false,
+          { createdAt: msgTimestamp, ...ircMeta }
+        );
+        applyIncomingIrcMeta(created.id, sender, content, msgid, replyToMsgid);
         store.openConversation(targetServer.id, otherMember.id);
         store.addToHistoricalConversations(targetServer.id, otherMember.id);
 
@@ -565,9 +651,25 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     if (targetChannel) {
-      addMessage(targetChannel.id, mockMember as any, content, null, effectiveIsSystem, msgTimestamp);
+      const created = addMessage(
+        targetChannel.id,
+        mockMember as any,
+        content,
+        null,
+        effectiveIsSystem,
+        { createdAt: msgTimestamp, ...ircMeta }
+      );
+      applyIncomingIrcMeta(created.id, sender, content, msgid, replyToMsgid);
     } else if (targetServer.channels.length > 0) {
-      addMessage(targetServer.channels[0].id, mockMember as any, content, null, effectiveIsSystem, msgTimestamp);
+      const created = addMessage(
+        targetServer.channels[0].id,
+        mockMember as any,
+        content,
+        null,
+        effectiveIsSystem,
+        { createdAt: msgTimestamp, ...ircMeta }
+      );
+      applyIncomingIrcMeta(created.id, sender, content, msgid, replyToMsgid);
     }
 
     // Trigger notification for channel message

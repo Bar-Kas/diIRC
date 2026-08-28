@@ -27,6 +27,7 @@ import { isMediaUrl } from "@/lib/image-utils";
 import { cn } from "@/lib/utils";
 import { commandRegistry, expandCustomCommand, listSlashSuggestions } from "@/lib/commands/command-system";
 import { useDraftStore, AttachedImage } from "@/hooks/use-draft-store";
+import { formatCompatReply, replyTagOverheadBytes, useReplyStore } from "@/hooks/use-reply-store";
 
 export const getIrcByteCount = (text: string): number => {
   if (!text) return 0;
@@ -82,6 +83,11 @@ export const ChatInput = ({
   const setDraft = useDraftStore((state) => state.setDraft);
   const getDraft = useDraftStore((state) => state.getDraft);
   const clearDraft = useDraftStore((state) => state.clearDraft);
+  const pendingReply = useReplyStore((state) =>
+    activeId ? state.pendingByChatId[activeId] : undefined
+  );
+  const clearPendingReply = useReplyStore((state) => state.clearPending);
+  const rememberSentReply = useReplyStore((state) => state.rememberSent);
 
   const initialDraft = activeId ? getDraft(activeId) : { content: "", attachedImages: [] };
 
@@ -184,7 +190,24 @@ export const ChatInput = ({
   const serverUser = activeServer?.realname || currentNick;
 
   const maxBytes = getIrcMaxMessageBytes(targetName, currentNick, serverUser, serverHost);
-  const currentBytes = getIrcByteCount(content);
+  const wireBytesFor = useCallback(
+    (text: string) => {
+      if (!pendingReply || text.trim().startsWith("/")) {
+        return getIrcByteCount(text);
+      }
+      const tagBytes = replyTagOverheadBytes(pendingReply.msgid);
+      const bodyBudget = Math.max(0, maxBytes - tagBytes);
+      const wire = formatCompatReply(
+        pendingReply.nick,
+        pendingReply.preview,
+        text,
+        bodyBudget
+      );
+      return getIrcByteCount(wire) + tagBytes;
+    },
+    [pendingReply, maxBytes]
+  );
+  const currentBytes = wireBytesFor(content);
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const pasteText = e.clipboardData.getData("text");
@@ -196,7 +219,7 @@ export const ChatInput = ({
     const currentVal = form.getValues("content") || "";
 
     const nextVal = currentVal.slice(0, selectionStart) + pasteText + currentVal.slice(selectionEnd);
-    const nextBytes = getIrcByteCount(nextVal);
+    const nextBytes = wireBytesFor(nextVal);
 
     if (nextBytes > maxBytes) {
       e.preventDefault();
@@ -225,9 +248,17 @@ export const ChatInput = ({
         focusInput();
       }
     };
+    const handleFocusInput = (e: Event) => {
+      const customEvent = e as CustomEvent<{ chatId?: string }>;
+      if (!customEvent.detail?.chatId || customEvent.detail.chatId === activeId) {
+        focusInput();
+      }
+    };
     window.addEventListener("restore_unsent_message", handleRestore);
+    window.addEventListener("focus_chat_input", handleFocusInput);
     return () => {
       window.removeEventListener("restore_unsent_message", handleRestore);
+      window.removeEventListener("focus_chat_input", handleFocusInput);
     };
   }, [activeId, form, focusInput]);
 
@@ -795,6 +826,12 @@ export const ChatInput = ({
       return;
     }
 
+    if (e.key === "Escape" && pendingReply && activeId) {
+      e.preventDefault();
+      clearPendingReply(activeId);
+      return;
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       const hasText = Boolean((form.getValues("content") || "").trim());
       const hasReadyImage = attachedImages.some((img) => !img.isUploading && img.url);
@@ -815,6 +852,7 @@ export const ChatInput = ({
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     const textContent = values.content?.trim() || "";
     const readyImages = attachedImages.filter((img) => !img.isUploading && img.url);
+    const replyTarget = activeId ? useReplyStore.getState().getPending(activeId) : undefined;
 
     if (attachedImages.some((img) => img.isUploading)) return;
     if (!textContent && readyImages.length === 0) return;
@@ -872,6 +910,10 @@ export const ChatInput = ({
                     serverId: activeServer.id,
                     channel: name.startsWith("#") ? name : `#${name}`,
                     message: img.url,
+                    replyToMsgid: null,
+                  replyNick: null,
+                  replyPreview: null,
+                  replyParentOffset: null,
                   }).catch((e) => console.error(e));
                   addMessage(query.channelId, senderMember, img.url);
                 } else if (type === "conversation" && query?.conversationId) {
@@ -879,6 +921,10 @@ export const ChatInput = ({
                     serverId: activeServer.id,
                     channel: name,
                     message: img.url,
+                    replyToMsgid: null,
+                  replyNick: null,
+                  replyPreview: null,
+                  replyParentOffset: null,
                   }).catch((e) => console.error(e));
                   addDirectMessage(query.conversationId, senderMember, img.url);
                   if (query.targetMemberId) {
@@ -890,6 +936,7 @@ export const ChatInput = ({
             if (!inputUpdated) {
               if (activeId) {
                 clearDraft(activeId);
+                clearPendingReply(activeId);
               }
               form.reset({ content: "" });
               clearAllAttachments();
@@ -912,6 +959,7 @@ export const ChatInput = ({
 
       if (activeId) {
         clearDraft(activeId);
+        clearPendingReply(activeId);
       }
       form.reset({ content: "" });
       clearAllAttachments();
@@ -920,10 +968,33 @@ export const ChatInput = ({
       for (const line of linesToSend) {
         const targetName = type === "channel" ? (name.startsWith("#") ? name : `#${name}`) : name;
 
+        const isReplyLineLocal =
+          Boolean(replyTarget) &&
+          Boolean(textContent) &&
+          line === linesToSend[0] &&
+          !textContent.startsWith("/");
+        const replyMeta = isReplyLineLocal && replyTarget
+          ? {
+              replyToMsgid: replyTarget.msgid,
+              replyTo: {
+                messageId: replyTarget.messageId,
+                nick: replyTarget.nick,
+                preview: replyTarget.preview,
+                msgid: replyTarget.msgid,
+              },
+            }
+          : undefined;
+
         if (type === "channel" && query?.channelId) {
-          addMessage(query.channelId, senderMember, line);
+          const created = addMessage(query.channelId, senderMember, line, null, false, replyMeta);
+          if (isReplyLineLocal && replyTarget) {
+            rememberSentReply(created.id, replyTarget);
+          }
         } else if (type === "conversation" && query?.conversationId) {
-          addDirectMessage(query.conversationId, senderMember, line);
+          const created = addDirectMessage(query.conversationId, senderMember, line, null, false, replyMeta);
+          if (isReplyLineLocal && replyTarget) {
+            rememberSentReply(created.id, replyTarget);
+          }
           if (query.targetMemberId) {
             useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
           }
@@ -937,6 +1008,13 @@ export const ChatInput = ({
             serverId: activeServer.id,
             channel: targetName,
             message: ircMessage,
+            replyToMsgid: isReplyLineLocal ? replyTarget?.msgid ?? null : null,
+          replyNick: isReplyLineLocal ? replyTarget?.nick ?? null : null,
+          replyPreview: isReplyLineLocal ? replyTarget?.preview ?? null : null,
+          replyParentOffset:
+            isReplyLineLocal && replyTarget?.parentOffset != null
+              ? replyTarget.parentOffset
+              : null,
           });
         } catch (err: any) {
           console.error("Failed to send message via Tauri IRC:", err);
@@ -1031,6 +1109,27 @@ export const ChatInput = ({
             <FormItem>
               <FormControl>
                 <div className="relative p-4 pb-6">
+                  {pendingReply && (
+                    <div className="mb-2 flex items-center gap-x-3 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2">
+                      <div className="w-0.5 self-stretch rounded-full bg-indigo-500 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-indigo-500 dark:text-indigo-400">
+                          Replying to {pendingReply.nick}
+                        </p>
+                        <p className="text-xs italic text-zinc-500 dark:text-zinc-400 truncate">
+                          {pendingReply.preview}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => activeId && clearPendingReply(activeId)}
+                        className="h-6 w-6 rounded-md text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-200/70 dark:hover:bg-zinc-700/70 flex items-center justify-center transition"
+                        title="Cancel reply"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                   {attachedImages.length > 0 && (
                     <div className="flex items-center gap-x-3 mb-2 overflow-x-auto pb-2 pt-1 px-1">
                       {attachedImages.map((img) => {
@@ -1181,13 +1280,15 @@ export const ChatInput = ({
                           ? "You do not have permission to send messages in this moderated channel"
                           : isUploading
                           ? "Uploading files..."
+                          : pendingReply
+                          ? `Reply to ${pendingReply.nick}`
                           : `Message ${type === "conversation" ? name : "#" + name}`
                       }
                       rows={1}
                       {...field}
                       onChange={(e) => {
                         const newVal = e.target.value;
-                        const bytes = getIrcByteCount(newVal);
+                        const bytes = wireBytesFor(newVal);
                         if (bytes <= maxBytes) {
                           field.onChange(e);
                         }
@@ -1235,7 +1336,7 @@ export const ChatInput = ({
                         onChange={(emoji: string) => {
                           const currentVal = field.value || "";
                           const newText = `${currentVal ? currentVal + " " : ""}${emoji}`;
-                          const bytes = getIrcByteCount(newText);
+                          const bytes = wireBytesFor(newText);
                           if (bytes <= maxBytes) {
                             field.onChange(newText);
                             form.setFocus("content");
