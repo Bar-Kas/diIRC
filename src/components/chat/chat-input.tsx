@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Paperclip, Loader2, X, FileIcon, Command } from "lucide-react";
+import { Paperclip, Loader2, X, FileIcon, Command, Radio } from "lucide-react";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -68,9 +68,12 @@ export const ChatInput = ({
   const currentProfile = useMockStore((state) => state.currentProfile);
   const uploadConfig = useMockStore((state) => state.uploadConfig);
   const ircConnectedServers = useMockStore((state) => state.ircConnectedServers);
+  const connectServer = useMockStore((state) => state.connectServer);
   const enableCommandSuggestions = useMockStore((state) => state.enableCommandSuggestions ?? true);
   const { onOpen } = useModal();
   const navigate = useNavigate();
+
+  const [isConnecting, setIsConnecting] = useState(false);
 
   const activeId = query?.channelId || query?.conversationId;
 
@@ -760,6 +763,49 @@ export const ChatInput = ({
       console.error(error);
     }
   };
+
+  const handleReconnect = async () => {
+    if (!activeServer) return;
+    setIsConnecting(true);
+    try {
+      await connectServer(activeServer.id);
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  if (!isIrcConnected && activeServer) {
+    return (
+      <div className="p-4 pb-6">
+        <div className="flex items-center justify-between gap-x-3 p-3.5 bg-zinc-200/90 dark:bg-[#2b2d31] rounded-lg border border-amber-500/30 text-zinc-600 dark:text-zinc-300 shadow-sm animate-in fade-in duration-200">
+          <div className="flex items-center gap-x-3 min-w-0">
+            <div className="h-3 w-3 rounded-full bg-amber-500 animate-pulse shrink-0 ring-2 ring-amber-500/20" />
+            <div className="flex flex-col min-w-0">
+              <span className="text-xs sm:text-sm font-semibold text-zinc-800 dark:text-zinc-100 truncate">
+                Disconnected from {activeServer.name}
+              </span>
+              <span className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
+                You cannot send messages while disconnected.
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleReconnect}
+            disabled={isConnecting}
+            className="shrink-0 flex items-center gap-x-2 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-semibold shadow transition active:scale-95 disabled:opacity-50"
+          >
+            {isConnecting ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Radio className="w-3.5 h-3.5" />
+            )}
+            <span>Connect to server</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Form {...form}>

@@ -29,6 +29,9 @@ export const NavigationItem = ({
 
   const onClick = () => {
     navigate(`/servers/${id}`);
+    if (!isIrcConnected) {
+      connectServer(id);
+    }
     const store = useMockStore.getState();
     const motd = store.serverMotds[id];
     if (motd && motd.length > 0 && store.shouldAutoShowMotd(id, motd)) {
@@ -116,7 +119,7 @@ export const NavigationItem = ({
                 "relative group flex mx-3 h-[48px] w-[48px] rounded-[24px] group-hover:rounded-[16px] transition-all overflow-hidden",
                 isSelected && "bg-primary/10 text-primary rounded-[16px]",
                 isUnread && "ring-2 ring-indigo-500/80 ring-offset-2 dark:ring-offset-[#1E1F22]",
-                !isIrcConnected && "opacity-75 grayscale-[30%]"
+                !isIrcConnected && "opacity-60 grayscale contrast-75 hover:opacity-90 hover:grayscale-[50%] transition-all"
               )}>
                 <img
                   src={imageUrl}
@@ -125,7 +128,7 @@ export const NavigationItem = ({
                 />
               </div>
               {!isIrcConnected && (
-                <span className="absolute bottom-0 right-2 z-10 w-3 h-3 bg-amber-500 rounded-full ring-2 ring-[#E3E5E8] dark:ring-[#1E1F22]" />
+                <span className="absolute bottom-0 right-2 z-10 w-3 h-3 bg-amber-500 rounded-full ring-2 ring-[#E3E5E8] dark:ring-[#1E1F22]" title="Disconnected" />
               )}
               {isUnread && (
                 <span className={cn(
