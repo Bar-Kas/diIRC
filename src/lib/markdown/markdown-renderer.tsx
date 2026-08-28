@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { isSafeHref } from "./markdown-utils";
 import { isMediaUrl } from "@/lib/image-utils";
 import { useMockStore } from "@/lib/mock-store";
+import { getOnlyEmojiCount, getEmojiSizeClass } from "@/lib/emoji-utils";
 
 interface MarkdownRendererProps {
   content: string;
@@ -147,8 +148,18 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
 
   if (!content || !content.trim()) return null;
 
+  const onlyEmojiCount = getOnlyEmojiCount(content);
+  const emojiSizeClass = getEmojiSizeClass(onlyEmojiCount);
+
   const components: any = {
-    p: ({ children }: any) => <p className="my-1 text-zinc-600 dark:text-zinc-300 leading-6">{children}</p>,
+    p: ({ children }: any) => (
+      <p className={cn(
+        "my-1 text-zinc-600 dark:text-zinc-300 leading-6",
+        emojiSizeClass
+      )}>
+        {children}
+      </p>
+    ),
     strong: ({ children }: any) => <strong className="font-bold text-zinc-900 dark:text-zinc-100">{children}</strong>,
     em: ({ children }: any) => <em className="italic">{children}</em>,
     del: ({ children }: any) => <del className="line-through opacity-80 decoration-2">{children}</del>,

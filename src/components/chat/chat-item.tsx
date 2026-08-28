@@ -17,6 +17,7 @@ import { MarkdownRenderer } from "@/lib/markdown/markdown-renderer";
 import { extractUrlsFromMarkdownText, stripTrailingPunct, hasMarkdownSyntax } from "@/lib/markdown/markdown-utils";
 import { isBrokenHeader, stripSteganography } from "@/lib/markdown/multiline-steganography";
 import { checkIsMention } from "@/lib/notification-service";
+import { getOnlyEmojiCount, getEmojiSizeClass } from "@/lib/emoji-utils";
 
 interface ChatItemProps {
   id: string;
@@ -144,6 +145,11 @@ const ChatItemInner = ({
 
   // Markdown vs legacy rendering — only when markdown chars present and block is not broken
   const shouldUseMarkdown = enableMarkdown && !deleted && !isSystem && !isAction && !hasBrokenHeader && hasMarkdownSyntax(textToEvaluate);
+
+  // Detect messages containing only emojis for Discord-style Jumboji enlarged rendering
+  const emojiCount = !deleted && !isSystem && !isAction && !fileUrl ? getOnlyEmojiCount(cleanContent) : 0;
+  const isOnlyEmoji = emojiCount > 0 && emojiCount <= 16;
+  const emojiSizeClass = getEmojiSizeClass(emojiCount);
 
   const parseMentions = (text: string, keyPrefix: string | number) => {
     if (!text) return text;
@@ -363,7 +369,7 @@ const ChatItemInner = ({
                     </UserHoverCard>
                     <span>{renderContentWithLinks(actionText)}</span>
                   </p>
-                ) : shouldUseMarkdown ? (
+                ) : shouldUseMarkdown && !isOnlyEmoji ? (
                   <div className={cn(
                     "text-sm text-zinc-600 dark:text-zinc-300 min-w-0 w-full",
                     deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
@@ -379,6 +385,7 @@ const ChatItemInner = ({
                 ) : (
                   <p className={cn(
                     "text-sm text-zinc-600 dark:text-zinc-300 whitespace-pre-wrap break-words",
+                    isOnlyEmoji && emojiSizeClass,
                     deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
                   )}>
                     {renderContentWithLinks(cleanContent)}
