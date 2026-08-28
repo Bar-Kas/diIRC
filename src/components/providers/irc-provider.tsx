@@ -691,34 +691,53 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
             updateChannelMembers(server_id, channel, users, event_type as any);
           }, 100);
 
-          if (event_type === "JOIN") {
+          if (event_type === "JOIN" || event_type === "NAMES") {
             const store = useMockStore.getState();
             const pending = store.pendingJoin;
-            const cleanChan = channel.replace(/^#/, "");
+            const cleanChan = channel ? channel.replace(/^#/, "") : "";
+            if (!cleanChan || !server_id) return;
 
-            if (
+            const activeServer = store.servers.find((s) => s.id === server_id);
+            if (!activeServer) return;
+
+            const ourNick = getServerActiveNick(activeServer).toLowerCase();
+            const isOurNickInUsers = users.some(
+              (u) => u.trim().replace(/^[~&@%+]+/, "").toLowerCase() === ourNick
+            );
+            const isPending =
               pending &&
               pending.serverId === server_id &&
-              pending.channelName.toLowerCase() === cleanChan.toLowerCase()
-            ) {
-              const activeServer = store.servers.find(s => s.id === server_id);
-              const existing = activeServer?.channels.find(c => c.name.toLowerCase() === cleanChan.toLowerCase());
-              
+              pending.channelName.toLowerCase() === cleanChan.toLowerCase();
+
+            if (isPending || isOurNickInUsers || (event_type === "NAMES" && isOurNickInUsers)) {
+              const existing = activeServer.channels.find(
+                (c) => c.name.toLowerCase().replace(/^#/, "") === cleanChan.toLowerCase()
+              );
+
               if (!existing) {
                 const newChan = store.addChannel(server_id, cleanChan, ChannelType.TEXT);
-                if (pending.password) {
+                if (isPending && pending.password) {
                   store.updateChannelKey(server_id, newChan.id, pending.password);
                 }
-                store.setPendingJoin(null, null);
-                if (newChan?.id) {
-                  navigate(`/servers/${server_id}/channels/${newChan.id}`);
+                if (isPending) {
+                  store.setPendingJoin(null, null);
+                }
+                const isServerView =
+                  window.location.pathname === `/servers/${server_id}` ||
+                  window.location.pathname === `/servers/${server_id}/`;
+                if (isPending || isServerView) {
+                  if (newChan?.id) {
+                    navigate(`/servers/${server_id}/channels/${newChan.id}`);
+                  }
                 }
               } else {
-                if (pending.password) {
-                  store.updateChannelKey(server_id, existing.id, pending.password);
+                if (isPending) {
+                  if (pending.password) {
+                    store.updateChannelKey(server_id, existing.id, pending.password);
+                  }
+                  store.setPendingJoin(null, null);
+                  navigate(`/servers/${server_id}/channels/${existing.id}`);
                 }
-                store.setPendingJoin(null, null);
-                navigate(`/servers/${server_id}/channels/${existing.id}`);
               }
             }
           }

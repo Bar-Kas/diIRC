@@ -69,11 +69,15 @@ export const CreateChannelModal = () => {
 
         try {
           useMockStore.getState().setPendingJoin(activeServerId, cleanChannelName, undefined);
+          const newChan = addChannel(activeServerId, cleanChannelName, ChannelType.TEXT, values.joinTemporary);
           await invoke("join_channel", {
             serverId: activeServerId,
             channel: cleanChannelName,
             password: null,
           });
+          if (newChan?.id) {
+            navigate(`/servers/${activeServerId}/channels/${newChan.id}`);
+          }
           form.reset();
           onClose("createChannel");
         } catch (e) {

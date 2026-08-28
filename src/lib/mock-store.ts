@@ -2285,6 +2285,7 @@ export const useMockStore = create<MockState>()(
         const cleanChan = channelName.trim().replace(/^#/, "");
         get().removePendingInvite(serverId, cleanChan);
         get().setPendingJoin(serverId, cleanChan, undefined);
+        get().addChannel(serverId, cleanChan, ChannelType.TEXT);
 
         try {
           await invoke("join_channel", {

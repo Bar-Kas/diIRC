@@ -241,13 +241,22 @@ commandRegistry.register({
 
     try {
       const { useMockStore } = await import("@/lib/mock-store");
+      const { ChannelType } = await import("@/types");
       useMockStore.getState().setPendingJoin(ctx.serverId, channelName, password || undefined);
+      const newChan = useMockStore.getState().addChannel(ctx.serverId, channelName, ChannelType.TEXT);
+      if (password) {
+        useMockStore.getState().updateChannelKey(ctx.serverId, newChan.id, password);
+      }
       
       await invoke("join_channel", {
         serverId: ctx.serverId,
         channel: channelName,
         password: password,
       });
+
+      if (newChan?.id && ctx.navigate) {
+        ctx.navigate(`/servers/${ctx.serverId}/channels/${newChan.id}`);
+      }
     } catch (err) {
       console.error("Failed to send /join via Tauri IRC:", err);
     }
