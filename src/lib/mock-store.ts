@@ -366,6 +366,7 @@ interface MockState {
   uploadConfig: ImageUploadConfig;
   urlAuthRules: UrlAuthRule[];
   ircConnectedServers: Record<string, boolean>;
+  ircConnectingServers: Record<string, boolean>;
   ircConnectionErrors: Record<string, string | null>;
   manuallyDisconnectedServers: Record<string, boolean>;
   statusDisplayMode: StatusDisplayMode;
@@ -393,6 +394,7 @@ interface MockState {
 
   // Connection Actions
   setIrcConnected: (serverId: string, isConnected: boolean, error?: string | null) => void;
+  setIrcConnecting: (serverId: string, isConnecting: boolean) => void;
   setIrcConnectionError: (serverId: string, error: string | null) => void;
   disconnectServer: (serverId: string) => Promise<void>;
   connectServer: (serverId: string) => Promise<void>;
@@ -426,6 +428,7 @@ interface MockState {
   addServer: (optionsOrName: string | AddServerOptions, imageUrl?: string) => Server;
   updateServer: (serverId: string, optionsOrName: string | UpdateServerOptions, imageUrl?: string) => void;
   deleteServer: (serverId: string) => void;
+  reorderServers: (sourceIndex: number, destinationIndex: number) => void;
   joinServerByInvite: (inviteCode: string) => Server | null;
   updateInviteCode: (serverId: string) => string;
 
@@ -438,6 +441,7 @@ interface MockState {
   updateChannelTopicByName: (serverId: string, channelName: string, topic: string) => void;
   updateChannelKey: (serverId: string, channelId: string, key?: string) => void;
   deleteChannel: (serverId: string, channelId: string) => void;
+  reorderChannels: (serverId: string, sourceIndex: number, destinationIndex: number) => void;
   setChannelTemporary: (serverId: string, channelName: string, isTemporary: boolean) => void;
   pendingInvites: Record<string, PendingInvite[]>;
   addPendingInvite: (serverId: string, channelName: string, inviter: string) => void;
@@ -590,6 +594,7 @@ export const useMockStore = create<MockState>()(
       },
       urlAuthRules: [],
       ircConnectedServers: {},
+      ircConnectingServers: {},
       ircConnectionErrors: {},
       manuallyDisconnectedServers: {},
       statusDisplayMode: "always",
@@ -671,9 +676,21 @@ export const useMockStore = create<MockState>()(
             ...state.ircConnectedServers,
             [serverId]: isConnected,
           },
+          ircConnectingServers: {
+            ...state.ircConnectingServers,
+            [serverId]: false,
+          },
           ircConnectionErrors: {
             ...state.ircConnectionErrors,
             [serverId]: isConnected ? null : (error ?? state.ircConnectionErrors[serverId] ?? null),
+          },
+        })),
+
+      setIrcConnecting: (serverId: string, isConnecting: boolean) =>
+        set((state) => ({
+          ircConnectingServers: {
+            ...state.ircConnectingServers,
+            [serverId]: isConnecting,
           },
         })),
 
@@ -691,6 +708,10 @@ export const useMockStore = create<MockState>()(
             ...state.manuallyDisconnectedServers,
             [serverId]: true,
           },
+          ircConnectingServers: {
+            ...state.ircConnectingServers,
+            [serverId]: false,
+          },
         }));
         try {
           await invoke("disconnect_irc", { serverId }).catch(() => {});
@@ -703,6 +724,10 @@ export const useMockStore = create<MockState>()(
           manuallyDisconnectedServers: {
             ...state.manuallyDisconnectedServers,
             [serverId]: false,
+          },
+          ircConnectingServers: {
+            ...state.ircConnectingServers,
+            [serverId]: true,
           },
         }));
         get().setIrcConnectionError(serverId, null);
@@ -733,6 +758,7 @@ export const useMockStore = create<MockState>()(
           } catch (e) {
             console.error(`Failed to connect IRC server ${server.name}:`, e);
             const errMsg = e instanceof Error ? e.message : String(e);
+            get().setIrcConnecting(serverId, false);
             get().setIrcConnected(serverId, false, errMsg);
           }
         }
@@ -1145,6 +1171,24 @@ export const useMockStore = create<MockState>()(
         });
       },
 
+      reorderServers: (sourceIndex: number, destinationIndex: number) => {
+        set((state) => {
+          if (
+            sourceIndex < 0 ||
+            sourceIndex >= state.servers.length ||
+            destinationIndex < 0 ||
+            destinationIndex >= state.servers.length ||
+            sourceIndex === destinationIndex
+          ) {
+            return state;
+          }
+          const newServers = [...state.servers];
+          const [moved] = newServers.splice(sourceIndex, 1);
+          newServers.splice(destinationIndex, 0, moved);
+          return { servers: newServers };
+        });
+      },
+
       joinServerByInvite: (inviteCode) => {
         const existing = get().servers.find((s) => s.inviteCode === inviteCode);
         if (existing) return existing;
@@ -1305,6 +1349,32 @@ export const useMockStore = create<MockState>()(
             ),
             messages: nextMessages,
           };
+        });
+      },
+
+      reorderChannels: (serverId: string, sourceIndex: number, destinationIndex: number) => {
+        set((state) => {
+          const serverIndex = state.servers.findIndex((s) => s.id === serverId);
+          if (serverIndex === -1) return state;
+          const server = state.servers[serverIndex];
+          if (
+            sourceIndex < 0 ||
+            sourceIndex >= server.channels.length ||
+            destinationIndex < 0 ||
+            destinationIndex >= server.channels.length ||
+            sourceIndex === destinationIndex
+          ) {
+            return state;
+          }
+          const newChannels = [...server.channels];
+          const [moved] = newChannels.splice(sourceIndex, 1);
+          newChannels.splice(destinationIndex, 0, moved);
+          const updatedServers = [...state.servers];
+          updatedServers[serverIndex] = {
+            ...server,
+            channels: newChannels,
+          };
+          return { servers: updatedServers };
         });
       },
 
@@ -2714,15 +2784,16 @@ export const useMockStore = create<MockState>()(
     }),
     {
       name: "diirc-store",
-      version: 5,
+      version: 6,
       partialize: (state) => ({
         ...state,
         messages: {},
         directMessages: {},
         activeChatKey: null,
         unreadState: {},
-        manuallyDisconnectedServers: {},
+        manuallyDisconnectedServers: state.manuallyDisconnectedServers,
         ircConnectedServers: {},
+        ircConnectingServers: {},
         ircConnectionErrors: {},
         historyLoadToken: 0,
         historyWindow: EMPTY_HISTORY_WINDOW,
@@ -2791,10 +2862,15 @@ export const useMockStore = create<MockState>()(
           };
         });
 
-        const manuallyDisconnectedServers: Record<string, boolean> = {};
+        const manuallyDisconnectedServers: Record<string, boolean> = {
+          ...(persistedState?.manuallyDisconnectedServers || {}),
+        };
+        const ircConnectingServers: Record<string, boolean> = {};
         sanitizedServers.forEach((s: any) => {
           if (s.autoConnect === false) {
             manuallyDisconnectedServers[s.id] = true;
+          } else if (!manuallyDisconnectedServers[s.id]) {
+            ircConnectingServers[s.id] = true;
           }
         });
 
@@ -2807,6 +2883,7 @@ export const useMockStore = create<MockState>()(
           activeChatKey: null,
           manuallyDisconnectedServers,
           ircConnectedServers: {},
+          ircConnectingServers,
           ircConnectionErrors: {},
           historyLoadToken: 0,
           historyWindow: EMPTY_HISTORY_WINDOW,

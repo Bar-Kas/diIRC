@@ -24,6 +24,7 @@ import { getHighestChannelRole } from "@/components/user-role-icon";
 import { uploadImage } from "@/lib/upload/services";
 import { ImageContextMenu } from "@/components/image-context-menu";
 import { isMediaUrl } from "@/lib/image-utils";
+import { cn } from "@/lib/utils";
 import { commandRegistry, expandCustomCommand, listSlashSuggestions } from "@/lib/commands/command-system";
 import { useDraftStore, AttachedImage } from "@/hooks/use-draft-store";
 
@@ -68,12 +69,13 @@ export const ChatInput = ({
   const currentProfile = useMockStore((state) => state.currentProfile);
   const uploadConfig = useMockStore((state) => state.uploadConfig);
   const ircConnectedServers = useMockStore((state) => state.ircConnectedServers);
+  const ircConnectingServers = useMockStore((state) => state.ircConnectingServers);
   const connectServer = useMockStore((state) => state.connectServer);
   const enableCommandSuggestions = useMockStore((state) => state.enableCommandSuggestions ?? true);
   const { onOpen } = useModal();
   const navigate = useNavigate();
 
-  const [isConnecting, setIsConnecting] = useState(false);
+  const [localConnecting, setLocalConnecting] = useState(false);
 
   const activeId = query?.channelId || query?.conversationId;
 
@@ -764,13 +766,16 @@ export const ChatInput = ({
     }
   };
 
+  const isServerConnecting = activeServer ? !!ircConnectingServers[activeServer.id] : false;
+  const isConnecting = localConnecting || isServerConnecting;
+
   const handleReconnect = async () => {
     if (!activeServer) return;
-    setIsConnecting(true);
+    setLocalConnecting(true);
     try {
       await connectServer(activeServer.id);
     } finally {
-      setIsConnecting(false);
+      setLocalConnecting(false);
     }
   };
 
@@ -779,13 +784,16 @@ export const ChatInput = ({
       <div className="p-4 pb-6">
         <div className="flex items-center justify-between gap-x-3 p-3.5 bg-zinc-200/90 dark:bg-[#2b2d31] rounded-lg border border-amber-500/30 text-zinc-600 dark:text-zinc-300 shadow-sm animate-in fade-in duration-200">
           <div className="flex items-center gap-x-3 min-w-0">
-            <div className="h-3 w-3 rounded-full bg-amber-500 animate-pulse shrink-0 ring-2 ring-amber-500/20" />
+            <div className={cn(
+              "h-3 w-3 rounded-full shrink-0 ring-2",
+              isConnecting ? "bg-indigo-500 ring-indigo-500/20 animate-ping" : "bg-amber-500 ring-amber-500/20 animate-pulse"
+            )} />
             <div className="flex flex-col min-w-0">
               <span className="text-xs sm:text-sm font-semibold text-zinc-800 dark:text-zinc-100 truncate">
-                Disconnected from {activeServer.name}
+                {isConnecting ? `Connecting to ${activeServer.name}...` : `Disconnected from ${activeServer.name}`}
               </span>
               <span className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
-                You cannot send messages while disconnected.
+                {isConnecting ? "Establishing IRC connection..." : "You cannot send messages while disconnected."}
               </span>
             </div>
           </div>
@@ -793,14 +801,14 @@ export const ChatInput = ({
             type="button"
             onClick={handleReconnect}
             disabled={isConnecting}
-            className="shrink-0 flex items-center gap-x-2 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-semibold shadow transition active:scale-95 disabled:opacity-50"
+            className="shrink-0 flex items-center gap-x-2 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-semibold shadow transition active:scale-95 disabled:opacity-75 disabled:cursor-not-allowed"
           >
             {isConnecting ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Radio className="w-3.5 h-3.5" />
             )}
-            <span>Connect to server</span>
+            <span>{isConnecting ? "Connecting..." : "Connect to server"}</span>
           </button>
         </div>
       </div>

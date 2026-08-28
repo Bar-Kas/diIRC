@@ -17,21 +17,34 @@ interface NavigationItemProps {
   id: string;
   imageUrl: string;
   name: string;
+  index: number;
+  isDragging?: boolean;
+  dropPosition?: "above" | "below" | null;
+  onDragStart?: (e: React.DragEvent, id: string, index: number) => void;
+  onDragOver?: (e: React.DragEvent, id: string, index: number) => void;
+  onDragLeave?: (e: React.DragEvent, id: string) => void;
+  onDrop?: (e: React.DragEvent, id: string, index: number) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
 }
 
 export const NavigationItem = ({
   id,
   imageUrl,
-  name
+  name,
+  index,
+  isDragging,
+  dropPosition,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
 }: NavigationItemProps) => {
   const params = useParams();
   const navigate = useNavigate();
 
   const onClick = () => {
     navigate(`/servers/${id}`);
-    if (!isIrcConnected) {
-      connectServer(id);
-    }
     const store = useMockStore.getState();
     const motd = store.serverMotds[id];
     if (motd && motd.length > 0 && store.shouldAutoShowMotd(id, motd)) {
@@ -101,14 +114,37 @@ export const NavigationItem = ({
     <ActionTooltip
       side="right"
       align="center"
-      label={tooltipLabel}
+      label={isDragging ? "" : tooltipLabel}
     >
-      <div>
+      <div
+        draggable
+        onDragStart={(e) => onDragStart?.(e, id, index)}
+        onDragOver={(e) => onDragOver?.(e, id, index)}
+        onDragLeave={(e) => onDragLeave?.(e, id)}
+        onDrop={(e) => onDrop?.(e, id, index)}
+        onDragEnd={onDragEnd}
+        className={cn(
+          "relative group transition-all duration-150 cursor-grab active:cursor-grabbing select-none",
+          isDragging && "opacity-40 scale-95"
+        )}
+      >
+        {dropPosition === "above" && (
+          <div className="absolute -top-2 left-2 right-2 flex items-center pointer-events-none z-30 animate-in fade-in-50 duration-100">
+            <div className="w-2.5 h-2.5 rounded-full bg-white dark:bg-white ring-2 ring-indigo-500 shadow-md -mr-1 z-10 shrink-0" />
+            <div className="flex-1 h-[3.5px] bg-white dark:bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
+          </div>
+        )}
+        {dropPosition === "below" && (
+          <div className="absolute -bottom-2 left-2 right-2 flex items-center pointer-events-none z-30 animate-in fade-in-50 duration-100">
+            <div className="w-2.5 h-2.5 rounded-full bg-white dark:bg-white ring-2 ring-indigo-500 shadow-md -mr-1 z-10 shrink-0" />
+            <div className="flex-1 h-[3.5px] bg-white dark:bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
+          </div>
+        )}
         <ContextMenu>
           <ContextMenuTrigger asChild>
             <button
               onClick={onClick}
-              className="group relative flex items-center"
+              className="group relative flex items-center w-full"
             >
               <div className={cn(
                 "absolute left-0 bg-primary rounded-r-full transition-all w-[4px]",
@@ -116,7 +152,7 @@ export const NavigationItem = ({
                 isSelected ? "h-[36px]" : (isUnread ? "h-[10px]" : "h-[0px]")
               )} />
               <div className={cn(
-                "relative group flex mx-3 h-[48px] w-[48px] rounded-[24px] group-hover:rounded-[16px] transition-all overflow-hidden",
+                "relative group flex mx-3 h-[48px] w-[48px] rounded-[24px] group-hover:rounded-[16px] transition-all overflow-hidden pointer-events-none",
                 isSelected && "bg-primary/10 text-primary rounded-[16px]",
                 isUnread && "ring-2 ring-indigo-500/80 ring-offset-2 dark:ring-offset-[#1E1F22]",
                 !isIrcConnected && "opacity-60 grayscale contrast-75 hover:opacity-90 hover:grayscale-[50%] transition-all"
@@ -124,7 +160,8 @@ export const NavigationItem = ({
                 <img
                   src={imageUrl}
                   alt={name}
-                  className="w-full h-full object-cover"
+                  draggable={false}
+                  className="w-full h-full object-cover pointer-events-none"
                 />
               </div>
               {!isIrcConnected && (

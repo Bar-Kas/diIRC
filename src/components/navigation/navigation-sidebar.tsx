@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Settings, ShieldCheck } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,7 +13,70 @@ import { NavigationItem } from "./navigation-item";
 
 export const NavigationSidebar = () => {
   const servers = useMockStore((state) => state.servers);
+  const reorderServers = useMockStore((state) => state.reorderServers);
   const { onOpen } = useModal();
+
+  const [draggedServerId, setDraggedServerId] = useState<string | null>(null);
+  const [dragOverServerId, setDragOverServerId] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<"above" | "below" | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, id: string, _index: number) => {
+    setDraggedServerId(id);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
+  };
+
+  const handleDragOver = (e: React.DragEvent, id: string, _index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (draggedServerId === id) {
+      setDragOverServerId(null);
+      setDropPosition(null);
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const isAbove = e.clientY < rect.top + rect.height / 2;
+    setDragOverServerId(id);
+    setDropPosition(isAbove ? "above" : "below");
+  };
+
+  const handleDragLeave = (_e: React.DragEvent, id: string) => {
+    if (dragOverServerId === id) {
+      setDragOverServerId(null);
+      setDropPosition(null);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, targetId: string, targetIndex: number) => {
+    e.preventDefault();
+    if (!draggedServerId || draggedServerId === targetId) {
+      setDraggedServerId(null);
+      setDragOverServerId(null);
+      setDropPosition(null);
+      return;
+    }
+
+    const sourceIndex = servers.findIndex((s) => s.id === draggedServerId);
+    if (sourceIndex === -1) return;
+
+    let destinationIndex = targetIndex;
+    if (dropPosition === "above") {
+      destinationIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    } else {
+      destinationIndex = sourceIndex > targetIndex ? targetIndex + 1 : targetIndex;
+    }
+
+    reorderServers(sourceIndex, destinationIndex);
+    setDraggedServerId(null);
+    setDragOverServerId(null);
+    setDropPosition(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedServerId(null);
+    setDragOverServerId(null);
+    setDropPosition(null);
+  };
 
   return (
     <div
@@ -24,12 +88,20 @@ export const NavigationSidebar = () => {
       />
       <ScrollArea className="flex-1 w-full no-scrollbar">
         <div className="pt-1.5">
-          {servers.map((server) => (
+          {servers.map((server, index) => (
             <div key={server.id} className="mb-4">
               <NavigationItem
                 id={server.id}
                 name={server.name}
                 imageUrl={server.imageUrl}
+                index={index}
+                isDragging={draggedServerId === server.id}
+                dropPosition={dragOverServerId === server.id ? dropPosition : null}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onDragEnd={handleDragEnd}
               />
             </div>
           ))}

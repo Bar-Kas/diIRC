@@ -36,6 +36,7 @@ export const ServerSidebar = ({
   const pendingInvites = useMockStore((state) => state.pendingInvites);
   const acceptPendingInvite = useMockStore((state) => state.acceptPendingInvite);
   const ignorePendingInvite = useMockStore((state) => state.ignorePendingInvite);
+  const reorderChannels = useMockStore((state) => state.reorderChannels);
 
   const setMembersSidebar = useUIStore((state) => state.setMembersSidebar);
   const { onOpen } = useModal();
@@ -43,6 +44,10 @@ export const ServerSidebar = ({
   const [splitPercent, setSplitPercent] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
+
+  const [draggedChannelId, setDraggedChannelId] = useState<string | null>(null);
+  const [dragOverChannelId, setDragOverChannelId] = useState<string | null>(null);
+  const [channelDropPosition, setChannelDropPosition] = useState<"above" | "below" | null>(null);
 
   const server = servers.find((s) => s.id === serverId) || (serverId ? servers[0] : undefined);
   const serverInvites = (server ? pendingInvites[server.id] : []) || [];
@@ -78,6 +83,64 @@ export const ServerSidebar = ({
   const handleDividerMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     isDraggingRef.current = true;
+  };
+
+  const handleChannelDragStart = (e: React.DragEvent, channelId: string, _index: number) => {
+    setDraggedChannelId(channelId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", channelId);
+  };
+
+  const handleChannelDragOver = (e: React.DragEvent, channelId: string, _index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (draggedChannelId === channelId) {
+      setDragOverChannelId(null);
+      setChannelDropPosition(null);
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const isAbove = e.clientY < rect.top + rect.height / 2;
+    setDragOverChannelId(channelId);
+    setChannelDropPosition(isAbove ? "above" : "below");
+  };
+
+  const handleChannelDragLeave = (_e: React.DragEvent, channelId: string) => {
+    if (dragOverChannelId === channelId) {
+      setDragOverChannelId(null);
+      setChannelDropPosition(null);
+    }
+  };
+
+  const handleChannelDrop = (e: React.DragEvent, targetChannelId: string, targetIndex: number) => {
+    e.preventDefault();
+    if (!draggedChannelId || draggedChannelId === targetChannelId || !server) {
+      setDraggedChannelId(null);
+      setDragOverChannelId(null);
+      setChannelDropPosition(null);
+      return;
+    }
+
+    const sourceIndex = server.channels.findIndex((c) => c.id === draggedChannelId);
+    if (sourceIndex === -1) return;
+
+    let destinationIndex = targetIndex;
+    if (channelDropPosition === "above") {
+      destinationIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    } else {
+      destinationIndex = sourceIndex > targetIndex ? targetIndex + 1 : targetIndex;
+    }
+
+    reorderChannels(server.id, sourceIndex, destinationIndex);
+    setDraggedChannelId(null);
+    setDragOverChannelId(null);
+    setChannelDropPosition(null);
+  };
+
+  const handleChannelDragEnd = () => {
+    setDraggedChannelId(null);
+    setDragOverChannelId(null);
+    setChannelDropPosition(null);
   };
 
   if (!server) {
@@ -291,11 +354,19 @@ export const ServerSidebar = ({
                   server={server}
                 />
                 <div className="space-y-[2px]">
-                  {section.channels.map((channel) => (
+                  {section.channels.map((channel, index) => (
                     <ServerChannel
                       key={channel.id}
                       channel={channel}
                       server={server}
+                      index={index}
+                      isDragging={draggedChannelId === channel.id}
+                      dropPosition={dragOverChannelId === channel.id ? channelDropPosition : null}
+                      onDragStart={handleChannelDragStart}
+                      onDragOver={handleChannelDragOver}
+                      onDragLeave={handleChannelDragLeave}
+                      onDrop={handleChannelDrop}
+                      onDragEnd={handleChannelDragEnd}
                     />
                   ))}
                 </div>

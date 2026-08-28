@@ -28,6 +28,14 @@ import {
 interface ServerChannelProps {
   channel: Channel;
   server: Server;
+  index: number;
+  isDragging?: boolean;
+  dropPosition?: "above" | "below" | null;
+  onDragStart?: (e: React.DragEvent, channelId: string, index: number) => void;
+  onDragOver?: (e: React.DragEvent, channelId: string, index: number) => void;
+  onDragLeave?: (e: React.DragEvent, channelId: string) => void;
+  onDrop?: (e: React.DragEvent, channelId: string, index: number) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
 }
 
 const iconMap = {
@@ -36,7 +44,15 @@ const iconMap = {
 
 export const ServerChannel = ({
   channel,
-  server
+  server,
+  index,
+  isDragging,
+  dropPosition,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
 }: ServerChannelProps) => {
   const { onOpen } = useModal();
   const params = useParams();
@@ -116,18 +132,42 @@ export const ServerChannel = ({
   };
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <button
-          onClick={onClick}
-          onMouseDown={onMouseDown}
-          onAuxClick={onAuxClick}
-          className={cn(
-            "group px-2 py-2 rounded-md flex items-center gap-x-2 w-full hover:bg-zinc-700/10 dark:hover:bg-zinc-700/50 transition mb-1 relative",
-            isSelected && "bg-zinc-700/20 dark:bg-zinc-700",
-            isUnread && "bg-indigo-500/10 dark:bg-indigo-500/15"
-          )}
-        >
+    <div
+      draggable
+      onDragStart={(e) => onDragStart?.(e, channel.id, index)}
+      onDragOver={(e) => onDragOver?.(e, channel.id, index)}
+      onDragLeave={(e) => onDragLeave?.(e, channel.id)}
+      onDrop={(e) => onDrop?.(e, channel.id, index)}
+      onDragEnd={onDragEnd}
+      className={cn(
+        "relative select-none cursor-grab active:cursor-grabbing group transition-all duration-150",
+        isDragging && "opacity-35 scale-[0.98]"
+      )}
+    >
+      {dropPosition === "above" && (
+        <div className="absolute -top-[3px] left-1 right-1 flex items-center pointer-events-none z-30 animate-in fade-in-50 duration-100">
+          <div className="w-2 h-2 rounded-full bg-indigo-500 dark:bg-white ring-1 ring-indigo-500 shadow-md -mr-1 z-10 shrink-0" />
+          <div className="flex-1 h-[2.5px] bg-indigo-500 dark:bg-white rounded-full shadow-sm" />
+        </div>
+      )}
+      {dropPosition === "below" && (
+        <div className="absolute -bottom-[3px] left-1 right-1 flex items-center pointer-events-none z-30 animate-in fade-in-50 duration-100">
+          <div className="w-2 h-2 rounded-full bg-indigo-500 dark:bg-white ring-1 ring-indigo-500 shadow-md -mr-1 z-10 shrink-0" />
+          <div className="flex-1 h-[2.5px] bg-indigo-500 dark:bg-white rounded-full shadow-sm" />
+        </div>
+      )}
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <button
+            onClick={onClick}
+            onMouseDown={onMouseDown}
+            onAuxClick={onAuxClick}
+            className={cn(
+              "group px-2 py-2 rounded-md flex items-center gap-x-2 w-full hover:bg-zinc-700/10 dark:hover:bg-zinc-700/50 transition mb-1 relative",
+              isSelected && "bg-zinc-700/20 dark:bg-zinc-700",
+              isUnread && "bg-indigo-500/10 dark:bg-indigo-500/15"
+            )}
+          >
           {isUnread && (
             <span
               className={cn(
@@ -252,5 +292,6 @@ export const ServerChannel = ({
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
+  </div>
   );
 };
