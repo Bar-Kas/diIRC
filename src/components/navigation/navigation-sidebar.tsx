@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Settings, ShieldCheck } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,67 +20,130 @@ export const NavigationSidebar = () => {
   const [dragOverServerId, setDragOverServerId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"above" | "below" | null>(null);
 
-  const handleDragStart = (e: React.DragEvent, id: string, _index: number) => {
-    setDraggedServerId(id);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", id);
-  };
+  const dragRef = useRef<{
+    activeId: string;
+    sourceIndex: number;
+    startY: number;
+    isDragging: boolean;
+  } | null>(null);
 
-  const handleDragOver = (e: React.DragEvent, id: string, _index: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    if (draggedServerId === id) {
-      setDragOverServerId(null);
-      setDropPosition(null);
-      return;
+  const findTargetServer = (
+    clientY: number,
+    activeId: string
+  ): { targetId: string; position: "above" | "below" } | null => {
+    const items = Array.from(document.querySelectorAll<HTMLElement>("[data-server-id]"));
+    if (items.length <= 1) return null;
+
+    for (const item of items) {
+      const id = item.getAttribute("data-server-id");
+      if (!id || id === activeId) continue;
+
+      const rect = item.getBoundingClientRect();
+      if (clientY >= rect.top && clientY <= rect.bottom) {
+        const isAbove = clientY < rect.top + rect.height / 2;
+        return { targetId: id, position: isAbove ? "above" : "below" };
+      }
     }
-    const rect = e.currentTarget.getBoundingClientRect();
-    const isAbove = e.clientY < rect.top + rect.height / 2;
-    setDragOverServerId(id);
-    setDropPosition(isAbove ? "above" : "below");
-  };
 
-  const handleDragLeave = (_e: React.DragEvent, id: string) => {
-    if (dragOverServerId === id) {
-      setDragOverServerId(null);
-      setDropPosition(null);
+    // Check above first or below last item
+    const otherItems = items.filter((el) => el.getAttribute("data-server-id") !== activeId);
+    if (otherItems.length > 0) {
+      const first = otherItems[0];
+      const firstRect = first.getBoundingClientRect();
+      if (clientY < firstRect.top) {
+        return { targetId: first.getAttribute("data-server-id")!, position: "above" };
+      }
+      const last = otherItems[otherItems.length - 1];
+      const lastRect = last.getBoundingClientRect();
+      if (clientY > lastRect.bottom) {
+        return { targetId: last.getAttribute("data-server-id")!, position: "below" };
+      }
     }
+
+    return null;
   };
 
-  const handleDrop = (e: React.DragEvent, targetId: string, targetIndex: number) => {
-    e.preventDefault();
-    if (!draggedServerId || draggedServerId === targetId) {
+  const handlePointerDown = (e: React.PointerEvent, id: string, index: number) => {
+    if (e.button !== 0) return; // only left click
+    dragRef.current = {
+      activeId: id,
+      sourceIndex: index,
+      startY: e.clientY,
+      isDragging: false,
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (!dragRef.current) return;
+      const dist = Math.abs(moveEvent.clientY - dragRef.current.startY);
+      if (!dragRef.current.isDragging) {
+        if (dist > 4) {
+          dragRef.current.isDragging = true;
+          setDraggedServerId(dragRef.current.activeId);
+          document.body.style.userSelect = "none";
+          document.body.style.cursor = "grabbing";
+        } else {
+          return;
+        }
+      }
+
+      const target = findTargetServer(moveEvent.clientY, dragRef.current.activeId);
+      if (target) {
+        setDragOverServerId(target.targetId);
+        setDropPosition(target.position);
+      } else {
+        setDragOverServerId(null);
+        setDropPosition(null);
+      }
+    };
+
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+
+      const state = dragRef.current;
+      dragRef.current = null;
+
+      if (!state || !state.isDragging) {
+        setDraggedServerId(null);
+        setDragOverServerId(null);
+        setDropPosition(null);
+        return;
+      }
+
+      const target = findTargetServer(upEvent.clientY, state.activeId);
+      if (target) {
+        const targetIndex = servers.findIndex((s) => s.id === target.targetId);
+        const sourceIndex = state.sourceIndex;
+        if (targetIndex !== -1 && sourceIndex !== -1) {
+          let destinationIndex = targetIndex;
+          if (sourceIndex < targetIndex) {
+            destinationIndex = target.position === "above" ? targetIndex - 1 : targetIndex;
+          } else if (sourceIndex > targetIndex) {
+            destinationIndex = target.position === "above" ? targetIndex : targetIndex + 1;
+          }
+          if (destinationIndex !== sourceIndex) {
+            reorderServers(sourceIndex, destinationIndex);
+          }
+        }
+      }
+
       setDraggedServerId(null);
       setDragOverServerId(null);
       setDropPosition(null);
-      return;
-    }
+    };
 
-    const sourceIndex = servers.findIndex((s) => s.id === draggedServerId);
-    if (sourceIndex === -1) return;
-
-    let destinationIndex = targetIndex;
-    if (dropPosition === "above") {
-      destinationIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
-    } else {
-      destinationIndex = sourceIndex > targetIndex ? targetIndex + 1 : targetIndex;
-    }
-
-    reorderServers(sourceIndex, destinationIndex);
-    setDraggedServerId(null);
-    setDragOverServerId(null);
-    setDropPosition(null);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedServerId(null);
-    setDragOverServerId(null);
-    setDropPosition(null);
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
   };
 
   return (
     <div
-      className="space-y-4 flex flex-col items-center h-full text-primary w-full dark:bg-[#1E1F22] bg-[#E3E5E8] py-3"
+      className="space-y-4 flex flex-col items-center h-full text-primary w-full dark:bg-[#1E1F22] bg-[#E3E5E8] py-3 select-none"
     >
       <NavigationAction />
       <Separator
@@ -97,11 +160,7 @@ export const NavigationSidebar = () => {
                 index={index}
                 isDragging={draggedServerId === server.id}
                 dropPosition={dragOverServerId === server.id ? dropPosition : null}
-                onDragStart={handleDragStart}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onDragEnd={handleDragEnd}
+                onPointerDown={handlePointerDown}
               />
             </div>
           ))}

@@ -1,9 +1,10 @@
+import { useRef } from "react";
 import { 
   Channel, 
   ChannelType, 
   Server
 } from "@/types";
-import { Hash, X, Lock, Sliders, Settings, Bell, BellOff } from "lucide-react";
+import { Hash, X, Lock, Sliders, Settings, Bell, BellOff, Bookmark } from "lucide-react";
 import { useParams, useNavigate } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
@@ -31,11 +32,7 @@ interface ServerChannelProps {
   index: number;
   isDragging?: boolean;
   dropPosition?: "above" | "below" | null;
-  onDragStart?: (e: React.DragEvent, channelId: string, index: number) => void;
-  onDragOver?: (e: React.DragEvent, channelId: string, index: number) => void;
-  onDragLeave?: (e: React.DragEvent, channelId: string) => void;
-  onDrop?: (e: React.DragEvent, channelId: string, index: number) => void;
-  onDragEnd?: (e: React.DragEvent) => void;
+  onPointerDown?: (e: React.PointerEvent, channelId: string, index: number) => void;
 }
 
 const iconMap = {
@@ -48,11 +45,7 @@ export const ServerChannel = ({
   index,
   isDragging,
   dropPosition,
-  onDragStart,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-  onDragEnd,
+  onPointerDown,
 }: ServerChannelProps) => {
   const { onOpen } = useModal();
   const params = useParams();
@@ -131,112 +124,145 @@ export const ServerChannel = ({
     }
   };
 
+  const pointerDownPos = useRef<{ x: number; y: number } | null>(null);
+
+  const handlePointerDownInternal = (e: React.PointerEvent) => {
+    if (e.button === 0) {
+      pointerDownPos.current = { x: e.clientX, y: e.clientY };
+    }
+    onPointerDown?.(e, channel.id, index);
+  };
+
+  const handleChannelClick = (e: React.MouseEvent) => {
+    if (pointerDownPos.current) {
+      const dist = Math.hypot(e.clientX - pointerDownPos.current.x, e.clientY - pointerDownPos.current.y);
+      pointerDownPos.current = null;
+      if (dist > 4) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+    }
+    onClick();
+  };
+
   return (
-    <div
-      draggable
-      onDragStart={(e) => onDragStart?.(e, channel.id, index)}
-      onDragOver={(e) => onDragOver?.(e, channel.id, index)}
-      onDragLeave={(e) => onDragLeave?.(e, channel.id)}
-      onDrop={(e) => onDrop?.(e, channel.id, index)}
-      onDragEnd={onDragEnd}
-      className={cn(
-        "relative select-none cursor-grab active:cursor-grabbing group transition-all duration-150",
-        isDragging && "opacity-35 scale-[0.98]"
-      )}
-    >
-      {dropPosition === "above" && (
-        <div className="absolute -top-[3px] left-1 right-1 flex items-center pointer-events-none z-30 animate-in fade-in-50 duration-100">
-          <div className="w-2 h-2 rounded-full bg-indigo-500 dark:bg-white ring-1 ring-indigo-500 shadow-md -mr-1 z-10 shrink-0" />
-          <div className="flex-1 h-[2.5px] bg-indigo-500 dark:bg-white rounded-full shadow-sm" />
-        </div>
-      )}
-      {dropPosition === "below" && (
-        <div className="absolute -bottom-[3px] left-1 right-1 flex items-center pointer-events-none z-30 animate-in fade-in-50 duration-100">
-          <div className="w-2 h-2 rounded-full bg-indigo-500 dark:bg-white ring-1 ring-indigo-500 shadow-md -mr-1 z-10 shrink-0" />
-          <div className="flex-1 h-[2.5px] bg-indigo-500 dark:bg-white rounded-full shadow-sm" />
-        </div>
-      )}
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <button
-            onClick={onClick}
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          data-channel-id={channel.id}
+          data-channel-index={index}
+          onPointerDown={handlePointerDownInternal}
+          className={cn(
+            "relative select-none cursor-pointer group transition-opacity duration-150",
+            isDragging && "opacity-30"
+          )}
+        >
+          {dropPosition === "above" && (
+            <div className="absolute -top-[3px] left-1 right-1 flex items-center pointer-events-none z-30 animate-in fade-in-50 duration-100">
+              <div className="w-2 h-2 rounded-full bg-indigo-500 dark:bg-white ring-1 ring-indigo-500 shadow-md -mr-1 z-10 shrink-0" />
+              <div className="flex-1 h-[2.5px] bg-indigo-500 dark:bg-white rounded-full shadow-sm" />
+            </div>
+          )}
+          {dropPosition === "below" && (
+            <div className="absolute -bottom-[3px] left-1 right-1 flex items-center pointer-events-none z-30 animate-in fade-in-50 duration-100">
+              <div className="w-2 h-2 rounded-full bg-indigo-500 dark:bg-white ring-1 ring-indigo-500 shadow-md -mr-1 z-10 shrink-0" />
+              <div className="flex-1 h-[2.5px] bg-indigo-500 dark:bg-white rounded-full shadow-sm" />
+            </div>
+          )}
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={handleChannelClick}
+            onKeyDown={(e) => e.key === "Enter" && onClick()}
             onMouseDown={onMouseDown}
             onAuxClick={onAuxClick}
             className={cn(
-              "group px-2 py-2 rounded-md flex items-center gap-x-2 w-full hover:bg-zinc-700/10 dark:hover:bg-zinc-700/50 transition mb-1 relative",
+              "group px-2 py-2 rounded-md flex items-center gap-x-2 w-full hover:bg-zinc-700/10 dark:hover:bg-zinc-700/50 transition mb-1 relative cursor-pointer",
               isSelected && "bg-zinc-700/20 dark:bg-zinc-700",
               isUnread && "bg-indigo-500/10 dark:bg-indigo-500/15"
             )}
           >
-          {isUnread && (
-            <span
-              className={cn(
-                "absolute left-0 w-1.5 h-4 rounded-r-full transition-all",
-                unread.hasMention ? "bg-rose-500" : "bg-indigo-500 dark:bg-indigo-400"
-              )}
-            />
-          )}
-          <Icon className={cn(
-            "flex-shrink-0 w-5 h-5 transition",
-            isSelected
-              ? "text-primary dark:text-zinc-200"
-              : isUnread
-              ? "text-indigo-600 dark:text-indigo-400 font-bold"
-              : isMuted
-              ? "text-zinc-400/60 dark:text-zinc-500/60"
-              : "text-zinc-500 dark:text-zinc-400"
-          )} />
-          <p className={cn(
-            "line-clamp-1 text-sm text-left transition flex-1",
-            isSelected
-              ? "font-semibold text-primary dark:text-zinc-200 dark:group-hover:text-white"
-              : isUnread
-              ? "font-bold text-zinc-900 dark:text-white drop-shadow-sm"
-              : isMuted
-              ? "font-medium text-zinc-400 dark:text-zinc-500 group-hover:text-zinc-500 dark:group-hover:text-zinc-400"
-              : "font-semibold text-zinc-500 group-hover:text-zinc-600 dark:text-zinc-400 dark:group-hover:text-zinc-300"
-          )}>
-            {channel.name}
-          </p>
-          {channel.key && (
-            <ActionTooltip label="Password protected">
-              <Lock className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
-            </ActionTooltip>
-          )}
-          {isUnread && (
-            <span
-              className={cn(
-                "ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full text-white leading-none shrink-0 shadow-sm transition-transform animate-in zoom-in-50",
-                unread.hasMention ? "bg-rose-500 shadow-rose-500/30" : "bg-indigo-500 shadow-indigo-500/30"
-              )}
-            >
-              {unread.hasMention ? `@${unread.count}` : unread.count}
-            </span>
-          )}
-          <div className="ml-auto flex items-center gap-x-2">
-            <ActionTooltip label={isMuted ? "Unmute channel" : "Mute channel"}>
+            {isUnread && (
               <span
-                onClick={handleToggleMute}
                 className={cn(
-                  "p-0.5 rounded transition cursor-pointer text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300",
-                  isMuted ? "block text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300" : "hidden group-hover:block"
+                  "absolute left-0 w-1.5 h-4 rounded-r-full transition-all",
+                  unread.hasMention ? "bg-rose-500" : "bg-indigo-500 dark:bg-indigo-400"
+                )}
+              />
+            )}
+            <Icon className={cn(
+              "flex-shrink-0 w-5 h-5 transition",
+              isSelected
+                ? "text-primary dark:text-zinc-200"
+                : isUnread
+                ? "text-indigo-600 dark:text-indigo-400 font-bold"
+                : isMuted
+                ? "text-zinc-400 dark:text-zinc-500"
+                : "text-zinc-500 dark:text-zinc-400 group-hover:text-zinc-600 dark:group-hover:text-zinc-300"
+            )} />
+            <p className={cn(
+              "truncate min-w-0 flex-1 text-sm font-semibold transition text-left",
+              isSelected
+                ? "text-zinc-900 dark:text-zinc-100"
+                : isUnread
+                ? "text-zinc-900 dark:text-zinc-100 font-bold"
+                : isMuted
+                ? "text-zinc-400 dark:text-zinc-500 line-through"
+                : "text-zinc-500 dark:text-zinc-400 group-hover:text-zinc-600 dark:group-hover:text-zinc-300"
+            )}>
+              {channel.name}
+            </p>
+            {channel.key && (
+              <ActionTooltip label="Password protected">
+                <Lock className="w-3.5 h-3.5 ml-auto text-amber-500/80 shrink-0" />
+              </ActionTooltip>
+            )}
+            {channel.isTemporary && (
+              <ActionTooltip label="Temporary channel (disappears on restart unless saved)">
+                <Bookmark className="w-3.5 h-3.5 ml-auto text-zinc-400 hover:text-indigo-400 shrink-0 cursor-pointer" onClick={(e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  useMockStore.getState().setChannelTemporary(server.id, channel.name, false);
+                }} />
+              </ActionTooltip>
+            )}
+            {isUnread && (
+              <span
+                className={cn(
+                  "ml-1.5 px-1.5 py-0.5 text-[10px] font-bold rounded-full text-white shrink-0 shadow-sm",
+                  unread.hasMention
+                    ? "bg-rose-500"
+                    : "bg-indigo-500"
                 )}
               >
-                {isMuted ? (
-                  <BellOff className="w-4 h-4" />
-                ) : (
-                  <Bell className="w-4 h-4" />
-                )}
+                {unread.count > 99 ? "99+" : unread.count}
               </span>
-            </ActionTooltip>
-            <ActionTooltip label="Leave">
-              <X
-                onClick={handleLeaveChannel}
-                className="hidden group-hover:block w-4 h-4 text-zinc-500 hover:text-red-500 dark:text-zinc-400 dark:hover:text-red-400 transition"
-              />
-            </ActionTooltip>
+            )}
+            <div className="ml-auto flex items-center gap-x-2">
+              <ActionTooltip label={isMuted ? "Unmute channel" : "Mute channel"}>
+                <span
+                  onClick={handleToggleMute}
+                  className={cn(
+                    "p-0.5 rounded transition cursor-pointer text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300",
+                    isMuted ? "block text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300" : "hidden group-hover:block"
+                  )}
+                >
+                  {isMuted ? (
+                    <BellOff className="w-4 h-4" />
+                  ) : (
+                    <Bell className="w-4 h-4" />
+                  )}
+                </span>
+              </ActionTooltip>
+              <ActionTooltip label="Leave">
+                <X
+                  onClick={handleLeaveChannel}
+                  className="hidden group-hover:block w-4 h-4 text-zinc-500 hover:text-red-500 dark:text-zinc-400 dark:hover:text-red-400 transition"
+                />
+              </ActionTooltip>
+            </div>
           </div>
-        </button>
+        </div>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-56 bg-white dark:bg-[#111214] text-zinc-900 dark:text-zinc-100 border-zinc-200 dark:border-zinc-800">
         {isChannelOp ? (
@@ -292,6 +318,5 @@ export const ServerChannel = ({
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
-  </div>
   );
 };

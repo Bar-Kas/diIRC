@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { PlusCircle, Settings, Trash, Unplug, Radio } from "lucide-react";
 
@@ -20,11 +21,7 @@ interface NavigationItemProps {
   index: number;
   isDragging?: boolean;
   dropPosition?: "above" | "below" | null;
-  onDragStart?: (e: React.DragEvent, id: string, index: number) => void;
-  onDragOver?: (e: React.DragEvent, id: string, index: number) => void;
-  onDragLeave?: (e: React.DragEvent, id: string) => void;
-  onDrop?: (e: React.DragEvent, id: string, index: number) => void;
-  onDragEnd?: (e: React.DragEvent) => void;
+  onPointerDown?: (e: React.PointerEvent, id: string, index: number) => void;
 }
 
 export const NavigationItem = ({
@@ -34,11 +31,7 @@ export const NavigationItem = ({
   index,
   isDragging,
   dropPosition,
-  onDragStart,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-  onDragEnd,
+  onPointerDown,
 }: NavigationItemProps) => {
   const params = useParams();
   const navigate = useNavigate();
@@ -110,41 +103,63 @@ export const NavigationItem = ({
   const isUnread = totalUnread > 0;
   const tooltipLabel = !isIrcConnected ? `${name} (Disconnected)` : name;
 
+  const pointerDownPos = useRef<{ x: number; y: number } | null>(null);
+
+  const handlePointerDownInternal = (e: React.PointerEvent) => {
+    if (e.button === 0) {
+      pointerDownPos.current = { x: e.clientX, y: e.clientY };
+    }
+    onPointerDown?.(e, id, index);
+  };
+
+  const handleItemClick = (e: React.MouseEvent) => {
+    if (pointerDownPos.current) {
+      const dist = Math.hypot(e.clientX - pointerDownPos.current.x, e.clientY - pointerDownPos.current.y);
+      pointerDownPos.current = null;
+      if (dist > 4) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+    }
+    onClick();
+  };
+
   return (
-    <ActionTooltip
-      side="right"
-      align="center"
-      label={isDragging ? "" : tooltipLabel}
-    >
-      <div
-        draggable
-        onDragStart={(e) => onDragStart?.(e, id, index)}
-        onDragOver={(e) => onDragOver?.(e, id, index)}
-        onDragLeave={(e) => onDragLeave?.(e, id)}
-        onDrop={(e) => onDrop?.(e, id, index)}
-        onDragEnd={onDragEnd}
-        className={cn(
-          "relative group transition-all duration-150 cursor-grab active:cursor-grabbing select-none",
-          isDragging && "opacity-40 scale-95"
-        )}
-      >
-        {dropPosition === "above" && (
-          <div className="absolute -top-2 left-2 right-2 flex items-center pointer-events-none z-30 animate-in fade-in-50 duration-100">
-            <div className="w-2.5 h-2.5 rounded-full bg-white dark:bg-white ring-2 ring-indigo-500 shadow-md -mr-1 z-10 shrink-0" />
-            <div className="flex-1 h-[3.5px] bg-white dark:bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
-          </div>
-        )}
-        {dropPosition === "below" && (
-          <div className="absolute -bottom-2 left-2 right-2 flex items-center pointer-events-none z-30 animate-in fade-in-50 duration-100">
-            <div className="w-2.5 h-2.5 rounded-full bg-white dark:bg-white ring-2 ring-indigo-500 shadow-md -mr-1 z-10 shrink-0" />
-            <div className="flex-1 h-[3.5px] bg-white dark:bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
-          </div>
-        )}
-        <ContextMenu>
-          <ContextMenuTrigger asChild>
-            <button
-              onClick={onClick}
-              className="group relative flex items-center w-full"
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          data-server-id={id}
+          data-server-index={index}
+          onPointerDown={handlePointerDownInternal}
+          className={cn(
+            "relative group transition-opacity duration-150 select-none",
+            isDragging && "opacity-30"
+          )}
+        >
+          {dropPosition === "above" && (
+            <div className="absolute -top-2 left-2 right-2 flex items-center pointer-events-none z-30 animate-in fade-in-50 duration-100">
+              <div className="w-2.5 h-2.5 rounded-full bg-white dark:bg-white ring-2 ring-indigo-500 shadow-md -mr-1 z-10 shrink-0" />
+              <div className="flex-1 h-[3.5px] bg-white dark:bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
+            </div>
+          )}
+          {dropPosition === "below" && (
+            <div className="absolute -bottom-2 left-2 right-2 flex items-center pointer-events-none z-30 animate-in fade-in-50 duration-100">
+              <div className="w-2.5 h-2.5 rounded-full bg-white dark:bg-white ring-2 ring-indigo-500 shadow-md -mr-1 z-10 shrink-0" />
+              <div className="flex-1 h-[3.5px] bg-white dark:bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
+            </div>
+          )}
+          <ActionTooltip
+            side="right"
+            align="center"
+            label={isDragging ? "" : tooltipLabel}
+          >
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={handleItemClick}
+              onKeyDown={(e) => e.key === "Enter" && onClick()}
+              className="group relative flex items-center w-full cursor-pointer"
             >
               <div className={cn(
                 "absolute left-0 bg-primary rounded-r-full transition-all w-[4px]",
@@ -175,51 +190,51 @@ export const NavigationItem = ({
                   {totalUnread > 99 ? "99+" : totalUnread}
                 </span>
               )}
-            </button>
-          </ContextMenuTrigger>
-          <ContextMenuContent className="w-56 text-xs font-medium text-black dark:text-neutral-400 space-y-[2px]">
-            <ContextMenuItem
-              onSelect={() => setTimeout(() => server && onOpen("editServer", { server }), 0)}
-              className="px-3 py-2 text-sm cursor-pointer"
-            >
-              Server settings
-              <Settings className="h-4 w-4 ml-auto" />
-            </ContextMenuItem>
-            <ContextMenuItem
-              onSelect={() => setTimeout(() => server && onOpen("createChannel", { server }), 0)}
-              className="px-3 py-2 text-sm cursor-pointer"
-            >
-              Join channel
-              <PlusCircle className="h-4 w-4 ml-auto" />
-            </ContextMenuItem>
-            {isIrcConnected ? (
-              <ContextMenuItem
-                onSelect={() => setTimeout(() => server && onOpen("leaveServer", { server }), 0)}
-                className="px-3 py-2 text-sm cursor-pointer text-amber-600 dark:text-amber-400"
-              >
-                Disconnect from server
-                <Unplug className="h-4 w-4 ml-auto" />
-              </ContextMenuItem>
-            ) : (
-              <ContextMenuItem
-                onSelect={() => setTimeout(() => connectServer(id), 0)}
-                className="px-3 py-2 text-sm cursor-pointer text-emerald-600 dark:text-emerald-400 font-semibold"
-              >
-                Connect to server
-                <Radio className="h-4 w-4 ml-auto" />
-              </ContextMenuItem>
-            )}
-            <ContextMenuSeparator />
-            <ContextMenuItem
-              onSelect={() => setTimeout(() => server && onOpen("deleteServer", { server }), 0)}
-              className="text-rose-500 px-3 py-2 text-sm cursor-pointer"
-            >
-              Remove server
-              <Trash className="h-4 w-4 ml-auto" />
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
-      </div>
-    </ActionTooltip>
+            </div>
+          </ActionTooltip>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-56 text-xs font-medium text-black dark:text-neutral-400 space-y-[2px]">
+        <ContextMenuItem
+          onSelect={() => setTimeout(() => server && onOpen("editServer", { server }), 0)}
+          className="px-3 py-2 text-sm cursor-pointer"
+        >
+          Server settings
+          <Settings className="h-4 w-4 ml-auto" />
+        </ContextMenuItem>
+        <ContextMenuItem
+          onSelect={() => setTimeout(() => server && onOpen("createChannel", { server }), 0)}
+          className="px-3 py-2 text-sm cursor-pointer"
+        >
+          Join channel
+          <PlusCircle className="h-4 w-4 ml-auto" />
+        </ContextMenuItem>
+        {isIrcConnected ? (
+          <ContextMenuItem
+            onSelect={() => setTimeout(() => server && onOpen("leaveServer", { server }), 0)}
+            className="px-3 py-2 text-sm cursor-pointer text-amber-600 dark:text-amber-400"
+          >
+            Disconnect from server
+            <Unplug className="h-4 w-4 ml-auto" />
+          </ContextMenuItem>
+        ) : (
+          <ContextMenuItem
+            onSelect={() => setTimeout(() => connectServer(id), 0)}
+            className="px-3 py-2 text-sm cursor-pointer text-emerald-600 dark:text-emerald-400 font-semibold"
+          >
+            Connect to server
+            <Radio className="h-4 w-4 ml-auto" />
+          </ContextMenuItem>
+        )}
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          onSelect={() => setTimeout(() => server && onOpen("deleteServer", { server }), 0)}
+          className="text-rose-500 px-3 py-2 text-sm cursor-pointer"
+        >
+          Remove server
+          <Trash className="h-4 w-4 ml-auto" />
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 };

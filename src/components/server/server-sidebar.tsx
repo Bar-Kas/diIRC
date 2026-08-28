@@ -85,62 +85,124 @@ export const ServerSidebar = ({
     isDraggingRef.current = true;
   };
 
-  const handleChannelDragStart = (e: React.DragEvent, channelId: string, _index: number) => {
-    setDraggedChannelId(channelId);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", channelId);
-  };
+  const channelDragRef = useRef<{
+    activeId: string;
+    sourceIndex: number;
+    startY: number;
+    isDragging: boolean;
+  } | null>(null);
 
-  const handleChannelDragOver = (e: React.DragEvent, channelId: string, _index: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    if (draggedChannelId === channelId) {
-      setDragOverChannelId(null);
-      setChannelDropPosition(null);
-      return;
+  const findTargetChannel = (
+    clientY: number,
+    activeId: string
+  ): { targetId: string; position: "above" | "below" } | null => {
+    const items = Array.from(document.querySelectorAll<HTMLElement>("[data-channel-id]"));
+    if (items.length <= 1) return null;
+
+    for (const item of items) {
+      const id = item.getAttribute("data-channel-id");
+      if (!id || id === activeId) continue;
+
+      const rect = item.getBoundingClientRect();
+      if (clientY >= rect.top && clientY <= rect.bottom) {
+        const isAbove = clientY < rect.top + rect.height / 2;
+        return { targetId: id, position: isAbove ? "above" : "below" };
+      }
     }
-    const rect = e.currentTarget.getBoundingClientRect();
-    const isAbove = e.clientY < rect.top + rect.height / 2;
-    setDragOverChannelId(channelId);
-    setChannelDropPosition(isAbove ? "above" : "below");
-  };
 
-  const handleChannelDragLeave = (_e: React.DragEvent, channelId: string) => {
-    if (dragOverChannelId === channelId) {
-      setDragOverChannelId(null);
-      setChannelDropPosition(null);
+    const otherItems = items.filter((el) => el.getAttribute("data-channel-id") !== activeId);
+    if (otherItems.length > 0) {
+      const first = otherItems[0];
+      const firstRect = first.getBoundingClientRect();
+      if (clientY < firstRect.top) {
+        return { targetId: first.getAttribute("data-channel-id")!, position: "above" };
+      }
+      const last = otherItems[otherItems.length - 1];
+      const lastRect = last.getBoundingClientRect();
+      if (clientY > lastRect.bottom) {
+        return { targetId: last.getAttribute("data-channel-id")!, position: "below" };
+      }
     }
+
+    return null;
   };
 
-  const handleChannelDrop = (e: React.DragEvent, targetChannelId: string, targetIndex: number) => {
-    e.preventDefault();
-    if (!draggedChannelId || draggedChannelId === targetChannelId || !server) {
+  const handleChannelPointerDown = (e: React.PointerEvent, channelId: string, index: number) => {
+    if (e.button !== 0 || !server) return; // only left click
+    channelDragRef.current = {
+      activeId: channelId,
+      sourceIndex: index,
+      startY: e.clientY,
+      isDragging: false,
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (!channelDragRef.current || !server) return;
+      const dist = Math.abs(moveEvent.clientY - channelDragRef.current.startY);
+      if (!channelDragRef.current.isDragging) {
+        if (dist > 4) {
+          channelDragRef.current.isDragging = true;
+          setDraggedChannelId(channelDragRef.current.activeId);
+          document.body.style.userSelect = "none";
+          document.body.style.cursor = "grabbing";
+        } else {
+          return;
+        }
+      }
+
+      const target = findTargetChannel(moveEvent.clientY, channelDragRef.current.activeId);
+      if (target) {
+        setDragOverChannelId(target.targetId);
+        setChannelDropPosition(target.position);
+      } else {
+        setDragOverChannelId(null);
+        setChannelDropPosition(null);
+      }
+    };
+
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+
+      const state = channelDragRef.current;
+      channelDragRef.current = null;
+
+      if (!state || !state.isDragging || !server) {
+        setDraggedChannelId(null);
+        setDragOverChannelId(null);
+        setChannelDropPosition(null);
+        return;
+      }
+
+      const target = findTargetChannel(upEvent.clientY, state.activeId);
+      if (target) {
+        const targetIndex = server.channels.findIndex((c) => c.id === target.targetId);
+        const sourceIndex = state.sourceIndex;
+        if (targetIndex !== -1 && sourceIndex !== -1) {
+          let destinationIndex = targetIndex;
+          if (sourceIndex < targetIndex) {
+            destinationIndex = target.position === "above" ? targetIndex - 1 : targetIndex;
+          } else if (sourceIndex > targetIndex) {
+            destinationIndex = target.position === "above" ? targetIndex : targetIndex + 1;
+          }
+          if (destinationIndex !== sourceIndex) {
+            reorderChannels(server.id, sourceIndex, destinationIndex);
+          }
+        }
+      }
+
       setDraggedChannelId(null);
       setDragOverChannelId(null);
       setChannelDropPosition(null);
-      return;
-    }
+    };
 
-    const sourceIndex = server.channels.findIndex((c) => c.id === draggedChannelId);
-    if (sourceIndex === -1) return;
-
-    let destinationIndex = targetIndex;
-    if (channelDropPosition === "above") {
-      destinationIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
-    } else {
-      destinationIndex = sourceIndex > targetIndex ? targetIndex + 1 : targetIndex;
-    }
-
-    reorderChannels(server.id, sourceIndex, destinationIndex);
-    setDraggedChannelId(null);
-    setDragOverChannelId(null);
-    setChannelDropPosition(null);
-  };
-
-  const handleChannelDragEnd = () => {
-    setDraggedChannelId(null);
-    setDragOverChannelId(null);
-    setChannelDropPosition(null);
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
   };
 
   if (!server) {
@@ -362,11 +424,7 @@ export const ServerSidebar = ({
                       index={index}
                       isDragging={draggedChannelId === channel.id}
                       dropPosition={dragOverChannelId === channel.id ? channelDropPosition : null}
-                      onDragStart={handleChannelDragStart}
-                      onDragOver={handleChannelDragOver}
-                      onDragLeave={handleChannelDragLeave}
-                      onDrop={handleChannelDrop}
-                      onDragEnd={handleChannelDragEnd}
+                      onPointerDown={handleChannelPointerDown}
                     />
                   ))}
                 </div>
