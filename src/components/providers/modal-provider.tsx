@@ -21,6 +21,7 @@ import { PrivateMessagesModal } from "@/components/modals/private-messages-modal
 import { UpdateModal } from "@/components/modals/update-modal";
 import { MotdModal } from "@/components/modals/motd-modal";
 import { AlreadyAwayModal } from "@/components/modals/already-away-modal";
+import { ChangelogModal } from "@/components/modals/changelog-modal";
 
 export const ModalProvider = () => {
   const [isMounted, setIsMounted] = useState(false);
@@ -56,6 +57,7 @@ export const ModalProvider = () => {
       <UpdateModal />
       <MotdModal />
       <AlreadyAwayModal />
+      <ChangelogModal />
     </>
   );
 };

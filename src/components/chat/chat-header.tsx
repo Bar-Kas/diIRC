@@ -1,4 +1,4 @@
-import { Hash, PanelLeft, Server, Users, Edit3 } from "lucide-react";
+import { Hash, PanelLeft, Server, Users, Edit3, History } from "lucide-react";
 
 import { MobileToggle } from "@/components/mobile-toggle";
 import { UserAvatar } from "@/components/user-avatar";
@@ -7,6 +7,7 @@ import { ActionTooltip } from "@/components/action-tooltip";
 import { ChatSearchInput } from "@/components/chat/search/chat-search-input";
 import { useUIStore } from "@/hooks/use-ui-store";
 import { useModal } from "@/hooks/use-modal-store";
+import { useChangelog } from "@/lib/changelog-service";
 import { cn } from "@/lib/utils";
 import { Channel, Member, Profile, Server as ServerType } from "@/types";
 
@@ -52,6 +53,7 @@ export const ChatHeader = ({
   } = useUIStore();
 
   const { onOpen } = useModal();
+  const { hasCurrentVersion } = useChangelog();
 
   const handleEditTopic = () => {
     if (server && channel) {
@@ -164,6 +166,21 @@ export const ChatHeader = ({
       )}
 
       <div className="ml-auto flex items-center gap-x-3 shrink-0">
+        <ActionTooltip side="bottom" label="Changelog">
+          <button
+            onClick={() => onOpen("changelog")}
+            className={cn(
+              "h-7 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-x-1.5 transition shadow-sm",
+              hasCurrentVersion
+                ? "bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-600 dark:hover:bg-emerald-500"
+                : "bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-300 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-700/60"
+            )}
+          >
+            <History className="w-3.5 h-3.5" />
+            <span>Changelog</span>
+          </button>
+        </ActionTooltip>
+
         <ConnectionStatus serverId={serverId} server={server} />
 
         {searchContext && (
