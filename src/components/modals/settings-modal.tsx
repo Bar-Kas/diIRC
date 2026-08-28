@@ -40,8 +40,9 @@ import {
   MessageSquare,
   ArrowUpDown,
   ScrollText,
+  AtSign,
 } from "lucide-react";
-import { StatusDisplayMode, formatMessageDate } from "@/lib/mock-store";
+import { StatusDisplayMode, formatMessageDate, NickCompletionFormat, formatNickCompletion } from "@/lib/mock-store";
 import { MotdDisplayPolicy, UserDisplayNameMode } from "@/types";
 import { playNotificationSound, SoundPreset } from "@/lib/notification-sound";
 import { requestDesktopNotificationPermission } from "@/lib/notification-service";
@@ -88,6 +89,12 @@ export const SettingsModal = () => {
 
   const customDateFormat = useMockStore((state) => state.customDateFormat) || "yyyy/MM/dd HH:mm";
   const setCustomDateFormat = useMockStore((state) => state.setCustomDateFormat);
+
+  const nickCompletionFormat = useMockStore((state) => state.nickCompletionFormat) || "plain";
+  const setNickCompletionFormat = useMockStore((state) => state.setNickCompletionFormat);
+
+  const customNickCompletionFormat = useMockStore((state) => state.customNickCompletionFormat) || "{nick}: ";
+  const setCustomNickCompletionFormat = useMockStore((state) => state.setCustomNickCompletionFormat);
 
   const notificationSettings = useMockStore((state) => state.notificationSettings) || {
     soundEnabled: true,
@@ -620,6 +627,58 @@ export const SettingsModal = () => {
               <span className="font-sans text-[11px]">Preview:</span>
               <span className="font-semibold text-zinc-800 dark:text-zinc-200">
                 {formatMessageDate(new Date(), dateFormatPreset, customDateFormat)}
+              </span>
+            </div>
+          </div>
+
+          {/* Nickname Completion / Addressing Format */}
+          <div className="flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-3 shadow-sm transition">
+            <div className="flex items-center gap-x-2">
+              <AtSign className="w-4 h-4 text-indigo-500" />
+              <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Nickname completion format
+              </label>
+            </div>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+              Choose how member nicknames are formatted when completed using the Tab suggestions menu.
+            </p>
+            <select
+              value={nickCompletionFormat}
+              onChange={(e) => setNickCompletionFormat(e.target.value as NickCompletionFormat)}
+              className="w-full bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              <option value="plain">Plain nickname with space (Nick )</option>
+              <option value="colon">Standard IRC colon (Nick: )</option>
+              <option value="comma">Comma suffix (Nick, )</option>
+              <option value="at">Discord-style @-mention (@Nick )</option>
+              <option value="arrow">Arrow suffix (Nick &gt; )</option>
+              <option value="hyphen">Hyphen suffix (Nick - )</option>
+              <option value="bracket">Square brackets ([Nick] )</option>
+              <option value="custom">Custom format pattern</option>
+            </select>
+
+            {nickCompletionFormat === "custom" && (
+              <div className="space-y-1 pt-1">
+                <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                  Custom format pattern
+                </label>
+                <Input
+                  value={customNickCompletionFormat}
+                  onChange={(e) => setCustomNickCompletionFormat(e.target.value)}
+                  placeholder="e.g. {nick}: or >> {nick} "
+                  className="bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-xs text-zinc-900 dark:text-zinc-100"
+                />
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                  Use <code className="bg-zinc-200 dark:bg-zinc-700 px-1 py-0.5 rounded text-[10px] font-mono">{"{nick}"}</code> as placeholder for the member's nickname (e.g. <code className="font-mono">{"{nick}: "}</code> or <code className="font-mono">{"[{nick}] "}</code>).
+                </p>
+              </div>
+            )}
+
+            <div className="pt-1 text-xs text-zinc-500 dark:text-zinc-400 font-mono flex items-center justify-between border-t border-zinc-200 dark:border-zinc-700/50 mt-1">
+              <span className="font-sans text-[11px]">Preview:</span>
+              <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                {formatNickCompletion("Alice", nickCompletionFormat, customNickCompletionFormat)}
+                <span className="text-zinc-500 dark:text-zinc-400 font-normal">hello there!</span>
               </span>
             </div>
           </div>

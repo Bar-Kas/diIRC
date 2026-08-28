@@ -339,6 +339,45 @@ export interface UpdateServerOptions {
   displayNameMode?: ServerUserDisplayNameMode;
 }
 
+export type NickCompletionFormat =
+  | "plain"
+  | "colon"
+  | "comma"
+  | "at"
+  | "arrow"
+  | "hyphen"
+  | "bracket"
+  | "custom";
+
+export const formatNickCompletion = (
+  nick: string,
+  format: NickCompletionFormat = "plain",
+  customPattern = "{nick}: "
+): string => {
+  switch (format) {
+    case "colon":
+      return `${nick}: `;
+    case "comma":
+      return `${nick}, `;
+    case "at":
+      return `@${nick} `;
+    case "arrow":
+      return `${nick} > `;
+    case "hyphen":
+      return `${nick} - `;
+    case "bracket":
+      return `[${nick}] `;
+    case "custom":
+      if (customPattern && customPattern.includes("{nick}")) {
+        return customPattern.replace(/\{nick\}/g, nick);
+      }
+      return `${nick}${customPattern ? `${customPattern} ` : " "}`;
+    case "plain":
+    default:
+      return `${nick} `;
+  }
+};
+
 export type { StatusDisplayMode };
 
 export interface UnreadInfo {
@@ -372,6 +411,10 @@ interface MockState {
   statusDisplayMode: StatusDisplayMode;
   dateFormatPreset: string;
   customDateFormat: string;
+  nickCompletionFormat: NickCompletionFormat;
+  customNickCompletionFormat: string;
+  setNickCompletionFormat: (format: NickCompletionFormat) => void;
+  setCustomNickCompletionFormat: (format: string) => void;
   notificationSettings: GlobalNotificationSettings;
   conversationNotificationSettings: Record<string, NotificationOverride>;
   autoUpdateMode: "auto" | "ask" | "disabled";
@@ -600,6 +643,10 @@ export const useMockStore = create<MockState>()(
       statusDisplayMode: "always",
       dateFormatPreset: "d MMM yyyy, HH:mm",
       customDateFormat: "yyyy/MM/dd HH:mm",
+      nickCompletionFormat: "plain",
+      customNickCompletionFormat: "{nick}: ",
+      setNickCompletionFormat: (format) => set({ nickCompletionFormat: format }),
+      setCustomNickCompletionFormat: (format) => set({ customNickCompletionFormat: format }),
       notificationSettings: {
         soundEnabled: true,
         soundPreset: "chime",
@@ -2876,6 +2923,8 @@ export const useMockStore = create<MockState>()(
 
         return {
           userDisplayNameMode: "nickname",
+          nickCompletionFormat: "plain",
+          customNickCompletionFormat: "{nick}: ",
           ...persistedState,
           servers: sanitizedServers,
           messages: {},
