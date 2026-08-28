@@ -23,8 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { ChannelInput } from "@/components/ui/channel-input";
-import { Plus, Trash, Bell, Volume2, Monitor, Clock, ScrollText } from "lucide-react";
+import { Plus, Trash, Bell, Volume2, Monitor, Clock, ScrollText, Sparkles } from "lucide-react";
 import { useModal } from "@/hooks/use-modal-store";
 import { useMockStore } from "@/lib/mock-store";
 import {
@@ -33,6 +32,7 @@ import {
   ChannelNotificationOverrideValue,
   DmNotificationOverrideValue,
   ServerMotdDisplayPolicy,
+  ServerUserDisplayNameMode,
 } from "@/types";
 import { NotificationSettingsFields } from "@/components/notifications/notification-settings-fields";
 import { CustomCommandsFields, normalizeCustomCommandsFromForm } from "@/components/server/custom-commands-fields";
@@ -48,9 +48,9 @@ const formSchema = z.object({
         .refine((val) => !/\s/.test(val), { message: "Nickname cannot contain spaces." }),
     })
   ).min(1),
+  username: z.string().optional(),
   realname: z.string().optional(),
   password: z.string().optional(),
-  channels: z.array(z.object({ value: z.string() })).min(1),
   useTls: z.boolean().default(false),
   autoConnect: z.boolean().default(true),
   autoReconnect: z.boolean().default(true),
@@ -84,6 +84,7 @@ export const EditServerModal = () => {
 
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
   const [motdPolicyOverride, setMotdPolicyOverride] = useState<ServerMotdDisplayPolicy>("default");
+  const [displayNameModeOverride, setDisplayNameModeOverride] = useState<ServerUserDisplayNameMode>("default");
   const [channelNotificationsOverride, setChannelNotificationsOverride] = useState<ChannelNotificationOverrideValue>("default");
   const [dmNotificationsOverride, setDmNotificationsOverride] = useState<DmNotificationOverrideValue>("default");
   const [soundOverride, setSoundOverride] = useState<NotificationOverrideValue>("default");
@@ -118,7 +119,6 @@ export const EditServerModal = () => {
       nicknames: [{ value: "ReactUser" }],
       realname: "",
       password: "",
-      channels: [{ value: "general" }],
       useTls: false,
       autoConnect: true,
       autoReconnect: true,
@@ -131,20 +131,11 @@ export const EditServerModal = () => {
     control: form.control,
   });
 
-  const { fields: channelFields, append: appendChannel, remove: removeChannel } = useFieldArray({
-    name: "channels",
-    control: form.control,
-  });
-
   useEffect(() => {
     if (server && isModalOpen) {
       const defaultNicks = server.nicknames && server.nicknames.length > 0 
         ? server.nicknames.map(n => ({ value: n }))
         : [{ value: server.nicknames?.[0] || "ReactUser" }];
-
-      const defaultChannels = server.channels && server.channels.length > 0
-        ? server.channels.map(c => ({ value: c.name }))
-        : [];
 
       setChannelNotificationsOverride(server.notificationSettings?.channelNotifications || "default");
       setDmNotificationsOverride(server.notificationSettings?.dmNotifications || "default");
@@ -161,15 +152,16 @@ export const EditServerModal = () => {
           ? serverMotdPolicies[server.id]
           : server.motdPolicy || "default"
       );
+      setDisplayNameModeOverride(server.displayNameMode || "default");
 
       form.reset({
         name: server.name || "",
         host: server.host || "127.0.0.1",
         port: server.port || 6667,
         nicknames: defaultNicks,
+        username: server.username || "",
         realname: server.realname || "",
         password: server.password || "",
-        channels: defaultChannels,
         useTls: server.useTls ?? false,
         autoConnect: server.autoConnect ?? true,
         autoReconnect: server.autoReconnect ?? true,
@@ -189,10 +181,6 @@ export const EditServerModal = () => {
   const saveServer = async (values: z.infer<typeof formSchema>) => {
     if (!server?.id) return;
     try {
-      const channelArray = values.channels
-        .map(c => c.value.trim().replace(/^#/, ""))
-        .filter(Boolean);
-
       const nickArray = values.nicknames
         .map(n => n.value.trim())
         .filter(Boolean);
@@ -202,15 +190,16 @@ export const EditServerModal = () => {
         host: values.host,
         port: values.port,
         nicknames: nickArray,
+        username: values.username || "",
         realname: values.realname || "",
         password: values.password || "",
         useTls: values.useTls,
         autoConnect: values.autoConnect,
         autoReconnect: values.autoReconnect,
         parseLegacyZncTimestamps: values.parseLegacyZncTimestamps,
-        autoJoinChannels: channelArray,
         customCommands: normalizeCustomCommandsFromForm(values.customCommands),
         motdPolicy: motdPolicyOverride,
+        displayNameMode: displayNameModeOverride,
         notificationSettings: {
           channelNotifications: channelNotificationsOverride,
           dmNotifications: dmNotificationsOverride,
@@ -226,18 +215,6 @@ export const EditServerModal = () => {
       });
 
       setServerMotdPolicy(server.id, motdPolicyOverride);
-
-      // Join the channels on IRC in case new ones were added
-      for (const channel of channelArray) {
-        try {
-          await invoke("join_channel", {
-            serverId: server.id,
-            channel
-          });
-        } catch (e) {
-          console.error(`Failed to join channel ${channel} on IRC:`, e);
-        }
-      }
       setConfirmCloseOpen(false);
       form.reset();
       onClose();
@@ -389,6 +366,27 @@ export const EditServerModal = () => {
 
               <FormField
                 control={form.control}
+                name="username"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider">
+                      Username (optional)
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        disabled={isLoading}
+                        className="bg-zinc-100 dark:bg-[#1e1f22] border border-zinc-300/80 dark:border-zinc-700/60 focus-visible:ring-2 focus-visible:ring-indigo-500 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 font-medium h-10 w-full"
+                        placeholder="Ident (defaults to primary nickname)"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
                 name="realname"
                 render={({ field }) => (
                   <FormItem>
@@ -435,43 +433,6 @@ export const EditServerModal = () => {
                               <Trash 
                                 className="w-4 h-4 cursor-pointer text-zinc-400 hover:text-rose-500 transition shrink-0" 
                                 onClick={() => removeNick(index)} 
-                              />
-                            )}
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                ))}
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider flex items-center justify-between">
-                  Channels
-                  <Plus 
-                    className="w-4 h-4 cursor-pointer text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100 transition" 
-                    onClick={() => appendChannel({ value: "" })} 
-                  />
-                </FormLabel>
-                {channelFields.map((field, index) => (
-                  <FormField
-                    key={field.id}
-                    control={form.control}
-                    name={`channels.${index}.value`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <div className="flex items-center gap-2">
-                            <ChannelInput
-                              disabled={isLoading}
-                              placeholder="general"
-                              {...field}
-                            />
-                            {index > 0 && (
-                              <Trash 
-                                className="w-4 h-4 cursor-pointer text-zinc-400 hover:text-rose-500 transition shrink-0" 
-                                onClick={() => removeChannel(index)} 
                               />
                             )}
                           </div>
@@ -615,6 +576,31 @@ export const EditServerModal = () => {
                   <option value="always">Always show on connect</option>
                   <option value="never">Don't show again (this server)</option>
                   <option value="never_globally">Don't show again (all servers)</option>
+                </select>
+              </div>
+
+              {/* SECTION: DISPLAY NAME MODE OVERRIDE */}
+              <div className="flex flex-col rounded-xl border border-zinc-300/80 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-3.5 space-y-2.5 shadow-sm">
+                <div className="flex items-center gap-x-2">
+                  <Sparkles className="w-4 h-4 text-indigo-500" />
+                  <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-200">
+                    User display name format
+                  </label>
+                </div>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                  Select how member names are displayed for this server.
+                </p>
+                <select
+                  value={displayNameModeOverride}
+                  onChange={(e) => setDisplayNameModeOverride(e.target.value as ServerUserDisplayNameMode)}
+                  className="w-full bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  <option value="default">
+                    Default (Use app setting)
+                  </option>
+                  <option value="nickname">Nickname</option>
+                  <option value="realname">RealName</option>
+                  <option value="username">Username</option>
                 </select>
               </div>
 

@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ModalProvider } from "@/components/providers/modal-provider";
 import { SocketProvider } from "@/components/providers/socket-provider";
 import { IrcProvider } from "@/components/providers/irc-provider";
+import { ErrorBoundary } from "@/components/providers/error-boundary";
 
 import { MainLayout } from "@/layouts/main-layout";
 import { SetupPage } from "@/pages/setup-page";
@@ -53,32 +54,36 @@ export function App() {
   }, []);
 
   return (
-    <ThemeProvider
-      attribute="class"
-      defaultTheme="dark"
-      enableSystem={false}
-      storageKey="discord-theme"
-      themes={["light", "dark", "oled"]}
-    >
+    <ErrorBoundary>
+      <ThemeProvider
+        attribute="class"
+        defaultTheme="dark"
+        enableSystem={false}
+        storageKey="discord-theme"
+        themes={["light", "dark", "oled"]}
+      >
       <SocketProvider>
         <BrowserRouter>
           <IrcProvider>
             <ModalProvider />
             <Routes>
-              <Route path="/" element={<SetupPage />} />
-            <Route path="/invite/:inviteCode" element={<InvitePage />} />
-            <Route path="/servers/:serverId" element={<MainLayout />}>
-              <Route index element={<ServerPage />} />
-              <Route path="channels/:channelId" element={<ChannelPage />} />
-              <Route path="conversations/:memberId" element={<ConversationPage />} />
-              <Route path="invites/:channelName" element={<InvitePreviewPage />} />
-            </Route>
-            <Route path="*" element={<SetupPage />} />
+              <Route path="/invite/:inviteCode" element={<InvitePage />} />
+              <Route element={<MainLayout />}>
+                <Route path="/" element={<SetupPage />} />
+                <Route path="/servers/:serverId">
+                  <Route index element={<ServerPage />} />
+                  <Route path="channels/:channelId" element={<ChannelPage />} />
+                  <Route path="conversations/:memberId" element={<ConversationPage />} />
+                  <Route path="invites/:channelName" element={<InvitePreviewPage />} />
+                </Route>
+                <Route path="*" element={<SetupPage />} />
+              </Route>
             </Routes>
           </IrcProvider>
         </BrowserRouter>
       </SocketProvider>
     </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 

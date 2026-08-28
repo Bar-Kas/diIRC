@@ -44,8 +44,13 @@ export const ServerSidebar = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
 
-  const server = servers.find((s) => s.id === serverId) || servers[0];
+  const server = servers.find((s) => s.id === serverId) || (serverId ? servers[0] : undefined);
   const serverInvites = (server ? pendingInvites[server.id] : []) || [];
+
+  const directMessagesMap = useMockStore((state) => state.directMessages);
+  const sortDmByUnread = useMockStore((state) => state.sortDmByUnread ?? true);
+  const dmSortOrder = useMockStore((state) => state.dmSortOrder ?? "opening");
+  const unreadState = useMockStore((state) => state.unreadState);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -76,7 +81,16 @@ export const ServerSidebar = ({
   };
 
   if (!server) {
-    return null;
+    return (
+      <div className="flex flex-col h-full text-primary w-full dark:bg-[#2B2D31] bg-[#F2F3F5] overflow-hidden select-none">
+        <div className="text-md font-semibold px-4 flex items-center h-12 border-neutral-200 dark:border-neutral-800 border-b-2 dark:text-zinc-400 text-zinc-600">
+          No server
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center p-4 text-center text-xs text-zinc-500 dark:text-zinc-400">
+          No active server connection
+        </div>
+      </div>
+    );
   }
 
   const channels = server.channels || [];
@@ -92,11 +106,6 @@ export const ServerSidebar = ({
       m.profile?.name?.toLowerCase() !== activeNickLower &&
       !m.id.startsWith("self-")
   );
-
-  const directMessagesMap = useMockStore((state) => state.directMessages);
-  const sortDmByUnread = useMockStore((state) => state.sortDmByUnread ?? true);
-  const dmSortOrder = useMockStore((state) => state.dmSortOrder ?? "opening");
-  const unreadState = useMockStore((state) => state.unreadState);
 
   const activeMemberIds = (activeConversations[server.id] || []).filter(
     (memberId) => memberId !== currentMember?.id

@@ -164,7 +164,7 @@ export const ChatHeader = ({
       )}
 
       <div className="ml-auto flex items-center gap-x-3 shrink-0">
-        <ConnectionStatus />
+        <ConnectionStatus serverId={serverId} server={server} />
 
         {searchContext && (
           <ChatSearchInput context={searchContext} members={searchMembers} />

@@ -1,9 +1,17 @@
 import { useParams, useNavigate } from "react-router-dom";
+import { PlusCircle, Settings, Trash, Unplug, Radio } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { ActionTooltip } from "@/components/action-tooltip";
 import { useMockStore } from "@/lib/mock-store";
 import { useModalStore } from "@/hooks/use-modal-store";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 
 interface NavigationItemProps {
   id: string;
@@ -38,6 +46,9 @@ export const NavigationItem = ({
 
   const unreadState = useMockStore((state) => state.unreadState);
   const server = useMockStore((state) => state.servers.find((s) => s.id === id));
+  const isIrcConnected = useMockStore((state) => !!state.ircConnectedServers[id]);
+  const connectServer = useMockStore((state) => state.connectServer);
+  const { onOpen } = useModalStore();
 
   let totalUnread = 0;
   let hasMention = false;
@@ -81,42 +92,94 @@ export const NavigationItem = ({
   }
 
   const isUnread = totalUnread > 0;
+  const tooltipLabel = !isIrcConnected ? `${name} (Disconnected)` : name;
 
   return (
     <ActionTooltip
       side="right"
       align="center"
-      label={name}
+      label={tooltipLabel}
     >
-      <button
-        onClick={onClick}
-        className="group relative flex items-center"
-      >
-        <div className={cn(
-          "absolute left-0 bg-primary rounded-r-full transition-all w-[4px]",
-          !isSelected && "group-hover:h-[20px]",
-          isSelected ? "h-[36px]" : (isUnread ? "h-[10px]" : "h-[0px]")
-        )} />
-        <div className={cn(
-          "relative group flex mx-3 h-[48px] w-[48px] rounded-[24px] group-hover:rounded-[16px] transition-all overflow-hidden",
-          isSelected && "bg-primary/10 text-primary rounded-[16px]",
-          isUnread && "ring-2 ring-indigo-500/80 ring-offset-2 dark:ring-offset-[#1E1F22]"
-        )}>
-          <img
-            src={imageUrl}
-            alt={name}
-            className="w-full h-full object-cover"
-          />
-        </div>
-        {isUnread && (
-          <span className={cn(
-            "absolute -top-1 right-2 z-10 flex h-5 min-w-[20px] items-center justify-center rounded-full px-1 text-[10px] font-bold text-white shadow-md ring-2 ring-[#E3E5E8] dark:ring-[#1E1F22] transition-transform animate-in zoom-in-50 pointer-events-none",
-            hasMention ? "bg-rose-500 shadow-rose-500/40" : "bg-indigo-500 shadow-indigo-500/40"
-          )}>
-            {totalUnread > 99 ? "99+" : totalUnread}
-          </span>
-        )}
-      </button>
+      <div>
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <button
+              onClick={onClick}
+              className="group relative flex items-center"
+            >
+              <div className={cn(
+                "absolute left-0 bg-primary rounded-r-full transition-all w-[4px]",
+                !isSelected && "group-hover:h-[20px]",
+                isSelected ? "h-[36px]" : (isUnread ? "h-[10px]" : "h-[0px]")
+              )} />
+              <div className={cn(
+                "relative group flex mx-3 h-[48px] w-[48px] rounded-[24px] group-hover:rounded-[16px] transition-all overflow-hidden",
+                isSelected && "bg-primary/10 text-primary rounded-[16px]",
+                isUnread && "ring-2 ring-indigo-500/80 ring-offset-2 dark:ring-offset-[#1E1F22]",
+                !isIrcConnected && "opacity-75 grayscale-[30%]"
+              )}>
+                <img
+                  src={imageUrl}
+                  alt={name}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              {!isIrcConnected && (
+                <span className="absolute bottom-0 right-2 z-10 w-3 h-3 bg-amber-500 rounded-full ring-2 ring-[#E3E5E8] dark:ring-[#1E1F22]" />
+              )}
+              {isUnread && (
+                <span className={cn(
+                  "absolute -top-1 right-2 z-10 flex h-5 min-w-[20px] items-center justify-center rounded-full px-1 text-[10px] font-bold text-white shadow-md ring-2 ring-[#E3E5E8] dark:ring-[#1E1F22] transition-transform animate-in zoom-in-50 pointer-events-none",
+                  hasMention ? "bg-rose-500 shadow-rose-500/40" : "bg-indigo-500 shadow-indigo-500/40"
+                )}>
+                  {totalUnread > 99 ? "99+" : totalUnread}
+                </span>
+              )}
+            </button>
+          </ContextMenuTrigger>
+          <ContextMenuContent className="w-56 text-xs font-medium text-black dark:text-neutral-400 space-y-[2px]">
+            <ContextMenuItem
+              onSelect={() => setTimeout(() => server && onOpen("editServer", { server }), 0)}
+              className="px-3 py-2 text-sm cursor-pointer"
+            >
+              Server settings
+              <Settings className="h-4 w-4 ml-auto" />
+            </ContextMenuItem>
+            <ContextMenuItem
+              onSelect={() => setTimeout(() => server && onOpen("createChannel", { server }), 0)}
+              className="px-3 py-2 text-sm cursor-pointer"
+            >
+              Join channel
+              <PlusCircle className="h-4 w-4 ml-auto" />
+            </ContextMenuItem>
+            {isIrcConnected ? (
+              <ContextMenuItem
+                onSelect={() => setTimeout(() => server && onOpen("leaveServer", { server }), 0)}
+                className="px-3 py-2 text-sm cursor-pointer text-amber-600 dark:text-amber-400"
+              >
+                Disconnect from server
+                <Unplug className="h-4 w-4 ml-auto" />
+              </ContextMenuItem>
+            ) : (
+              <ContextMenuItem
+                onSelect={() => setTimeout(() => connectServer(id), 0)}
+                className="px-3 py-2 text-sm cursor-pointer text-emerald-600 dark:text-emerald-400 font-semibold"
+              >
+                Connect to server
+                <Radio className="h-4 w-4 ml-auto" />
+              </ContextMenuItem>
+            )}
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              onSelect={() => setTimeout(() => server && onOpen("deleteServer", { server }), 0)}
+              className="text-rose-500 px-3 py-2 text-sm cursor-pointer"
+            >
+              Remove server
+              <Trash className="h-4 w-4 ml-auto" />
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
+      </div>
     </ActionTooltip>
   );
 };

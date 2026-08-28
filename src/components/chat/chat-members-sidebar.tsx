@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { UserRoleIcon, getHighestChannelRole } from "@/components/user-role-icon";
 import { useUIStore } from "@/hooks/use-ui-store";
 import { useModal } from "@/hooks/use-modal-store";
+import { ActionTooltip } from "@/components/action-tooltip";
 import { MoreHorizontal } from "lucide-react";
 
 interface ChatMembersSidebarProps {
@@ -153,10 +154,11 @@ export const ChatMembersSidebar = ({
               className="h-8 w-8 md:h-8 md:w-8"
             />
             {isAway && (
-              <span 
-                className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-yellow-500 dark:bg-yellow-400 rounded-full ring-2 ring-[#F2F3F5] dark:ring-[#2B2D31]"
-                title={awayReason ? `Away: ${awayReason}` : "Away"}
-              />
+              <ActionTooltip label={awayReason ? `Away: ${awayReason}` : "Away"} side="left">
+                <span 
+                  className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-yellow-500 dark:bg-yellow-400 rounded-full ring-2 ring-[#F2F3F5] dark:ring-[#2B2D31] cursor-pointer"
+                />
+              </ActionTooltip>
             )}
           </div>
           <div className="flex flex-col overflow-hidden">

@@ -60,7 +60,7 @@ export const ServerConversation = ({
     e.stopPropagation();
     closeConversation(server.id, member.id);
     if (isSelected) {
-      const defaultChannel = server.channels.find((c) => c.name === "general") || server.channels[0];
+      const defaultChannel = server.channels[0];
       if (defaultChannel) {
         navigate(`/servers/${server.id}/channels/${defaultChannel.id}`);
       } else {
@@ -107,10 +107,11 @@ export const ServerConversation = ({
             )}
           />
           {isAway && (
-            <span
-              className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-yellow-500 dark:bg-yellow-400 rounded-full ring-2 ring-[#F2F3F5] dark:ring-[#2B2D31]"
-              title={awayReason ? `Away: ${awayReason}` : "Away"}
-            />
+            <ActionTooltip label={awayReason ? `Away: ${awayReason}` : "Away"} side="right">
+              <span
+                className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-yellow-500 dark:bg-yellow-400 rounded-full ring-2 ring-[#F2F3F5] dark:ring-[#2B2D31] cursor-pointer"
+              />
+            </ActionTooltip>
           )}
         </div>
         <p
