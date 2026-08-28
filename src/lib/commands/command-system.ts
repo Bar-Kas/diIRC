@@ -205,6 +205,10 @@ commandRegistry.register({
           serverId: ctx.serverId,
           channel: channelTarget,
           message: ctcpAction,
+          replyToMsgid: null,
+        replyNick: null,
+        replyPreview: null,
+        replyParentOffset: null,
         });
         ctx.addMessage(ctx.channelId, ctx.currentMember, ctcpAction);
       } catch (err) {
@@ -216,6 +220,10 @@ commandRegistry.register({
           serverId: ctx.serverId,
           channel: ctx.channelName,
           message: ctcpAction,
+          replyToMsgid: null,
+        replyNick: null,
+        replyPreview: null,
+        replyParentOffset: null,
         });
         ctx.addDirectMessage(ctx.conversationId, ctx.currentMember, ctcpAction);
         if (ctx.targetMemberId) {
@@ -432,6 +440,10 @@ commandRegistry.register({
           serverId: ctx.serverId,
           channel: cleanNick,
           message: ircMessage,
+          replyToMsgid: null,
+        replyNick: null,
+        replyPreview: null,
+        replyParentOffset: null,
         });
         ctx.addDirectMessage(conversationId, ctx.currentMember, initialMessage);
       } catch (err) {
