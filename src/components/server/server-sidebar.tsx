@@ -47,6 +47,11 @@ export const ServerSidebar = ({
   const server = servers.find((s) => s.id === serverId) || (serverId ? servers[0] : undefined);
   const serverInvites = (server ? pendingInvites[server.id] : []) || [];
 
+  const directMessagesMap = useMockStore((state) => state.directMessages);
+  const sortDmByUnread = useMockStore((state) => state.sortDmByUnread ?? true);
+  const dmSortOrder = useMockStore((state) => state.dmSortOrder ?? "opening");
+  const unreadState = useMockStore((state) => state.unreadState);
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDraggingRef.current || !containerRef.current) return;
@@ -101,11 +106,6 @@ export const ServerSidebar = ({
       m.profile?.name?.toLowerCase() !== activeNickLower &&
       !m.id.startsWith("self-")
   );
-
-  const directMessagesMap = useMockStore((state) => state.directMessages);
-  const sortDmByUnread = useMockStore((state) => state.sortDmByUnread ?? true);
-  const dmSortOrder = useMockStore((state) => state.dmSortOrder ?? "opening");
-  const unreadState = useMockStore((state) => state.unreadState);
 
   const activeMemberIds = (activeConversations[server.id] || []).filter(
     (memberId) => memberId !== currentMember?.id

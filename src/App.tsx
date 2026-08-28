@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ModalProvider } from "@/components/providers/modal-provider";
 import { SocketProvider } from "@/components/providers/socket-provider";
 import { IrcProvider } from "@/components/providers/irc-provider";
+import { ErrorBoundary } from "@/components/providers/error-boundary";
 
 import { MainLayout } from "@/layouts/main-layout";
 import { SetupPage } from "@/pages/setup-page";
@@ -53,13 +54,14 @@ export function App() {
   }, []);
 
   return (
-    <ThemeProvider
-      attribute="class"
-      defaultTheme="dark"
-      enableSystem={false}
-      storageKey="discord-theme"
-      themes={["light", "dark", "oled"]}
-    >
+    <ErrorBoundary>
+      <ThemeProvider
+        attribute="class"
+        defaultTheme="dark"
+        enableSystem={false}
+        storageKey="discord-theme"
+        themes={["light", "dark", "oled"]}
+      >
       <SocketProvider>
         <BrowserRouter>
           <IrcProvider>
@@ -81,6 +83,7 @@ export function App() {
         </BrowserRouter>
       </SocketProvider>
     </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 
