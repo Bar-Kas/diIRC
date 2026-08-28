@@ -16,18 +16,22 @@ import { AlertCircle, CheckCircle2, RefreshCw, Shield, Wifi, Globe, Unplug } fro
 
 export const ConnectionDetailsModal = () => {
   const { isOpen, onClose, type, data } = useModal();
-  const params = useParams();
-
+  const { serverId: routeServerId } = useParams();
   const servers = useMockStore((state) => state.servers);
+
+  const urlMatch = typeof window !== "undefined" ? window.location.pathname.match(/\/servers\/([^\/]+)/) : null;
+  const urlServerId = urlMatch ? urlMatch[1] : undefined;
+
+  const targetServerId = data?.serverId || data?.server?.id || routeServerId || urlServerId;
+  const { irc, ircError, resourceServer, internet } = useConnectionStatus(targetServerId);
+
   const currentProfile = useMockStore((state) => state.currentProfile);
   const uploadConfig = useMockStore((state) => state.uploadConfig);
   const setIrcConnected = useMockStore((state) => state.setIrcConnected);
   const disconnectServer = useMockStore((state) => state.disconnectServer);
   const connectServer = useMockStore((state) => state.connectServer);
 
-  const targetServerId = data?.serverId || data?.server?.id || params?.serverId;
   const activeServer = (targetServerId ? servers.find((s) => s.id === targetServerId) : null) || servers[0];
-  const { irc, ircError, resourceServer, internet } = useConnectionStatus(activeServer?.id);
   const [isReconnecting, setIsReconnecting] = useState(false);
 
   const isModalOpen = isOpen && type === "connectionDetails";

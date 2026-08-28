@@ -2,13 +2,13 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { invoke } from "@tauri-apps/api/core";
 import { format } from "date-fns";
-import { 
-  Server, 
-  Channel, 
-  Member, 
-  Message, 
-  DirectMessage, 
-  Profile, 
+import {
+  Server,
+  Channel,
+  Member,
+  Message,
+  DirectMessage,
+  Profile,
   ChannelType,
   LogPage,
   StatusDisplayMode,
@@ -22,17 +22,17 @@ import {
   UserDisplayNameMode,
   ServerUserDisplayNameMode,
 } from "@/types";
-import { 
-  INITIAL_SERVERS, 
-  INITIAL_MESSAGES, 
-  INITIAL_DIRECT_MESSAGES, 
-  MOCK_PROFILE 
+import {
+  INITIAL_SERVERS,
+  INITIAL_MESSAGES,
+  INITIAL_DIRECT_MESSAGES,
+  MOCK_PROFILE
 } from "./mock-data";
 import { v4 as uuidv4 } from "uuid";
 import { ImageUploadConfig, UrlAuthRule } from "./upload/types";
 import { MESSAGE_DEDUPLICATION_MODE } from "./config";
 
-export const MAX_HISTORY_WINDOW = 600;
+export const MAX_HISTORY_WINDOW = 1200;
 export const MAX_PENDING_LIVE = 100;
 
 export function computeMotdHash(lines: string[]): string {
@@ -96,6 +96,7 @@ const EMPTY_HISTORY_WINDOW: HistoryWindow = {
   unreadCount: 0,
   lastSeenTailId: null,
   tailPinned: true,
+  firstUnreadMessageId: null,
   ready: false,
 };
 
@@ -171,8 +172,8 @@ export const formatMessageDate = (
   dateFormatPreset: string = "d MMM yyyy, HH:mm",
   customDateFormat: string = "yyyy/MM/dd HH:mm"
 ): string => {
-  const pattern = dateFormatPreset === "custom" 
-    ? (customDateFormat.trim() || "d MMM yyyy, HH:mm") 
+  const pattern = dateFormatPreset === "custom"
+    ? (customDateFormat.trim() || "d MMM yyyy, HH:mm")
     : dateFormatPreset;
   try {
     const d = typeof date === "string" || typeof date === "number" ? new Date(date) : date;
@@ -242,15 +243,31 @@ const mapLogEntries = (
   type: "channel" | "conversation",
   chatId: string,
 ): (Message | DirectMessage)[] => entries.map((entry) => {
+  const isSys = entry.sender.toLowerCase() === "system" || entry.sender === "*system*" || entry.sender === "*";
   const member = server?.members.find(
     (item) => item.profile.name.toLowerCase() === entry.sender.toLowerCase()
-  ) || createIrcMember(serverId, entry.sender);
+  ) || (isSys ? {
+    id: "system",
+    profileId: "system",
+    profile: {
+      id: "system",
+      userId: "system",
+      name: "System",
+      imageUrl: "",
+      email: "system@irc.local",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    serverId,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  } : createIrcMember(serverId, entry.sender));
   const createdAt = parseLogTimestamp(entry.timestamp);
   const stableId = entry.offset !== undefined
     ? `log-${serverId}-${chatId}-${entry.offset}`
     : `log-${serverId}-${chatId}-${entry.timestamp}-${entry.sender}`;
 
-  const isSystem = isSystemMessage(entry.sender, entry.content);
+  const isSystem = isSys || isSystemMessage(entry.sender, entry.content);
 
   return {
     id: stableId,
@@ -310,6 +327,7 @@ export type { StatusDisplayMode };
 export interface UnreadInfo {
   count: number;
   hasMention: boolean;
+  lastReadMessageId?: string | null;
 }
 
 interface MockState {
@@ -429,9 +447,9 @@ interface MockState {
 
   // Message Actions
   loadChatHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<void>;
-      loadOlderHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<boolean>;
-      loadNewerHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<boolean>;
-      jumpToLatest: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<void>;
+  loadOlderHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<boolean>;
+  loadNewerHistory: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<boolean>;
+  jumpToLatest: (type: "channel" | "conversation", chatId: string, serverId: string, target: string) => Promise<void>;
   /**
    * Re-centers the sliding window around a native log line (search jump-to-message).
    * Loads the page ending at `offset` and forward-fills newer context, then marks the
@@ -447,6 +465,7 @@ interface MockState {
   ) => Promise<boolean>;
   clearHistoryLoading: () => void;
   markTailSeen: (tailId: string | null) => void;
+  clearUnreadMarker: () => void;
   setTailPinned: (pinned: boolean) => void;
   addMessage: (channelId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean, createdAt?: string) => Message;
   deleteMessage: (channelId: string, messageId: string) => void;
@@ -845,12 +864,12 @@ export const useMockStore = create<MockState>()(
           servers: state.servers.map((s) =>
             s.id === serverId
               ? {
-                  ...s,
-                  notificationSettings: {
-                    ...(s.notificationSettings || {}),
-                    ...settings,
-                  },
-                }
+                ...s,
+                notificationSettings: {
+                  ...(s.notificationSettings || {}),
+                  ...settings,
+                },
+              }
               : s
           ),
         })),
@@ -860,19 +879,19 @@ export const useMockStore = create<MockState>()(
           servers: state.servers.map((s) =>
             s.id === serverId
               ? {
-                  ...s,
-                  channels: s.channels.map((c) =>
-                    c.id === channelId
-                      ? {
-                          ...c,
-                          notificationSettings: {
-                            ...(c.notificationSettings || {}),
-                            ...settings,
-                          },
-                        }
-                      : c
-                  ),
-                }
+                ...s,
+                channels: s.channels.map((c) =>
+                  c.id === channelId
+                    ? {
+                      ...c,
+                      notificationSettings: {
+                        ...(c.notificationSettings || {}),
+                        ...settings,
+                      },
+                    }
+                    : c
+                ),
+              }
               : s
           ),
         })),
@@ -1092,8 +1111,8 @@ export const useMockStore = create<MockState>()(
         const channelIdsToRemove = new Set(targetServer?.channels.map((c) => c.id) || []);
 
         try {
-          invoke("disconnect_irc", { serverId }).catch(() => {});
-        } catch (_) {}
+          invoke("disconnect_irc", { serverId }).catch(() => { });
+        } catch (_) { }
 
         set((state) => {
           const nextMessages = { ...state.messages };
@@ -1142,13 +1161,13 @@ export const useMockStore = create<MockState>()(
                 servers: state.servers.map((s) =>
                   s.id === serverId
                     ? {
-                        ...s,
-                        channels: s.channels.map((c) =>
-                          c.id === existingChannel.id
-                            ? { ...c, isTemporary: false }
-                            : c
-                        ),
-                      }
+                      ...s,
+                      channels: s.channels.map((c) =>
+                        c.id === existingChannel.id
+                          ? { ...c, isTemporary: false }
+                          : c
+                      ),
+                    }
                     : s
                 ),
               }));
@@ -1183,13 +1202,13 @@ export const useMockStore = create<MockState>()(
           servers: state.servers.map((s) =>
             s.id === serverId
               ? {
-                  ...s,
-                  channels: s.channels.map((c) =>
-                    c.id === channelId
-                      ? { ...c, name: name.toLowerCase().replace(/\s+/g, "-"), type }
-                      : c
-                  ),
-                }
+                ...s,
+                channels: s.channels.map((c) =>
+                  c.id === channelId
+                    ? { ...c, name: name.toLowerCase().replace(/\s+/g, "-"), type }
+                    : c
+                ),
+              }
               : s
           ),
         }));
@@ -1200,11 +1219,11 @@ export const useMockStore = create<MockState>()(
           servers: state.servers.map((s) =>
             s.id === serverId
               ? {
-                  ...s,
-                  channels: s.channels.map((c) =>
-                    c.id === channelId ? { ...c, topic } : c
-                  ),
-                }
+                ...s,
+                channels: s.channels.map((c) =>
+                  c.id === channelId ? { ...c, topic } : c
+                ),
+              }
               : s
           ),
         }));
@@ -1216,11 +1235,11 @@ export const useMockStore = create<MockState>()(
           servers: state.servers.map((s) =>
             s.id === serverId
               ? {
-                  ...s,
-                  channels: s.channels.map((c) =>
-                    c.name.toLowerCase() === cleanName ? { ...c, topic } : c
-                  ),
-                }
+                ...s,
+                channels: s.channels.map((c) =>
+                  c.name.toLowerCase() === cleanName ? { ...c, topic } : c
+                ),
+              }
               : s
           ),
         }));
@@ -1231,13 +1250,13 @@ export const useMockStore = create<MockState>()(
           servers: state.servers.map((s) =>
             s.id === serverId
               ? {
-                  ...s,
-                  channels: s.channels.map((c) =>
-                    c.id === channelId || c.name.toLowerCase() === channelId.toLowerCase().replace(/^#/, "")
-                      ? { ...c, key: key || undefined }
-                      : c
-                  ),
-                }
+                ...s,
+                channels: s.channels.map((c) =>
+                  c.id === channelId || c.name.toLowerCase() === channelId.toLowerCase().replace(/^#/, "")
+                    ? { ...c, key: key || undefined }
+                    : c
+                ),
+              }
               : s
           ),
         }));
@@ -1278,13 +1297,13 @@ export const useMockStore = create<MockState>()(
           servers: state.servers.map((s) =>
             s.id === serverId
               ? {
-                  ...s,
-                  channels: s.channels.map((c) =>
-                    c.name.toLowerCase().replace(/^#/, "") === cleanChan
-                      ? { ...c, isTemporary }
-                      : c
-                  ),
-                }
+                ...s,
+                channels: s.channels.map((c) =>
+                  c.name.toLowerCase().replace(/^#/, "") === cleanChan
+                    ? { ...c, isTemporary }
+                    : c
+                ),
+              }
               : s
           ),
         }));
@@ -1326,11 +1345,11 @@ export const useMockStore = create<MockState>()(
                 servers: state.servers.map((serv) =>
                   serv.id === serverId
                     ? {
-                        ...serv,
-                        members: serv.members.map((m) =>
-                          m.id === exists.id ? updatedMember : m
-                        ),
-                      }
+                      ...serv,
+                      members: serv.members.map((m) =>
+                        m.id === exists.id ? updatedMember : m
+                      ),
+                    }
                     : serv
                 ),
               };
@@ -1617,17 +1636,17 @@ export const useMockStore = create<MockState>()(
           const updatedServers = state.servers.map((s) =>
             s.id === serverId
               ? {
-                  ...s,
-                  channels: s.channels.map((c) =>
-                    c.id === chId
-                      ? {
-                          ...c,
-                          isTemporary: isInviteOnly,
-                          modes: updatedFlags,
-                        }
-                      : c
-                  ),
-                }
+                ...s,
+                channels: s.channels.map((c) =>
+                  c.id === chId
+                    ? {
+                      ...c,
+                      isTemporary: isInviteOnly,
+                      modes: updatedFlags,
+                    }
+                    : c
+                ),
+              }
               : s
           );
 
@@ -1754,6 +1773,25 @@ export const useMockStore = create<MockState>()(
       loadChatHistory: async (type, chatId, serverId, target) => {
         const requestedKey = chatKey(type, chatId);
         const requestToken = get().historyLoadToken + 1;
+        const isSameChatCheck = get().activeChatKey === requestedKey;
+        const previousFirstUnreadId = isSameChatCheck ? get().historyWindow.firstUnreadMessageId : null;
+        const previousUnreadCount = isSameChatCheck ? get().historyWindow.unreadCount : 0;
+        let initialUnreadInfo = get().unreadState[requestedKey];
+        if (!initialUnreadInfo && type === "conversation") {
+          const convId = chatId;
+          for (const [uKey, info] of Object.entries(get().unreadState)) {
+            if (uKey.startsWith("conversation:")) {
+              const parts = uKey.split(":");
+              const raw = parts.length >= 3 ? parts.slice(2).join(":") : uKey.replace("conversation:", "");
+              if (raw === convId || convId.includes(raw) || raw.includes(convId)) {
+                initialUnreadInfo = info;
+                break;
+              }
+            }
+          }
+        }
+        const initialUnreadCount = initialUnreadInfo?.count || 0;
+        const lastReadId = initialUnreadInfo?.lastReadMessageId || null;
 
         // Reset the sliding window: only the active chat is buffered in memory and the native
         // log is the source of truth. Offsetless (optimistic/local-only) messages are preserved.
@@ -1769,7 +1807,13 @@ export const useMockStore = create<MockState>()(
             ...pending,
           ]);
           const nextUnreads = { ...state.unreadState };
-          delete nextUnreads[requestedKey];
+          if (nextUnreads[requestedKey]) {
+            nextUnreads[requestedKey] = {
+              ...nextUnreads[requestedKey],
+              count: 0,
+              hasMention: false,
+            };
+          }
           if (type === "conversation") {
             const convId = chatId;
             for (const uKey of Object.keys(nextUnreads)) {
@@ -1780,13 +1824,25 @@ export const useMockStore = create<MockState>()(
                   if (sId === serverId) {
                     const raw = parts.slice(2).join(":");
                     if (raw === convId || convId.includes(raw) || raw.includes(convId)) {
-                      delete nextUnreads[uKey];
+                      if (nextUnreads[uKey]) {
+                        nextUnreads[uKey] = {
+                          ...nextUnreads[uKey],
+                          count: 0,
+                          hasMention: false,
+                        };
+                      }
                     }
                   }
                 } else {
                   const raw = uKey.replace("conversation:", "");
                   if (raw === convId || convId.includes(raw) || raw.includes(convId)) {
-                    delete nextUnreads[uKey];
+                    if (nextUnreads[uKey]) {
+                      nextUnreads[uKey] = {
+                        ...nextUnreads[uKey],
+                        count: 0,
+                        hasMention: false,
+                      };
+                    }
                   }
                 }
               }
@@ -1810,9 +1866,10 @@ export const useMockStore = create<MockState>()(
               loadingOlder: false,
               loadingNewer: false,
               pendingLive: [],
-              unreadCount: 0,
+              unreadCount: isSameChat ? previousUnreadCount : (initialUnreadCount > 0 ? initialUnreadCount : 0),
               lastSeenTailId: null,
               tailPinned: true,
+              firstUnreadMessageId: isSameChat ? previousFirstUnreadId : null,
               ready: false,
             },
             messages: type === "channel" ? (isSameChat ? state.messages : { [chatId]: preservedLive as Message[] }) : {},
@@ -1841,11 +1898,33 @@ export const useMockStore = create<MockState>()(
           const combined = trimWindow([...fetched, ...keptLive]);
           const newestOffset = lastLogOffset(combined);
 
+          let firstUnreadId: string | null = null;
+          let effectiveUnreadCount = initialUnreadCount;
+          if (initialUnreadCount > 0) {
+            if (lastReadId) {
+              const lastReadIndex = combined.findIndex((m) => m.id === lastReadId);
+              if (lastReadIndex !== -1 && lastReadIndex + 1 < combined.length) {
+                firstUnreadId = combined[lastReadIndex + 1].id;
+              } else if (lastReadIndex === -1) {
+                const startIdx = Math.max(0, combined.length - initialUnreadCount);
+                firstUnreadId = combined[startIdx]?.id || null;
+              }
+            } else {
+              const startIdx = Math.max(0, combined.length - initialUnreadCount);
+              firstUnreadId = combined[startIdx]?.id || null;
+            }
+          } else if (isSameChatCheck && previousFirstUnreadId) {
+            firstUnreadId = previousFirstUnreadId;
+            effectiveUnreadCount = previousUnreadCount;
+          }
+
           applyWindow(set, type, chatId, combined, {
             hasOlder: page.nextOffset !== null,
             olderCursor: page.nextOffset,
             hasNewer: false,
             newerCursor: newestOffset,
+            firstUnreadMessageId: firstUnreadId,
+            unreadCount: effectiveUnreadCount,
             ready: true,
           });
         } catch (error) {
@@ -1910,10 +1989,10 @@ export const useMockStore = create<MockState>()(
           applyWindow(set, type, chatId, combined, {
             loadingOlder: false,
             hasOlder: page.nextOffset !== null,
-            olderCursor: page.nextOffset ?? oldestOffset,
-            // If the buffer was trimmed, we definitely have newer messages in the transcript
-            hasNewer: wasTrimmed ? true : current.historyWindow.hasNewer,
-            newerCursor: wasTrimmed ? newestOffset : current.historyWindow.newerCursor,
+            olderCursor: page.nextOffset,
+            // If the buffer was trimmed or we are in history, we have newer messages
+            hasNewer: wasTrimmed ? true : (current.historyWindow.hasNewer || newestOffset !== null),
+            newerCursor: wasTrimmed ? newestOffset : (current.historyWindow.newerCursor ?? newestOffset),
             ready: true,
           });
           return true;
@@ -1970,14 +2049,14 @@ export const useMockStore = create<MockState>()(
           const combined = trimWindow(merged);
           const oldestOffset = firstLogOffset(combined);
           const newestOffset = lastLogOffset(combined);
-          const isAtLogTail = page.nextOffset === null;
+          const isAtLogTail = page.nextAfter === null || page.nextAfter === undefined || page.entries.length === 0;
 
           applyWindow(set, type, chatId, combined, {
             loadingNewer: false,
             hasOlder: wasTrimmed ? true : current.historyWindow.hasOlder,
             olderCursor: wasTrimmed ? oldestOffset : current.historyWindow.olderCursor,
             hasNewer: !isAtLogTail,
-            newerCursor: isAtLogTail ? newestOffset : page.nextOffset,
+            newerCursor: isAtLogTail ? newestOffset : (page.nextAfter ?? newestOffset),
             ready: true,
           });
 
@@ -2053,6 +2132,7 @@ export const useMockStore = create<MockState>()(
               unreadCount: state.historyWindow.unreadCount,
               lastSeenTailId: state.historyWindow.lastSeenTailId,
               tailPinned: false,
+              firstUnreadMessageId: state.historyWindow.firstUnreadMessageId,
               ready: false,
             },
             messages: type === "channel" ? { [chatId]: [] } : {},
@@ -2150,11 +2230,41 @@ export const useMockStore = create<MockState>()(
       markTailSeen: (tailId) =>
         set((state) => {
           const win = state.historyWindow;
-          if (win.unreadCount !== 0 || win.lastSeenTailId !== tailId) {
-            return { historyWindow: { ...win, lastSeenTailId: tailId, unreadCount: 0 } };
+          const key = state.activeChatKey;
+          const nextUnreads = key && tailId ? {
+            ...state.unreadState,
+            [key]: {
+              ...(state.unreadState[key] || { hasMention: false }),
+              count: 0,
+              lastReadMessageId: tailId,
+            },
+          } : state.unreadState;
+
+          if (
+            win.unreadCount !== 0 ||
+            win.lastSeenTailId !== tailId ||
+            (key && (state.unreadState[key]?.count !== 0 || state.unreadState[key]?.lastReadMessageId !== tailId))
+          ) {
+            return {
+              unreadState: nextUnreads,
+              historyWindow: {
+                ...win,
+                lastSeenTailId: tailId,
+                unreadCount: 0,
+              },
+            };
           }
           return {};
         }),
+
+      clearUnreadMarker: () =>
+        set((state) => ({
+          historyWindow: {
+            ...state.historyWindow,
+            unreadCount: 0,
+            firstUnreadMessageId: null,
+          },
+        })),
 
       setTailPinned: (pinned) =>
         set((state) => {
@@ -2212,11 +2322,15 @@ export const useMockStore = create<MockState>()(
           set((s) => {
             if (s.activeChatKey !== key) return {};
             const nextPending = [...s.historyWindow.pendingLive, newMessage].slice(-MAX_PENDING_LIVE);
+            const firstUnread = shouldCountUnread
+              ? (s.historyWindow.firstUnreadMessageId || newMessage.id)
+              : s.historyWindow.firstUnreadMessageId;
             return {
               historyWindow: {
                 ...s.historyWindow,
                 pendingLive: nextPending,
                 unreadCount: shouldCountUnread ? s.historyWindow.unreadCount + 1 : s.historyWindow.unreadCount,
+                firstUnreadMessageId: firstUnread,
               },
             };
           });
@@ -2224,6 +2338,9 @@ export const useMockStore = create<MockState>()(
           set((state2) => {
             if (state2.activeChatKey !== key) return {};
             const nextMsgs = trimWindow([...(state2.messages[channelId] || []), newMessage]) as Message[];
+            const firstUnread = shouldCountUnread
+              ? (state2.historyWindow.firstUnreadMessageId || newMessage.id)
+              : state2.historyWindow.firstUnreadMessageId;
             return {
               messages: {
                 ...state2.messages,
@@ -2232,6 +2349,7 @@ export const useMockStore = create<MockState>()(
               historyWindow: {
                 ...state2.historyWindow,
                 unreadCount: shouldCountUnread ? state2.historyWindow.unreadCount + 1 : state2.historyWindow.unreadCount,
+                firstUnreadMessageId: firstUnread,
               },
             };
           });
@@ -2323,7 +2441,7 @@ export const useMockStore = create<MockState>()(
             }
           }
           const currentActive = state.activeConversations[serverId] || [];
-          
+
           const newActive = currentActive.includes(memberId) ? currentActive : [...currentActive, memberId];
 
           if (currentActive.length === newActive.length) return state;
@@ -2341,7 +2459,7 @@ export const useMockStore = create<MockState>()(
         set((state) => {
           const currentHistorical = state.historicalConversations[serverId] || [];
           if (currentHistorical.includes(memberId)) return state;
-          
+
           return {
             historicalConversations: {
               ...state.historicalConversations,
@@ -2482,11 +2600,15 @@ export const useMockStore = create<MockState>()(
           set((s) => {
             if (s.activeChatKey !== key) return {};
             const nextPending = [...s.historyWindow.pendingLive, newDm].slice(-MAX_PENDING_LIVE);
+            const firstUnread = shouldCountUnread
+              ? (s.historyWindow.firstUnreadMessageId || newDm.id)
+              : s.historyWindow.firstUnreadMessageId;
             return {
               historyWindow: {
                 ...s.historyWindow,
                 pendingLive: nextPending,
                 unreadCount: shouldCountUnread ? s.historyWindow.unreadCount + 1 : s.historyWindow.unreadCount,
+                firstUnreadMessageId: firstUnread,
               },
             };
           });
@@ -2494,6 +2616,9 @@ export const useMockStore = create<MockState>()(
           set((state2) => {
             if (state2.activeChatKey !== key) return {};
             const nextDms = trimWindow([...(state2.directMessages[conversationId] || []), newDm]) as DirectMessage[];
+            const firstUnread = shouldCountUnread
+              ? (state2.historyWindow.firstUnreadMessageId || newDm.id)
+              : state2.historyWindow.firstUnreadMessageId;
             return {
               directMessages: {
                 ...state2.directMessages,
@@ -2502,6 +2627,7 @@ export const useMockStore = create<MockState>()(
               historyWindow: {
                 ...state2.historyWindow,
                 unreadCount: shouldCountUnread ? state2.historyWindow.unreadCount + 1 : state2.historyWindow.unreadCount,
+                firstUnreadMessageId: firstUnread,
               },
             };
           });
@@ -2630,20 +2756,20 @@ export const useMockStore = create<MockState>()(
             useTls: s.useTls ?? false,
             customCommands: Array.isArray(s.customCommands)
               ? s.customCommands
-                  .map((c: any) => ({
-                    trigger: String(c?.trigger || "").replace(/^\//, "").trim(),
-                    message: String(c?.message || "").trim(),
-                    description: String(c?.description || "").trim() || undefined,
-                    suggestions: Array.isArray(c?.suggestions)
-                      ? c.suggestions.map((x: any) => String(x || "").trim()).filter(Boolean)
-                      : typeof c?.suggestions === "string"
+                .map((c: any) => ({
+                  trigger: String(c?.trigger || "").replace(/^\//, "").trim(),
+                  message: String(c?.message || "").trim(),
+                  description: String(c?.description || "").trim() || undefined,
+                  suggestions: Array.isArray(c?.suggestions)
+                    ? c.suggestions.map((x: any) => String(x || "").trim()).filter(Boolean)
+                    : typeof c?.suggestions === "string"
                       ? String(c.suggestions)
-                          .split(",")
-                          .map((x: string) => x.trim())
-                          .filter(Boolean)
+                        .split(",")
+                        .map((x: string) => x.trim())
+                        .filter(Boolean)
                       : [],
-                  }))
-                  .filter((c: CustomCommand) => c.trigger && c.message)
+                }))
+                .filter((c: CustomCommand) => c.trigger && c.message)
               : [],
           };
         });
