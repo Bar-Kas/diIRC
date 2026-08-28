@@ -227,7 +227,24 @@ export const isSystemMessage = (sender?: string, content?: string, isSystemFlag?
       /\bis now known as\b/i.test(content) ||
       /\bchanged topic to\b/i.test(content) ||
       /\bwas kicked by\b/i.test(content) ||
-      /\bset mode\b/i.test(content)
+      /\bwas kicked from\b/i.test(content) ||
+      /\bset mode\b/i.test(content) ||
+      /\bCannot join channel\b/i.test(content) ||
+      /\bPermission Denied\b/i.test(content) ||
+      /\bMode error\b/i.test(content) ||
+      /\bAuthentication error\b/i.test(content) ||
+      /\bUnknown command\b/i.test(content) ||
+      /\bNickname .* is already in use\b/i.test(content) ||
+      /\bErroneous nickname\b/i.test(content) ||
+      /\bYou're not on that channel\b/i.test(content) ||
+      /\bNo such channel\b/i.test(content) ||
+      /\bNo such nick\b/i.test(content) ||
+      /\bChannel .* modes:\b/i.test(content) ||
+      /\bInvited\b/i.test(content) ||
+      content.startsWith("-[Notice]-") ||
+      content.startsWith("-[Error") ||
+      content.startsWith("-[Wallops]-") ||
+      content.startsWith("Error:")
     ) {
       return true;
     }

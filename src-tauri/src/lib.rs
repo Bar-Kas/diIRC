@@ -420,6 +420,33 @@ async fn append_log_line(
         .map_err(|error| format!("Failed to flush log line: {error}"))
 }
 
+async fn emit_and_log_system_message(
+    app: &AppHandle,
+    log_state: &LogState,
+    server_id: &str,
+    target_channel: &str,
+    content: &str,
+) {
+    if !target_channel.trim().is_empty() && (target_channel.starts_with('#') || target_channel.starts_with('&')) {
+        let _ = append_log_line(
+            app,
+            log_state,
+            server_id,
+            target_channel,
+            "System",
+            content,
+        )
+        .await;
+    }
+    let msg_payload = IrcMessage::system(
+        server_id.to_string(),
+        "System".to_string(),
+        content.to_string(),
+        target_channel.to_string(),
+    );
+    let _ = app.emit("irc_message", msg_payload);
+}
+
 async fn close_server_logs(state: &LogState, server_id: &str) {
     let prefix = format!("{server_id}\0");
     state
@@ -2522,6 +2549,156 @@ async fn connect_irc(
                                     },
                                 );
                             }
+                        }
+                        Command::Response(Response::ERR_BANNEDFROMCHAN, ref args) => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "Cannot join channel (+b) - You are banned".to_string());
+                            let err_text = format!("Cannot join channel {}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "474" => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "Cannot join channel (+b) - You are banned".to_string());
+                            let err_text = format!("Cannot join channel {}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Response(Response::ERR_CHANNELISFULL, ref args) => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "Cannot join channel (+l) - Channel is full".to_string());
+                            let err_text = format!("Cannot join channel {}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "471" => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "Cannot join channel (+l) - Channel is full".to_string());
+                            let err_text = format!("Cannot join channel {}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Response(Response::ERR_NICKNAMEINUSE, ref args) => {
+                            let nick = args.get(1).cloned().unwrap_or_else(|| "Nickname".to_string());
+                            let reason = args.last().cloned().unwrap_or_else(|| "Nickname is already in use".to_string());
+                            let err_text = format!("Nickname '{}': {}", nick, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "433" => {
+                            let nick = args.get(1).cloned().unwrap_or_else(|| "Nickname".to_string());
+                            let reason = args.last().cloned().unwrap_or_else(|| "Nickname is already in use".to_string());
+                            let err_text = format!("Nickname '{}': {}", nick, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &err_text).await;
+                        }
+                        Command::Response(Response::ERR_ERRONEOUSNICKNAME, ref args) => {
+                            let nick = args.get(1).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "Erroneous Nickname".to_string());
+                            let err_text = format!("Erroneous nickname '{}': {}", nick, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "432" => {
+                            let nick = args.get(1).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "Erroneous Nickname".to_string());
+                            let err_text = format!("Erroneous nickname '{}': {}", nick, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &err_text).await;
+                        }
+                        Command::Response(Response::ERR_NOTONCHANNEL, ref args) => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "You're not on that channel".to_string());
+                            let err_text = format!("{}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "442" => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "You're not on that channel".to_string());
+                            let err_text = format!("{}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Response(Response::ERR_USERNOTINCHANNEL, ref args) => {
+                            let target = args.get(1).cloned().unwrap_or_default();
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "They aren't on that channel".to_string());
+                            let err_text = format!("{} on {}: {}", target, channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "441" => {
+                            let target = args.get(1).cloned().unwrap_or_default();
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "They aren't on that channel".to_string());
+                            let err_text = format!("{} on {}: {}", target, channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Response(Response::ERR_UNKNOWNCOMMAND, ref args) => {
+                            let cmd_name = args.get(1).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "Unknown command".to_string());
+                            let err_text = format!("{}: {}", reason, cmd_name);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "421" => {
+                            let cmd_name = args.get(1).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "Unknown command".to_string());
+                            let err_text = format!("{}: {}", reason, cmd_name);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &err_text).await;
+                        }
+                        Command::Response(Response::ERR_NOTREGISTERED, ref args) => {
+                            let reason = args.last().cloned().unwrap_or_else(|| "You have not registered".to_string());
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &reason).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "451" => {
+                            let reason = args.last().cloned().unwrap_or_else(|| "You have not registered".to_string());
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &reason).await;
+                        }
+                        Command::Response(Response::ERR_PASSWDMISMATCH, ref args) => {
+                            let reason = args.last().cloned().unwrap_or_else(|| "Password incorrect".to_string());
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &format!("Authentication error: {}", reason)).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "464" => {
+                            let reason = args.last().cloned().unwrap_or_else(|| "Password incorrect".to_string());
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &format!("Authentication error: {}", reason)).await;
+                        }
+                        Command::Response(Response::ERR_TOOMANYCHANNELS, ref args) => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "You have joined too many channels".to_string());
+                            let err_text = format!("Cannot join {}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "405" => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "You have joined too many channels".to_string());
+                            let err_text = format!("Cannot join {}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Response(Response::ERR_NOSUCHCHANNEL, ref args) => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "No such channel".to_string());
+                            let err_text = format!("Cannot join {}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "403" => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "No such channel".to_string());
+                            let err_text = format!("Cannot join {}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::WALLOPS(ref content) => {
+                            let sys_text = format!("-[Wallops]- {}", content);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &sys_text).await;
+                        }
+                        Command::Response(ref resp, ref args) if resp.is_error() => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let text = if args.len() > 1 {
+                                args.iter().skip(1).cloned().collect::<Vec<_>>().join(" ")
+                            } else {
+                                args.join(" ")
+                            };
+                            let sys_text = format!("-[Error {:?}]- {}", resp, text);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &sys_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd.parse::<u16>().ok().map_or(false, |c| c >= 400 && c <= 599) => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let text = if args.len() > 1 {
+                                args.iter().skip(1).cloned().collect::<Vec<_>>().join(" ")
+                            } else {
+                                args.join(" ")
+                            };
+                            let sys_text = format!("-[Error {}]- {}", cmd, text);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &sys_text).await;
                         }
                         _ => {}
                     }

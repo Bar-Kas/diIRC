@@ -333,7 +333,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     const isDummySender = sender === "***" || !sender || !sender.trim();
     const effectiveIsSystem = isSystemMessage(sender, content, isSystem || isDummySender);
 
-    if (isDummySender && !isChannelMsg) {
+    if (effectiveIsSystem && !isChannelMsg && (!channel || !channel.trim() || channel === "*" || channel === "$server")) {
       const store = useMockStore.getState();
       const targetChan = targetServer.channels.find((c) => `channel:${c.id}` === store.activeChatKey) || targetServer.channels[0];
       if (targetChan) {
