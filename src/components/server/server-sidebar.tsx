@@ -48,6 +48,7 @@ export const ServerSidebar = ({
   const [draggedChannelId, setDraggedChannelId] = useState<string | null>(null);
   const [dragOverChannelId, setDragOverChannelId] = useState<string | null>(null);
   const [channelDropPosition, setChannelDropPosition] = useState<"above" | "below" | null>(null);
+  const [channelDragPos, setChannelDragPos] = useState<{ x: number; y: number } | null>(null);
 
   const server = servers.find((s) => s.id === serverId) || (serverId ? servers[0] : undefined);
   const serverInvites = (server ? pendingInvites[server.id] : []) || [];
@@ -143,11 +144,14 @@ export const ServerSidebar = ({
         if (dist > 4) {
           channelDragRef.current.isDragging = true;
           setDraggedChannelId(channelDragRef.current.activeId);
+          setChannelDragPos({ x: moveEvent.clientX, y: moveEvent.clientY });
           document.body.style.userSelect = "none";
           document.body.style.cursor = "grabbing";
         } else {
           return;
         }
+      } else {
+        setChannelDragPos({ x: moveEvent.clientX, y: moveEvent.clientY });
       }
 
       const target = findTargetChannel(moveEvent.clientY, channelDragRef.current.activeId);
@@ -175,6 +179,7 @@ export const ServerSidebar = ({
         setDraggedChannelId(null);
         setDragOverChannelId(null);
         setChannelDropPosition(null);
+        setChannelDragPos(null);
         return;
       }
 
@@ -198,6 +203,7 @@ export const ServerSidebar = ({
       setDraggedChannelId(null);
       setDragOverChannelId(null);
       setChannelDropPosition(null);
+      setChannelDragPos(null);
     };
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -283,6 +289,19 @@ export const ServerSidebar = ({
 
   return (
     <div className="flex flex-col h-full text-primary w-full dark:bg-[#2B2D31] bg-[#F2F3F5] overflow-hidden select-none">
+      {draggedChannelId && channelDragPos && (() => {
+        const draggedChannel = server.channels.find((c) => c.id === draggedChannelId);
+        if (!draggedChannel) return null;
+        return (
+          <div
+            className="fixed pointer-events-none z-[9999] -translate-x-4 -translate-y-1/2 opacity-70 scale-105 shadow-2xl rounded-md bg-zinc-900/90 dark:bg-[#1E1F22]/90 border border-indigo-500/50 px-3 py-2 flex items-center gap-x-2 text-white min-w-[140px] max-w-[200px] backdrop-blur-sm"
+            style={{ left: channelDragPos.x, top: channelDragPos.y }}
+          >
+            <Hash className="w-4 h-4 text-indigo-400 shrink-0" />
+            <span className="text-sm font-semibold truncate text-zinc-100">{draggedChannel.name}</span>
+          </div>
+        );
+      })()}
       <ServerHeader server={server} />
 
       <div ref={containerRef} className="flex flex-col flex-1 overflow-hidden relative">

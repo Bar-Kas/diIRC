@@ -19,6 +19,7 @@ export const NavigationSidebar = () => {
   const [draggedServerId, setDraggedServerId] = useState<string | null>(null);
   const [dragOverServerId, setDragOverServerId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<"above" | "below" | null>(null);
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
 
   const dragRef = useRef<{
     activeId: string;
@@ -79,11 +80,14 @@ export const NavigationSidebar = () => {
         if (dist > 4) {
           dragRef.current.isDragging = true;
           setDraggedServerId(dragRef.current.activeId);
+          setDragPos({ x: moveEvent.clientX, y: moveEvent.clientY });
           document.body.style.userSelect = "none";
           document.body.style.cursor = "grabbing";
         } else {
           return;
         }
+      } else {
+        setDragPos({ x: moveEvent.clientX, y: moveEvent.clientY });
       }
 
       const target = findTargetServer(moveEvent.clientY, dragRef.current.activeId);
@@ -111,6 +115,7 @@ export const NavigationSidebar = () => {
         setDraggedServerId(null);
         setDragOverServerId(null);
         setDropPosition(null);
+        setDragPos(null);
         return;
       }
 
@@ -134,6 +139,7 @@ export const NavigationSidebar = () => {
       setDraggedServerId(null);
       setDragOverServerId(null);
       setDropPosition(null);
+      setDragPos(null);
     };
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -145,6 +151,30 @@ export const NavigationSidebar = () => {
     <div
       className="space-y-4 flex flex-col items-center h-full text-primary w-full dark:bg-[#1E1F22] bg-[#E3E5E8] py-3 select-none"
     >
+      {draggedServerId && dragPos && (() => {
+        const draggedServer = servers.find((s) => s.id === draggedServerId);
+        if (!draggedServer) return null;
+        return (
+          <div
+            className="fixed pointer-events-none z-[9999] -translate-x-1/2 -translate-y-1/2 opacity-70 transition-transform scale-105 shadow-2xl"
+            style={{ left: dragPos.x, top: dragPos.y }}
+          >
+            <div className="h-[48px] w-[48px] rounded-[16px] overflow-hidden bg-background dark:bg-neutral-700 ring-2 ring-indigo-500 shadow-indigo-500/40 flex items-center justify-center">
+              {draggedServer.imageUrl ? (
+                <img
+                  src={draggedServer.imageUrl}
+                  alt={draggedServer.name}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span className="font-bold text-sm text-zinc-200">
+                  {draggedServer.name.substring(0, 2).toUpperCase()}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })()}
       <NavigationAction />
       <Separator
         className="h-[2px] bg-zinc-300 dark:bg-zinc-700 rounded-md w-10 mx-auto"
