@@ -94,10 +94,20 @@ export const ServerSidebar = ({
   } | null>(null);
 
   const findTargetChannel = (
+    clientX: number,
     clientY: number,
     activeId: string
   ): { targetId: string; position: "above" | "below" } | null => {
     if (!server) return null;
+
+    const sidebarEl = containerRef.current || document.querySelector<HTMLElement>("[data-sidebar='server']");
+    if (sidebarEl) {
+      const rect = sidebarEl.getBoundingClientRect();
+      if (clientX < rect.left - 30 || clientX > rect.right + 30) {
+        return null;
+      }
+    }
+
     const sourceIndex = server.channels.findIndex((c) => c.id === activeId);
     if (sourceIndex === -1) return null;
 
@@ -168,15 +178,18 @@ export const ServerSidebar = ({
           setDraggedChannelId(channelDragRef.current.activeId);
           setChannelDragPos({ x: moveEvent.clientX, y: moveEvent.clientY });
           document.body.style.userSelect = "none";
+          document.body.style.webkitUserSelect = "none";
           document.body.style.cursor = "grabbing";
         } else {
           return;
         }
-      } else {
-        setChannelDragPos({ x: moveEvent.clientX, y: moveEvent.clientY });
       }
 
-      const target = findTargetChannel(moveEvent.clientY, channelDragRef.current.activeId);
+      moveEvent.preventDefault();
+      window.getSelection()?.removeAllRanges();
+      setChannelDragPos({ x: moveEvent.clientX, y: moveEvent.clientY });
+
+      const target = findTargetChannel(moveEvent.clientX, moveEvent.clientY, channelDragRef.current.activeId);
       if (target) {
         setDragOverChannelId(target.targetId);
         setChannelDropPosition(target.position);
@@ -192,7 +205,9 @@ export const ServerSidebar = ({
       window.removeEventListener("pointercancel", handlePointerUp);
 
       document.body.style.userSelect = "";
+      document.body.style.webkitUserSelect = "";
       document.body.style.cursor = "";
+      window.getSelection()?.removeAllRanges();
 
       const state = channelDragRef.current;
       channelDragRef.current = null;
@@ -205,7 +220,7 @@ export const ServerSidebar = ({
         return;
       }
 
-      const target = findTargetChannel(upEvent.clientY, state.activeId);
+      const target = findTargetChannel(upEvent.clientX, upEvent.clientY, state.activeId);
       if (target) {
         const targetIndex = server.channels.findIndex((c) => c.id === target.targetId);
         const sourceIndex = state.sourceIndex;

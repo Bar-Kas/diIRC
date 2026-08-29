@@ -29,9 +29,18 @@ export const NavigationSidebar = () => {
   } | null>(null);
 
   const findTargetServer = (
+    clientX: number,
     clientY: number,
     activeId: string
   ): { targetId: string; position: "above" | "below" } | null => {
+    const sidebarEl = document.querySelector<HTMLElement>("[data-sidebar='navigation']");
+    if (sidebarEl) {
+      const rect = sidebarEl.getBoundingClientRect();
+      if (clientX < rect.left - 30 || clientX > rect.right + 30) {
+        return null;
+      }
+    }
+
     const sourceIndex = servers.findIndex((s) => s.id === activeId);
     if (sourceIndex === -1) return null;
 
@@ -102,15 +111,18 @@ export const NavigationSidebar = () => {
           setDraggedServerId(dragRef.current.activeId);
           setDragPos({ x: moveEvent.clientX, y: moveEvent.clientY });
           document.body.style.userSelect = "none";
+          document.body.style.webkitUserSelect = "none";
           document.body.style.cursor = "grabbing";
         } else {
           return;
         }
-      } else {
-        setDragPos({ x: moveEvent.clientX, y: moveEvent.clientY });
       }
 
-      const target = findTargetServer(moveEvent.clientY, dragRef.current.activeId);
+      moveEvent.preventDefault();
+      window.getSelection()?.removeAllRanges();
+      setDragPos({ x: moveEvent.clientX, y: moveEvent.clientY });
+
+      const target = findTargetServer(moveEvent.clientX, moveEvent.clientY, dragRef.current.activeId);
       if (target) {
         setDragOverServerId(target.targetId);
         setDropPosition(target.position);
@@ -126,7 +138,9 @@ export const NavigationSidebar = () => {
       window.removeEventListener("pointercancel", handlePointerUp);
 
       document.body.style.userSelect = "";
+      document.body.style.webkitUserSelect = "";
       document.body.style.cursor = "";
+      window.getSelection()?.removeAllRanges();
 
       const state = dragRef.current;
       dragRef.current = null;
@@ -139,7 +153,7 @@ export const NavigationSidebar = () => {
         return;
       }
 
-      const target = findTargetServer(upEvent.clientY, state.activeId);
+      const target = findTargetServer(upEvent.clientX, upEvent.clientY, state.activeId);
       if (target) {
         const targetIndex = servers.findIndex((s) => s.id === target.targetId);
         const sourceIndex = state.sourceIndex;
