@@ -647,13 +647,13 @@ export const SettingsModal = () => {
               onChange={(e) => setNickCompletionFormat(e.target.value as NickCompletionFormat)}
               className="w-full bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
             >
-              <option value="plain">Plain nickname with space (Nick )</option>
-              <option value="colon">Standard IRC colon (Nick: )</option>
-              <option value="comma">Comma suffix (Nick, )</option>
-              <option value="at">Discord-style @-mention (@Nick )</option>
-              <option value="arrow">Arrow suffix (Nick &gt; )</option>
-              <option value="hyphen">Hyphen suffix (Nick - )</option>
-              <option value="bracket">Square brackets ([Nick] )</option>
+              <option value="plain">Plain nickname (Nick )</option>
+              <option value="colon">Colon after nick (Nick: )</option>
+              <option value="comma">Comma after nick (Nick, )</option>
+              <option value="at">At-sign before nick (@Nick )</option>
+              <option value="arrow">Arrow after nick (Nick &gt; )</option>
+              <option value="hyphen">Hyphen after nick (Nick - )</option>
+              <option value="bracket">Square brackets around nick ([Nick] )</option>
               <option value="custom">Custom format pattern</option>
             </select>
 
