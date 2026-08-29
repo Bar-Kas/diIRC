@@ -157,6 +157,9 @@ export const ChatInput = ({
   useEffect(() => {
     if (!activeId) return;
 
+    setShowNickMenu(false);
+    setNickQueryInfo(null);
+
     isSwitchingRef.current = true;
 
     const prevId = prevActiveIdRef.current;
@@ -714,6 +717,71 @@ export const ChatInput = ({
     setShowNickMenu(true);
   }, [form, getChannelNicknames, servers, query?.serverId, type, activeId, channelUserModesMap]);
 
+  useEffect(() => {
+    if (!showNickMenu || !nickQueryInfo) return;
+
+    const textarea = textareaRef.current;
+    const cursorPos = textarea ? (textarea.selectionStart ?? content.length) : content.length;
+
+    if (cursorPos < nickQueryInfo.startIndex) {
+      setShowNickMenu(false);
+      setNickQueryInfo(null);
+      return;
+    }
+
+    const currentWord = content.slice(nickQueryInfo.startIndex, cursorPos);
+
+    if (!currentWord || /\s/.test(currentWord)) {
+      setShowNickMenu(false);
+      setNickQueryInfo(null);
+      return;
+    }
+
+    if (currentWord === nickQueryInfo.queryWord) return;
+
+    const allNicks = getChannelNicknames();
+    const filtered = allNicks.filter((n) =>
+      n.toLowerCase().startsWith(currentWord.toLowerCase())
+    );
+
+    if (filtered.length === 0) {
+      setShowNickMenu(false);
+      setNickQueryInfo(null);
+      return;
+    }
+
+    const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : servers[0];
+    const suggestions = filtered.map((n) => {
+      const modes = (type === "channel" && activeId) ? (channelUserModesMap[activeId]?.[n.toLowerCase()] || []) : [];
+      const roleKey = getHighestChannelRole(modes);
+      const roleLabel = roleKey ? ROLE_CONFIGS[roleKey]?.label || "Member" : "Member";
+      const memberObj = activeServer?.members?.find((m) => m.profile?.name?.toLowerCase() === n.toLowerCase());
+      return { nick: n, roleKey, roleLabel, avatarUrl: memberObj?.profile?.imageUrl };
+    });
+
+    setNickSuggestions(suggestions);
+    setNickQueryInfo((prev) =>
+      prev
+        ? {
+            ...prev,
+            queryWord: currentWord,
+            endIndex: cursorPos,
+          }
+        : null
+    );
+    setSelectedNickIndex(0);
+  }, [
+    content,
+    showNickMenu,
+    nickQueryInfo,
+    getChannelNicknames,
+    servers,
+    query?.serverId,
+    type,
+    activeId,
+    channelUserModesMap,
+  ]);
+
   const onNickSelect = (selectedNick: string) => {
     const textarea = textareaRef.current;
     const currentText = form.getValues("content") || "";
@@ -850,6 +918,9 @@ export const ChatInput = ({
   }, [content, autoResize]);
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    setShowNickMenu(false);
+    setNickQueryInfo(null);
+
     const textContent = values.content?.trim() || "";
     const readyImages = attachedImages.filter((img) => !img.isUploading && img.url);
     const replyTarget = activeId ? useReplyStore.getState().getPending(activeId) : undefined;
