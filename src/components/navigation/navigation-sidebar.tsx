@@ -32,36 +32,56 @@ export const NavigationSidebar = () => {
     clientY: number,
     activeId: string
   ): { targetId: string; position: "above" | "below" } | null => {
+    const sourceIndex = servers.findIndex((s) => s.id === activeId);
+    if (sourceIndex === -1) return null;
+
     const items = Array.from(document.querySelectorAll<HTMLElement>("[data-server-id]"));
-    if (items.length <= 1) return null;
-
-    for (const item of items) {
-      const id = item.getAttribute("data-server-id");
-      if (!id || id === activeId) continue;
-
-      const rect = item.getBoundingClientRect();
-      if (clientY >= rect.top && clientY <= rect.bottom) {
-        const isAbove = clientY < rect.top + rect.height / 2;
-        return { targetId: id, position: isAbove ? "above" : "below" };
-      }
-    }
-
-    // Check above first or below last item
     const otherItems = items.filter((el) => el.getAttribute("data-server-id") !== activeId);
-    if (otherItems.length > 0) {
-      const first = otherItems[0];
-      const firstRect = first.getBoundingClientRect();
-      if (clientY < firstRect.top) {
-        return { targetId: first.getAttribute("data-server-id")!, position: "above" };
+    if (otherItems.length === 0) return null;
+
+    const itemsWithMid = otherItems.map((el) => {
+      const rect = el.getBoundingClientRect();
+      return {
+        id: el.getAttribute("data-server-id")!,
+        midY: rect.top + rect.height / 2,
+      };
+    });
+
+    itemsWithMid.sort((a, b) => a.midY - b.midY);
+
+    const isSamePosition = (targetId: string, position: "above" | "below") => {
+      const targetIndex = servers.findIndex((s) => s.id === targetId);
+      if (targetIndex === -1) return false;
+      let destinationIndex = targetIndex;
+      if (sourceIndex < targetIndex) {
+        destinationIndex = position === "above" ? targetIndex - 1 : targetIndex;
+      } else if (sourceIndex > targetIndex) {
+        destinationIndex = position === "above" ? targetIndex : targetIndex + 1;
       }
-      const last = otherItems[otherItems.length - 1];
-      const lastRect = last.getBoundingClientRect();
-      if (clientY > lastRect.bottom) {
-        return { targetId: last.getAttribute("data-server-id")!, position: "below" };
+      return destinationIndex === sourceIndex;
+    };
+
+    let target: { targetId: string; position: "above" | "below" } | null = null;
+
+    if (clientY < itemsWithMid[0].midY) {
+      target = { targetId: itemsWithMid[0].id, position: "above" };
+    } else if (clientY >= itemsWithMid[itemsWithMid.length - 1].midY) {
+      const lastItem = itemsWithMid[itemsWithMid.length - 1];
+      target = { targetId: lastItem.id, position: "below" };
+    } else {
+      for (let i = 0; i < itemsWithMid.length - 1; i++) {
+        if (clientY >= itemsWithMid[i].midY && clientY < itemsWithMid[i + 1].midY) {
+          target = { targetId: itemsWithMid[i + 1].id, position: "above" };
+          break;
+        }
       }
     }
 
-    return null;
+    if (target && isSamePosition(target.targetId, target.position)) {
+      return null;
+    }
+
+    return target;
   };
 
   const handlePointerDown = (e: React.PointerEvent, id: string, index: number) => {
