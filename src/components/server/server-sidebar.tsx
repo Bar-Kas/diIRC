@@ -310,7 +310,7 @@ export const ServerSidebar = ({
   const isConversationPage = location.pathname.includes("/conversations/");
 
   return (
-    <div className="flex flex-col h-full text-primary w-full dark:bg-[#2B2D31] bg-[#F2F3F5] overflow-hidden select-none">
+    <>
       {draggedChannelId && channelDragPos && (() => {
         const draggedChannel = server.channels.find((c) => c.id === draggedChannelId);
         if (!draggedChannel) return null;
@@ -324,6 +324,7 @@ export const ServerSidebar = ({
           </div>
         );
       })()}
+      <div className="flex flex-col h-full text-primary w-full dark:bg-[#2B2D31] bg-[#F2F3F5] overflow-hidden select-none">
       <ServerHeader server={server} />
 
       <div ref={containerRef} className="flex flex-col flex-1 overflow-hidden relative">
@@ -527,5 +528,6 @@ export const ServerSidebar = ({
         </div>
       </div>
     </div>
-  );
+  </>
+);
 };

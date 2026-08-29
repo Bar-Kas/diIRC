@@ -18,6 +18,10 @@ export const ActionTooltip = ({
   side,
   align
 }: ActionTooltipProps) => {
+  if (!label || !label.trim()) {
+    return <>{children}</>;
+  }
+
   return (
     <TooltipProvider>
       <Tooltip delayDuration={50}>

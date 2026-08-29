@@ -20,6 +20,7 @@ interface NavigationItemProps {
   name: string;
   index: number;
   isDragging?: boolean;
+  isAnyDragging?: boolean;
   dropPosition?: "above" | "below" | null;
   onPointerDown?: (e: React.PointerEvent, id: string, index: number) => void;
 }
@@ -30,6 +31,7 @@ export const NavigationItem = ({
   name,
   index,
   isDragging,
+  isAnyDragging,
   dropPosition,
   onPointerDown,
 }: NavigationItemProps) => {
@@ -152,7 +154,7 @@ export const NavigationItem = ({
           <ActionTooltip
             side="right"
             align="center"
-            label={isDragging ? "" : tooltipLabel}
+            label={isAnyDragging ? "" : tooltipLabel}
           >
             <div
               role="button"
