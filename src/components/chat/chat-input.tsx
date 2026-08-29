@@ -21,6 +21,7 @@ import { EmojiPicker } from "@/components/emoji-picker";
 import { Member } from "@/types";
 import { useMockStore, getServerSelfMember, getServerActiveNick, formatNickCompletion } from "@/lib/mock-store";
 import { UserRoleIcon, getHighestChannelRole, ROLE_CONFIGS, UserRoleKey } from "@/components/user-role-icon";
+import { UserAvatar } from "@/components/user-avatar";
 import { uploadImage } from "@/lib/upload/services";
 import { ImageContextMenu } from "@/components/image-context-menu";
 import { isMediaUrl } from "@/lib/image-utils";
@@ -1313,13 +1314,11 @@ export const ChatInput = ({
                                 : "hover:bg-zinc-100 dark:hover:bg-zinc-700/30"
                             }`}
                           >
-                            <div className="w-8 h-8 rounded-full overflow-hidden bg-zinc-300 dark:bg-zinc-700 shrink-0 flex items-center justify-center">
-                              {item.avatarUrl ? (
-                                <img src={item.avatarUrl} alt={item.nick} className="w-full h-full object-cover" />
-                              ) : (
-                                <User className="w-4 h-4 text-zinc-500 dark:text-zinc-300" />
-                              )}
-                            </div>
+                            <UserAvatar
+                              src={item.avatarUrl}
+                              name={item.nick}
+                              className="h-8 w-8 md:h-8 md:w-8"
+                            />
                             <div className="flex flex-col min-w-0 flex-1">
                               <div className="flex items-center gap-x-1.5 min-w-0">
                                 <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate">

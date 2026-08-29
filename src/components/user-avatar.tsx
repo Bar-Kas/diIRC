@@ -1,4 +1,4 @@
-import { Avatar } from "@/components/ui/avatar";
+import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { User } from "lucide-react";
 
@@ -19,6 +19,7 @@ export const getAvatarBgStyle = (seed: string = "") => {
 };
 
 export const UserAvatar = ({
+  src,
   name,
   className
 }: UserAvatarProps) => {
@@ -32,6 +33,7 @@ export const UserAvatar = ({
       )}
       style={style}
     >
+      {src && <AvatarImage src={src} className="object-cover" />}
       <User className="h-1/2 w-1/2 text-white stroke-[2.5]" />
     </Avatar>
   );
