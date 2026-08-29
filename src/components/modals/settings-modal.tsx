@@ -515,7 +515,14 @@ export const SettingsModal = () => {
                 max="64"
                 step="2"
                 value={jumbojiSize}
-                onChange={(e) => setJumbojiSize(Number(e.target.value))}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  if (val > 0 && val < 14) {
+                    setJumbojiSize(14);
+                  } else {
+                    setJumbojiSize(val);
+                  }
+                }}
                 className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
               />
             </div>

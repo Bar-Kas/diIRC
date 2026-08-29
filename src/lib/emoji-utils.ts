@@ -56,15 +56,21 @@ export function getEmojiSizeProps(emojiCount: number, jumbojiSize: number = 42):
   let className = "leading-tight py-1 my-0.5";
 
   if (emojiCount > 3 && emojiCount <= 8) {
-    targetPx = Math.max(14, Math.round(jumbojiSize * 0.71));
+    targetPx = Math.round(jumbojiSize * 0.71);
     className = "leading-snug py-0.5 my-0.5";
   } else if (emojiCount > 8) {
-    targetPx = Math.max(14, Math.round(jumbojiSize * 0.52));
+    targetPx = Math.round(jumbojiSize * 0.52);
     className = "leading-normal py-0.5";
   }
 
+  // Ensure jumboji size never drops below standard body text font size (14px)
+  targetPx = Math.max(14, targetPx);
+
   return {
-    style: { fontSize: `${targetPx}px` },
+    style: {
+      fontSize: `${targetPx}px`,
+      lineHeight: "1.15",
+    },
     className,
   };
 }

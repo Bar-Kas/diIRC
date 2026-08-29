@@ -2996,6 +2996,7 @@ export const useMockStore = create<MockState>()(
           nickCompletionFormat: "plain",
           customNickCompletionFormat: "{nick}: ",
           ...persistedState,
+          jumbojiSize: typeof persistedState?.jumbojiSize === "number" ? persistedState.jumbojiSize : 42,
           servers: sanitizedServers,
           messages: {},
           directMessages: {},
