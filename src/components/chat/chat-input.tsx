@@ -1319,18 +1319,13 @@ export const ChatInput = ({
                               name={item.nick}
                               className="h-8 w-8 md:h-8 md:w-8"
                             />
-                            <div className="flex flex-col min-w-0 flex-1">
-                              <div className="flex items-center gap-x-1.5 min-w-0">
-                                <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate">
-                                  {item.nick}
-                                </span>
-                                {item.roleKey && (
-                                  <UserRoleIcon role={item.roleKey} className="w-3.5 h-3.5" showTooltip={false} />
-                                )}
-                              </div>
-                              <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
-                                {item.roleLabel}
+                            <div className="flex items-center gap-x-1.5 min-w-0 flex-1">
+                              <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate">
+                                {item.nick}
                               </span>
+                              {item.roleKey && (
+                                <UserRoleIcon role={item.roleKey} className="w-3.5 h-3.5" showTooltip={false} />
+                              )}
                             </div>
                           </div>
                         ))}
