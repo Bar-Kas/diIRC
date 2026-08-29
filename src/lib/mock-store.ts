@@ -475,6 +475,8 @@ interface MockState {
   customNickCompletionFormat: string;
   setNickCompletionFormat: (format: NickCompletionFormat) => void;
   setCustomNickCompletionFormat: (format: string) => void;
+  jumbojiSize: number;
+  setJumbojiSize: (size: number) => void;
   notificationSettings: GlobalNotificationSettings;
   conversationNotificationSettings: Record<string, NotificationOverride>;
   autoUpdateMode: "auto" | "ask" | "disabled";
@@ -707,6 +709,8 @@ export const useMockStore = create<MockState>()(
       customNickCompletionFormat: "{nick}: ",
       setNickCompletionFormat: (format) => set({ nickCompletionFormat: format }),
       setCustomNickCompletionFormat: (format) => set({ customNickCompletionFormat: format }),
+      jumbojiSize: 42,
+      setJumbojiSize: (size: number) => set({ jumbojiSize: size }),
       notificationSettings: {
         soundEnabled: true,
         soundPreset: "chime",

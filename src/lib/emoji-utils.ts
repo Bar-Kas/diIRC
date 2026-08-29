@@ -34,16 +34,46 @@ export function getOnlyEmojiCount(text: string): number {
   return 0;
 }
 
+export interface EmojiSizeProps {
+  style?: React.CSSProperties;
+  className: string;
+}
+
+/**
+ * Returns Jumboji (enlarged emoji) styling props based on emoji count and configured jumboji font size.
+ * Sizing scales dynamically based on emoji count:
+ * - 1-3 emojis: 100% of base jumboji size (default 42px)
+ * - 4-8 emojis: ~71% of base jumboji size (default 30px)
+ * - 9-16 emojis: ~52% of base jumboji size (default 22px)
+ * - jumbojiSize === 0 or >16 emojis: disabled (standard text size)
+ */
+export function getEmojiSizeProps(emojiCount: number, jumbojiSize: number = 42): EmojiSizeProps {
+  if (emojiCount <= 0 || emojiCount > 16 || jumbojiSize <= 0) {
+    return { className: "" };
+  }
+
+  let targetPx = jumbojiSize;
+  let className = "leading-tight py-1 my-0.5";
+
+  if (emojiCount > 3 && emojiCount <= 8) {
+    targetPx = Math.max(14, Math.round(jumbojiSize * 0.71));
+    className = "leading-snug py-0.5 my-0.5";
+  } else if (emojiCount > 8) {
+    targetPx = Math.max(14, Math.round(jumbojiSize * 0.52));
+    className = "leading-normal py-0.5";
+  }
+
+  return {
+    style: { fontSize: `${targetPx}px` },
+    className,
+  };
+}
+
 /**
  * Returns Tailwind CSS classes for jumboji (enlarged emoji) styling.
- * Sizing scales dynamically based on emoji count, similar to Discord & Slack:
- * - 1-3 emojis: 42px
- * - 4-8 emojis: 30px
- * - 9-16 emojis: 22px
- * - >16 emojis: standard 14px text
  */
-export function getEmojiSizeClass(emojiCount: number): string {
-  if (emojiCount <= 0 || emojiCount > 16) return "";
+export function getEmojiSizeClass(emojiCount: number, jumbojiSize: number = 42): string {
+  if (emojiCount <= 0 || emojiCount > 16 || jumbojiSize <= 0) return "";
   if (emojiCount <= 3) {
     return "text-[42px] leading-tight py-1 my-0.5";
   }

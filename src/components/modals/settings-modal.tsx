@@ -41,6 +41,7 @@ import {
   ArrowUpDown,
   ScrollText,
   AtSign,
+  Smile,
 } from "lucide-react";
 import { StatusDisplayMode, formatMessageDate, NickCompletionFormat, formatNickCompletion } from "@/lib/mock-store";
 import { MotdDisplayPolicy, UserDisplayNameMode } from "@/types";
@@ -118,6 +119,9 @@ export const SettingsModal = () => {
 
   const userDisplayNameMode = useMockStore((state) => state.userDisplayNameMode) || "nickname";
   const setUserDisplayNameMode = useMockStore((state) => state.setUserDisplayNameMode);
+
+  const jumbojiSize = useMockStore((state) => state.jumbojiSize ?? 42);
+  const setJumbojiSize = useMockStore((state) => state.setJumbojiSize);
 
   const [checkStatus, setCheckStatus] = useState<"idle" | "checking" | "upToDate" | "available" | "error">("idle");
   const [foundUpdate, setFoundUpdate] = useState<Update | null>(null);
@@ -486,6 +490,35 @@ export const SettingsModal = () => {
               checked={enableMarkdown}
               onCheckedChange={(checked) => setEnableMarkdown(checked)}
             />
+          </div>
+
+          {/* Jumboji Enlarged Emoji Size */}
+          <div className="flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-3 shadow-sm transition">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-x-2">
+                <Smile className="w-4 h-4 text-amber-500" />
+                <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                  Enlarged emoji size (Jumboji)
+                </label>
+              </div>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-mono">
+                {jumbojiSize === 0 ? "Disabled (Normal size)" : `${jumbojiSize}px`}
+              </span>
+            </div>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+              Adjust size for emoji-only messages. Set to 0 to disable enlarged emojis and display standard text font size.
+            </p>
+            <div className="flex items-center gap-x-4 pt-1">
+              <input
+                type="range"
+                min="0"
+                max="64"
+                step="2"
+                value={jumbojiSize}
+                onChange={(e) => setJumbojiSize(Number(e.target.value))}
+                className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+              />
+            </div>
           </div>
 
           {/* Sort Private Messages by Unread */}
