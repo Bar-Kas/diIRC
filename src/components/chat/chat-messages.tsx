@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 import { ChatWelcome } from "./chat-welcome";
 import { ChatItem } from "./chat-item";
 import { NewMessagesDivider } from "./new-messages-divider";
-import { TopUnreadBar } from "./top-unread-bar";
 import { clearProxyCache } from "./smart-image";
 
 const DATE_FORMAT = "d MMM yyyy, HH:mm";
@@ -858,13 +857,6 @@ export const ChatMessages = ({
 
   return (
     <div className="relative flex-1 min-h-0 flex flex-col">
-      {unreadCount > 0 && (
-        <TopUnreadBar
-          unreadCount={unreadCount}
-          onJumpToUnread={handleJumpToUnread}
-          onMarkAsRead={handleMarkAsRead}
-        />
-      )}
       <div
         ref={chatRef}
         onScroll={handleChatScroll}
