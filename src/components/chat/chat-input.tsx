@@ -67,6 +67,9 @@ export const ChatInput = ({
 }: ChatInputProps) => {
   const addMessage = useMockStore((state) => state.addMessage);
   const addDirectMessage = useMockStore((state) => state.addDirectMessage);
+  const markTailSeen = useMockStore((state) => state.markTailSeen);
+  const clearUnreadMarker = useMockStore((state) => state.clearUnreadMarker);
+  const setTailPinned = useMockStore((state) => state.setTailPinned);
   const servers = useMockStore((state) => state.servers);
   const currentProfile = useMockStore((state) => state.currentProfile);
   const uploadConfig = useMockStore((state) => state.uploadConfig);
@@ -987,7 +990,10 @@ export const ChatInput = ({
                   replyPreview: null,
                   replyParentOffset: null,
                   }).catch((e) => console.error(e));
-                  addMessage(query.channelId, senderMember, img.url);
+                  const created = addMessage(query.channelId, senderMember, img.url);
+                  markTailSeen(created.id);
+                  clearUnreadMarker();
+                  setTailPinned(true);
                 } else if (type === "conversation" && query?.conversationId) {
                   await invoke("send_message", {
                     serverId: activeServer.id,
@@ -998,7 +1004,10 @@ export const ChatInput = ({
                   replyPreview: null,
                   replyParentOffset: null,
                   }).catch((e) => console.error(e));
-                  addDirectMessage(query.conversationId, senderMember, img.url);
+                  const created = addDirectMessage(query.conversationId, senderMember, img.url);
+                  markTailSeen(created.id);
+                  clearUnreadMarker();
+                  setTailPinned(true);
                   if (query.targetMemberId) {
                     useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
                   }
@@ -1059,11 +1068,17 @@ export const ChatInput = ({
 
         if (type === "channel" && query?.channelId) {
           const created = addMessage(query.channelId, senderMember, line, null, false, replyMeta);
+          markTailSeen(created.id);
+          clearUnreadMarker();
+          setTailPinned(true);
           if (isReplyLineLocal && replyTarget) {
             rememberSentReply(created.id, replyTarget);
           }
         } else if (type === "conversation" && query?.conversationId) {
           const created = addDirectMessage(query.conversationId, senderMember, line, null, false, replyMeta);
+          markTailSeen(created.id);
+          clearUnreadMarker();
+          setTailPinned(true);
           if (isReplyLineLocal && replyTarget) {
             rememberSentReply(created.id, replyTarget);
           }

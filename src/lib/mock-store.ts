@@ -2513,11 +2513,28 @@ export const useMockStore = create<MockState>()(
         }
 
         const win = state.historyWindow.key === key ? state.historyWindow : null;
+        const isSelf =
+          !effectiveIsSystem &&
+          Boolean(
+            member &&
+              (member.profileId === state.currentProfile.id ||
+                member.id?.startsWith("self-") ||
+                member.id?.endsWith(":self") ||
+                member.id?.startsWith("member-") ||
+                (member.serverId &&
+                  state.servers
+                    .find((s) => s.id === member.serverId)
+                    ?.nicknames?.some(
+                      (n) => n.toLowerCase() === member.profile?.name?.toLowerCase()
+                    )))
+          );
+
         // Event-driven unread counting (Model v2): any arrival while the user is away
         // from the bottom increments once here — regardless of whether the message
         // lands in the buffer or in the pendingLive queue. Sliding-window trimming and
         // chunk loads never touch the count, so it can neither freeze nor reset.
-        const shouldCountUnread = Boolean(win && !win.tailPinned);
+        const isWindowFocused = typeof document !== "undefined" && document.hasFocus();
+        const shouldCountUnread = Boolean(win && (!win.tailPinned || !isWindowFocused) && !isSelf);
         if (win?.hasNewer) {
           // Reading older history: queue the live message instead of mutating the window.
           set((s) => {
@@ -2525,13 +2542,15 @@ export const useMockStore = create<MockState>()(
             const nextPending = [...s.historyWindow.pendingLive, newMessage].slice(-MAX_PENDING_LIVE);
             const firstUnread = shouldCountUnread
               ? (s.historyWindow.firstUnreadMessageId || newMessage.id)
-              : s.historyWindow.firstUnreadMessageId;
+              : (isSelf ? null : s.historyWindow.firstUnreadMessageId);
             return {
               historyWindow: {
                 ...s.historyWindow,
                 pendingLive: nextPending,
-                unreadCount: shouldCountUnread ? s.historyWindow.unreadCount + 1 : s.historyWindow.unreadCount,
+                unreadCount: shouldCountUnread ? s.historyWindow.unreadCount + 1 : (isSelf ? 0 : s.historyWindow.unreadCount),
                 firstUnreadMessageId: firstUnread,
+                tailPinned: isSelf ? true : s.historyWindow.tailPinned,
+                lastSeenTailId: isSelf ? newMessage.id : s.historyWindow.lastSeenTailId,
               },
             };
           });
@@ -2541,16 +2560,31 @@ export const useMockStore = create<MockState>()(
             const nextMsgs = trimWindow([...(state2.messages[channelId] || []), newMessage]) as Message[];
             const firstUnread = shouldCountUnread
               ? (state2.historyWindow.firstUnreadMessageId || newMessage.id)
-              : state2.historyWindow.firstUnreadMessageId;
+              : (isSelf ? null : state2.historyWindow.firstUnreadMessageId);
+
+            const nextUnreads = isSelf
+              ? {
+                  ...state2.unreadState,
+                  [key]: {
+                    ...(state2.unreadState[key] || { hasMention: false }),
+                    count: 0,
+                    lastReadMessageId: newMessage.id,
+                  },
+                }
+              : state2.unreadState;
+
             return {
+              unreadState: nextUnreads,
               messages: {
                 ...state2.messages,
                 [channelId]: nextMsgs,
               },
               historyWindow: {
                 ...state2.historyWindow,
-                unreadCount: shouldCountUnread ? state2.historyWindow.unreadCount + 1 : state2.historyWindow.unreadCount,
+                unreadCount: shouldCountUnread ? state2.historyWindow.unreadCount + 1 : (isSelf ? 0 : state2.historyWindow.unreadCount),
                 firstUnreadMessageId: firstUnread,
+                tailPinned: isSelf ? true : state2.historyWindow.tailPinned,
+                lastSeenTailId: isSelf ? newMessage.id : state2.historyWindow.lastSeenTailId,
               },
             };
           });
@@ -2797,8 +2831,25 @@ export const useMockStore = create<MockState>()(
         }
 
         const win = state.historyWindow.key === key ? state.historyWindow : null;
+        const isSelf =
+          !effectiveIsSystem &&
+          Boolean(
+            member &&
+              (member.profileId === state.currentProfile.id ||
+                member.id?.startsWith("self-") ||
+                member.id?.endsWith(":self") ||
+                member.id?.startsWith("member-") ||
+                (member.serverId &&
+                  state.servers
+                    .find((s) => s.id === member.serverId)
+                    ?.nicknames?.some(
+                      (n) => n.toLowerCase() === member.profile?.name?.toLowerCase()
+                    )))
+          );
+
         // Event-driven unread counting (Model v2) — see addMessage.
-        const shouldCountUnread = Boolean(win && !win.tailPinned);
+        const isWindowFocused = typeof document !== "undefined" && document.hasFocus();
+        const shouldCountUnread = Boolean(win && (!win.tailPinned || !isWindowFocused) && !isSelf);
         if (win?.hasNewer) {
           // Reading older history: queue the live message instead of mutating the window.
           set((s) => {
@@ -2806,13 +2857,15 @@ export const useMockStore = create<MockState>()(
             const nextPending = [...s.historyWindow.pendingLive, newDm].slice(-MAX_PENDING_LIVE);
             const firstUnread = shouldCountUnread
               ? (s.historyWindow.firstUnreadMessageId || newDm.id)
-              : s.historyWindow.firstUnreadMessageId;
+              : (isSelf ? null : s.historyWindow.firstUnreadMessageId);
             return {
               historyWindow: {
                 ...s.historyWindow,
                 pendingLive: nextPending,
-                unreadCount: shouldCountUnread ? s.historyWindow.unreadCount + 1 : s.historyWindow.unreadCount,
+                unreadCount: shouldCountUnread ? s.historyWindow.unreadCount + 1 : (isSelf ? 0 : s.historyWindow.unreadCount),
                 firstUnreadMessageId: firstUnread,
+                tailPinned: isSelf ? true : s.historyWindow.tailPinned,
+                lastSeenTailId: isSelf ? newDm.id : s.historyWindow.lastSeenTailId,
               },
             };
           });
@@ -2822,16 +2875,31 @@ export const useMockStore = create<MockState>()(
             const nextDms = trimWindow([...(state2.directMessages[conversationId] || []), newDm]) as DirectMessage[];
             const firstUnread = shouldCountUnread
               ? (state2.historyWindow.firstUnreadMessageId || newDm.id)
-              : state2.historyWindow.firstUnreadMessageId;
+              : (isSelf ? null : state2.historyWindow.firstUnreadMessageId);
+
+            const nextUnreads = isSelf
+              ? {
+                  ...state2.unreadState,
+                  [key]: {
+                    ...(state2.unreadState[key] || { hasMention: false }),
+                    count: 0,
+                    lastReadMessageId: newDm.id,
+                  },
+                }
+              : state2.unreadState;
+
             return {
+              unreadState: nextUnreads,
               directMessages: {
                 ...state2.directMessages,
                 [conversationId]: nextDms,
               },
               historyWindow: {
                 ...state2.historyWindow,
-                unreadCount: shouldCountUnread ? state2.historyWindow.unreadCount + 1 : state2.historyWindow.unreadCount,
+                unreadCount: shouldCountUnread ? state2.historyWindow.unreadCount + 1 : (isSelf ? 0 : state2.historyWindow.unreadCount),
                 firstUnreadMessageId: firstUnread,
+                tailPinned: isSelf ? true : state2.historyWindow.tailPinned,
+                lastSeenTailId: isSelf ? newDm.id : state2.historyWindow.lastSeenTailId,
               },
             };
           });

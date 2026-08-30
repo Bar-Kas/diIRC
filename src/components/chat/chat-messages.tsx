@@ -129,6 +129,7 @@ export const ChatMessages = ({
     // silently stamped as seen by the at-bottom watcher.
     const element = chatRef.current;
     if (element && element.scrollTop < lastScrollTopRef.current - 1) return;
+    if (typeof document !== "undefined" && !document.hasFocus()) return;
     markTailSeen(items[items.length - 1].id);
   }, [items, atBottom, hasNewer, markTailSeen, chatId]);
 
@@ -373,7 +374,11 @@ export const ChatMessages = ({
       // slow upward scrolling passes through the grace zone over many events and
       // used to wipe the unread counter.
       if (!movingUp && items.length > 0) {
-        markTailSeen(items[items.length - 1].id);
+        if (typeof document !== "undefined" && !document.hasFocus()) {
+          // Do not mark seen if unfocused!
+        } else {
+          markTailSeen(items[items.length - 1].id);
+        }
         // Fresh baseline: pending upward-wheel intent must not survive into the
         // next gesture once the user is genuinely back at the bottom.
         wheelUpAccumRef.current = 0;
@@ -470,6 +475,12 @@ export const ChatMessages = ({
     }
 
     if (shouldStickToBottomRef.current && totalCount > 0) {
+      if (typeof document !== "undefined" && !document.hasFocus()) {
+        shouldStickToBottomRef.current = false;
+        setAtBottom(false);
+        setTailPinned(false);
+        return;
+      }
       pinToBottom("auto", "useLayoutEffect (stickToBottom)");
       anchorRef.current = null;
       return;
