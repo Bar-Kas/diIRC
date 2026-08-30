@@ -39,8 +39,8 @@ export const UpdateModal = () => {
   });
 
   const handleClose = () => {
-    if (progress.status === "downloading" || progress.status === "installing") {
-      // Prevent accidental close during installation
+    if (progress.status === "backing_up" || progress.status === "downloading" || progress.status === "installing") {
+      // Prevent accidental close during backup or installation
       return;
     }
     setProgress({
@@ -116,12 +116,14 @@ export const UpdateModal = () => {
           )}
 
           {/* Download & Install Progress Bar */}
-          {(progress.status === "downloading" || progress.status === "installing") && (
+          {(progress.status === "backing_up" || progress.status === "downloading" || progress.status === "installing") && (
             <div className="space-y-2 p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
               <div className="flex items-center justify-between text-xs font-semibold text-indigo-600 dark:text-indigo-400">
                 <span className="flex items-center gap-x-2">
                   <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
-                  {progress.status === "downloading" 
+                  {progress.status === "backing_up"
+                    ? "Creating data backup..."
+                    : progress.status === "downloading" 
                     ? "Downloading update..." 
                     : "Installing and restarting..."}
                 </span>
@@ -182,7 +184,7 @@ export const UpdateModal = () => {
 
         {/* Modal Footer */}
         <div className="p-4 bg-zinc-100 dark:bg-[#2b2d31] flex items-center justify-end gap-x-2 border-t border-zinc-200 dark:border-zinc-800">
-          {progress.status !== "downloading" && progress.status !== "installing" && (
+          {progress.status !== "backing_up" && progress.status !== "downloading" && progress.status !== "installing" && (
             <Button
               variant="outline"
               size="sm"
@@ -193,7 +195,7 @@ export const UpdateModal = () => {
             </Button>
           )}
 
-          {progress.status !== "downloading" && progress.status !== "installing" && progress.status !== "ready" && (
+          {progress.status !== "backing_up" && progress.status !== "downloading" && progress.status !== "installing" && progress.status !== "ready" && (
             <Button
               size="sm"
               onClick={handleStartUpdate}

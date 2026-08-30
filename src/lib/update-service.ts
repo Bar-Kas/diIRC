@@ -5,7 +5,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useMockStore } from "@/lib/mock-store";
 
 export interface UpdateProgress {
-  status: "idle" | "checking" | "downloading" | "installing" | "ready" | "error";
+  status: "idle" | "checking" | "backing_up" | "downloading" | "installing" | "ready" | "error";
   downloadedBytes: number;
   totalBytes: number;
   percentage: number;
@@ -61,6 +61,22 @@ export const installAppUpdate = async (
   let totalBytes = 0;
 
   try {
+    // 1. Create a full app data backup before starting update
+    onProgress?.({
+      status: "backing_up",
+      downloadedBytes: 0,
+      totalBytes: 0,
+      percentage: 0,
+    });
+
+    try {
+      const backupPath = await invoke<string>("create_app_backup");
+      console.log("App backup successfully created at:", backupPath);
+    } catch (backupErr) {
+      console.error("Warning: Failed to create app backup before update:", backupErr);
+    }
+
+    // 2. Download and install update
     onProgress?.({
       status: "downloading",
       downloadedBytes: 0,

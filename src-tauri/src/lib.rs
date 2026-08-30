@@ -3874,6 +3874,65 @@ async fn check_app_update(
     }
 }
 
+fn copy_dir_all(
+    src: &std::path::Path,
+    dst: &std::path::Path,
+    skip_dir: &std::path::Path,
+) -> std::io::Result<()> {
+    if !dst.exists() {
+        std::fs::create_dir_all(dst)?;
+    }
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        // Skip the root backups folder to prevent recursive self-copying
+        if path == skip_dir {
+            continue;
+        }
+
+        let file_type = entry.file_type()?;
+        let dest_path = dst.join(entry.file_name());
+
+        if file_type.is_dir() {
+            copy_dir_all(&path, &dest_path, skip_dir)?;
+        } else if file_type.is_file() {
+            if let Some(parent) = dest_path.parent() {
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent)?;
+                }
+            }
+            let _ = std::fs::copy(&path, &dest_path);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn create_app_backup(app: tauri::AppHandle) -> Result<String, String> {
+    let app_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to resolve application data directory: {e}"))?;
+
+    if !app_dir.exists() {
+        return Ok("App directory does not exist, nothing to back up".to_string());
+    }
+
+    let backups_dir = app_dir.join("backups");
+    let current_version = app.package_info().version.to_string();
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let backup_target = backups_dir.join(format!("v{current_version}-{timestamp}"));
+
+    tokio::task::spawn_blocking(move || {
+        copy_dir_all(&app_dir, &backup_target, &backups_dir)
+            .map_err(|e| format!("Failed to copy application files to backup: {e}"))?;
+        Ok::<String, String>(backup_target.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| format!("Join error during backup task: {e}"))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -3916,7 +3975,8 @@ pub fn run() {
             clear_os_notification,
             request_motd,
             send_away,
-            check_app_update
+            check_app_update,
+            create_app_backup
         ])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
