@@ -22,6 +22,8 @@ import {
   ServerMotdDisplayPolicy,
   UserDisplayNameMode,
   ServerUserDisplayNameMode,
+  MediaCollapseMode,
+  ServerMediaCollapseMode,
 } from "@/types";
 import {
   INITIAL_SERVERS,
@@ -378,6 +380,7 @@ export interface AddServerOptions {
   customCommands?: CustomCommand[];
   notificationSettings?: NotificationOverride;
   displayNameMode?: ServerUserDisplayNameMode;
+  autoCollapseImages?: ServerMediaCollapseMode;
 }
 
 export interface UpdateServerOptions {
@@ -397,6 +400,7 @@ export interface UpdateServerOptions {
   notificationSettings?: NotificationOverride;
   motdPolicy?: ServerMotdDisplayPolicy;
   displayNameMode?: ServerUserDisplayNameMode;
+  autoCollapseImages?: ServerMediaCollapseMode;
 }
 
 export type NickCompletionFormat =
@@ -500,6 +504,11 @@ interface MockState {
   setDmSortOrder: (order: "opening" | "alphabetical") => void;
   userDisplayNameMode: UserDisplayNameMode;
   setUserDisplayNameMode: (mode: UserDisplayNameMode) => void;
+  autoCollapseImages: boolean;
+  setAutoCollapseImages: (enabled: boolean) => void;
+  serverMediaCollapsePolicies: Record<string, ServerMediaCollapseMode>;
+  setServerMediaCollapsePolicy: (serverId: string, policy: ServerMediaCollapseMode) => void;
+  shouldAutoCollapseImages: (serverId?: string | null) => boolean;
 
   // Connection Actions
   setIrcConnected: (serverId: string, isConnected: boolean, error?: string | null) => void;
@@ -753,6 +762,25 @@ export const useMockStore = create<MockState>()(
       serverMotdSeenHashes: {},
       userDisplayNameMode: "nickname",
       setUserDisplayNameMode: (mode: UserDisplayNameMode) => set({ userDisplayNameMode: mode }),
+      autoCollapseImages: false,
+      setAutoCollapseImages: (enabled) => set({ autoCollapseImages: enabled }),
+      serverMediaCollapsePolicies: {},
+      setServerMediaCollapsePolicy: (serverId: string, policy: ServerMediaCollapseMode) =>
+        set((state) => ({
+          serverMediaCollapsePolicies: {
+            ...state.serverMediaCollapsePolicies,
+            [serverId]: policy,
+          },
+        })),
+      shouldAutoCollapseImages: (serverId?: string | null) => {
+        const state = get();
+        const serverPolicy =
+          (serverId && state.serverMediaCollapsePolicies[serverId]) ||
+          (serverId ? state.servers.find((s) => s.id === serverId)?.autoCollapseImages : undefined);
+        if (serverPolicy === "collapsed") return true;
+        if (serverPolicy === "expanded") return false;
+        return state.autoCollapseImages ?? false;
+      },
       markServerMotdSeen: (serverId: string, motd: string[]) => {
         const hash = computeMotdHash(motd);
         if (!hash) return;
@@ -1144,6 +1172,7 @@ export const useMockStore = create<MockState>()(
           parseLegacyZncTimestamps: typeof optionsOrName === "object" ? (optionsOrName.parseLegacyZncTimestamps ?? false) : false,
           customCommands,
           imageUrl,
+          autoCollapseImages: typeof optionsOrName === "object" ? optionsOrName.autoCollapseImages : undefined,
           inviteCode: `invite-${uuidv4().slice(0, 8)}`,
           profileId: get().currentProfile.id,
           channels: [],
@@ -1242,6 +1271,7 @@ export const useMockStore = create<MockState>()(
                 notificationSettings: optionsOrName.notificationSettings ?? s.notificationSettings,
                 motdPolicy: optionsOrName.motdPolicy ?? s.motdPolicy,
                 displayNameMode: optionsOrName.displayNameMode ?? s.displayNameMode,
+                autoCollapseImages: optionsOrName.autoCollapseImages ?? s.autoCollapseImages,
               };
 
               if (newServer.autoConnect === false && s.autoConnect !== false) {
@@ -3071,6 +3101,8 @@ export const useMockStore = create<MockState>()(
           userDisplayNameMode: "nickname",
           nickCompletionFormat: "plain",
           customNickCompletionFormat: "{nick}: ",
+          autoCollapseImages: false,
+          serverMediaCollapsePolicies: {},
           ...persistedState,
           jumbojiSize: typeof persistedState?.jumbojiSize === "number" ? persistedState.jumbojiSize : 42,
           servers: sanitizedServers,
