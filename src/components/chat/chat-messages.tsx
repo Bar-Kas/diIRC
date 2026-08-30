@@ -516,20 +516,69 @@ export const ChatMessages = ({
     if (totalCount === 0) return;
 
     if (!hasInitializedRef.current) {
-      if (shouldStickToBottomRef.current) {
-        pinToBottom("auto", "initialMount");
-        const raf = requestAnimationFrame(() => {
-          if (shouldStickToBottomRef.current) {
-            pinToBottom("auto", "initialMountRaf");
+      // Pass 1: always pin to bottom first so the virtualizer renders and
+      // the DOM is measured (clientHeight, scrollHeight are real after this).
+      pinToBottom("auto", "initialMount");
+
+      const raf1 = requestAnimationFrame(() => {
+        // Pass 2: now that the DOM is laid out we can check whether the unread
+        // divider is already visible in the viewport (Discord mechanic).
+        const unreadId =
+          firstUnreadMessageId ||
+          useMockStore.getState().historyWindow.firstUnreadMessageId;
+
+        if (unreadId) {
+          const currentItems = (
+            useMockStore.getState().messages[chatId] ||
+            useMockStore.getState().directMessages[chatId] ||
+            []
+          ) as (Message | DirectMessage)[];
+          const messageIndex = currentItems.findIndex((m) => m.id === unreadId);
+
+          if (messageIndex !== -1) {
+            const virtualIndex = messageIndex + (hasWelcome ? 1 : 0);
+            const [targetOffset] = virtualizer.getOffsetForIndex(virtualIndex, "start") ?? [];
+            const element = chatRef.current;
+
+            if (typeof targetOffset === "number" && !isNaN(targetOffset) && element) {
+              const viewportHeight = element.clientHeight;
+              const totalSize = virtualizer.getTotalSize();
+              // The divider is "visible at bottom" when scrolled to the very end.
+              const visibleAtBottom = targetOffset >= totalSize - viewportHeight;
+
+              if (!visibleAtBottom) {
+                // Scroll to the unread divider (not the bottom).
+                shouldStickToBottomRef.current = false;
+                setTailPinned(false);
+                setAtBottom(false);
+                markProgrammaticScroll(400);
+                virtualizer.scrollToIndex(virtualIndex, { align: "start" });
+
+                requestAnimationFrame(() => {
+                  markProgrammaticScroll(400);
+                  virtualizer.scrollToIndex(virtualIndex, { align: "start" });
+                  if (chatRef.current) {
+                    // Add small offset so the divider isn't flush at top.
+                    chatRef.current.scrollTop = Math.max(0, chatRef.current.scrollTop - 48);
+                  }
+                  hasInitializedRef.current = true;
+                });
+                return;
+              }
+            }
           }
-          hasInitializedRef.current = true;
-        });
-        return () => cancelAnimationFrame(raf);
-      } else {
+        }
+
+        // No unread divider off-screen → stay at bottom.
+        if (shouldStickToBottomRef.current) {
+          pinToBottom("auto", "initialMountRaf");
+        }
         hasInitializedRef.current = true;
-      }
+      });
+
+      return () => cancelAnimationFrame(raf1);
     }
-  }, [totalCount, pinToBottom]);
+  }, [totalCount, pinToBottom, firstUnreadMessageId, chatId, hasWelcome, virtualizer, markProgrammaticScroll]);
 
   useEffect(() => {
     if (totalCount === 0) return;
