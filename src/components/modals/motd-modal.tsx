@@ -176,7 +176,7 @@ export const MotdModal = () => {
             {isDirc && (
               <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800/60 select-none ml-1">
                 <Sparkles className="w-3 h-3" />
-                diIRC format
+                Luna IRC format
               </span>
             )}
           </DialogTitle>
@@ -190,7 +190,7 @@ export const MotdModal = () => {
             <div className="rounded-xl border border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/70 dark:bg-[#2B2D31]/70 p-4 select-text transition-all">
               {isDirc ? (
                 /* ========================================================================= */
-                /* diIRC Enhanced Mode: Markdown Lines with In-Place Media Embeds            */
+                /* Luna IRC Enhanced Mode: Markdown Lines with In-Place Media Embeds         */
                 /* ========================================================================= */
                 <div className="text-sm text-zinc-800 dark:text-zinc-200 leading-relaxed break-words space-y-2">
                   {motdLines.map((line, idx) => {

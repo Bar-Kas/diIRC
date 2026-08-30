@@ -397,7 +397,7 @@ export const SettingsModal = () => {
                 {checkStatus === "upToDate" && (
                   <span className="flex items-center gap-x-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
                     <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                    diIRC is up to date (v{tauriConfig.version || "0.1.7"})
+                    Luna IRC is up to date (v{tauriConfig.version || "0.1.7"})
                   </span>
                 )}
                 {checkStatus === "available" && (

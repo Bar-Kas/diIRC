@@ -1,6 +1,6 @@
 # Build and Release Instructions
 
-This document describes the procedures for building the **diIRC** application locally and releasing new versions via GitHub Actions.
+This document describes the procedures for building the **Luna IRC** application locally and releasing new versions via GitHub Actions.
 
 ---
 

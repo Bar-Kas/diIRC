@@ -87,7 +87,7 @@ export const UpdateModal = () => {
             New version available
           </DialogTitle>
           <DialogDescription className="text-center text-zinc-500 dark:text-zinc-400 text-xs">
-            An update for diIRC is available. We recommend updating to the latest version.
+            An update for Luna IRC is available. We recommend updating to the latest version.
           </DialogDescription>
         </DialogHeader>
 

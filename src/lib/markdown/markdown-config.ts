@@ -1,7 +1,7 @@
 type SanitizeOptions = any;
 
 /**
- * Sanitize schema for Markdown rendering in diIRC.
+ * Sanitize schema for Markdown rendering in Luna IRC.
  * - Allows common GFM markdown elements
  * - Disables tables
  * - Allows custom `spoiler` and `underline` via span/u but mapped to React components

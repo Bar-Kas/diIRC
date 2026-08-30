@@ -1,6 +1,6 @@
-# E2E & Visual Testing Framework Documentation (diIRC)
+# E2E & Visual Testing Framework Documentation (Luna IRC)
 
-Comprehensive guide covering the architecture, setup, multi-instance orchestration, and guidelines for writing simple and complex multi-stage E2E tests for the **diIRC** Tauri 2 (Rust + React) application.
+Comprehensive guide covering the architecture, setup, multi-instance orchestration, and guidelines for writing simple and complex multi-stage E2E tests for the **Luna IRC** Tauri 2 (Rust + React) application.
 
 ---
 

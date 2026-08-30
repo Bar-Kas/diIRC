@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "diIRC",
+        "title": "Luna IRC",
         "width": 1280,
         "height": 750,
         "minWidth": 900,

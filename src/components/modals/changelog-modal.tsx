@@ -96,7 +96,7 @@ export const ChangelogModal = () => {
                 </span>
               </DialogTitle>
               <DialogDescription className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                Release notes and update history for diIRC
+                Release notes and update history for Luna IRC
               </DialogDescription>
             </div>
           </div>

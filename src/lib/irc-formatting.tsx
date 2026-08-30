@@ -52,16 +52,28 @@ export function isDircTagLine(line: string): boolean {
   return (
     stripped === "[dirc]" ||
     stripped === "[diirc]" ||
+    stripped === "[lunairc]" ||
+    stripped === "[luna]" ||
     stripped === "[dirc-format]" ||
     stripped === "[diirc-format]" ||
+    stripped === "[lunairc-format]" ||
+    stripped === "[luna-format]" ||
     stripped === "[dirc-motd]" ||
     stripped === "[diirc-motd]" ||
+    stripped === "[lunairc-motd]" ||
+    stripped === "[luna-motd]" ||
     stripped === "[format: dirc]" ||
     stripped === "[format: diirc]" ||
+    stripped === "[format: lunairc]" ||
+    stripped === "[format: luna]" ||
     stripped === "[format=dirc]" ||
     stripped === "[format=diirc]" ||
+    stripped === "[format=lunairc]" ||
+    stripped === "[format=luna]" ||
     stripped === "<!-- dirc -->" ||
-    stripped === "<!-- diirc -->"
+    stripped === "<!-- diirc -->" ||
+    stripped === "<!-- lunairc -->" ||
+    stripped === "<!-- luna -->"
   );
 }
 

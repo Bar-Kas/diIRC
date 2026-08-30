@@ -1,6 +1,6 @@
 # IRC Bot Joiner - Devtools
 
-Load testing tool for joining multiple users to an IRC server to test channel loading, member lists, and chat message rendering performance in diIRC.
+Load testing tool for joining multiple users to an IRC server to test channel loading, member lists, and chat message rendering performance in Luna IRC.
 
 ---
 

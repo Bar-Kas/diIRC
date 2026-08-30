@@ -7,7 +7,7 @@ import chatPage from '../pageobjects/chat.page.js';
 
 const require = createRequire(import.meta.url);
 
-describe('diIRC Multi-Instance Messaging E2E Test', () => {
+describe('Luna IRC Multi-Instance Messaging E2E Test', () => {
   const takeStageScreenshots = async (stageName) => {
     const modernScreenshotCode = fs.readFileSync(require.resolve('modern-screenshot/dist/index.js'), 'utf8');
 

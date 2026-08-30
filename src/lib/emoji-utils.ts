@@ -1,5 +1,5 @@
 /**
- * Emoji detection and jumboji sizing utilities for diIRC.
+ * Emoji detection and jumboji sizing utilities for Luna IRC.
  */
 
 // Matches a single Unicode emoji grapheme cluster (including ZWJ sequences, skin tones, flags, and keycaps)
