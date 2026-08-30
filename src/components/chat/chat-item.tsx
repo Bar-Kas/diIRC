@@ -18,6 +18,7 @@ import { MarkdownRenderer } from "@/lib/markdown/markdown-renderer";
 import { extractUrlsFromMarkdownText, stripTrailingPunct, hasMarkdownSyntax } from "@/lib/markdown/markdown-utils";
 import { isBrokenHeader, stripSteganography } from "@/lib/markdown/multiline-steganography";
 import { checkIsMention } from "@/lib/notification-service";
+import { getOnlyEmojiCount, getEmojiSizeProps } from "@/lib/emoji-utils";
 
 interface ChatItemProps {
   id: string;
@@ -70,6 +71,7 @@ const ChatItemInner = ({
   const compactMode = useMockStore((state) => state.compactMode);
   const enableLinkPreviews = useMockStore((state) => state.enableLinkPreviews);
   const enableMarkdown = useMockStore((state) => state.enableMarkdown ?? true);
+  const jumbojiSize = useMockStore((state) => state.jumbojiSize ?? 42);
   const setPendingReply = useReplyStore((state) => state.setPending);
   const indexMsgid = useReplyStore((state) => state.indexMsgid);
   const storedReplyMeta = useReplyStore((state) => state.metaByMessageId[id]);
@@ -185,6 +187,11 @@ const ChatItemInner = ({
 
   // Markdown vs legacy rendering — only when markdown chars present and block is not broken
   const shouldUseMarkdown = enableMarkdown && !deleted && !isSystem && !isAction && !hasBrokenHeader && hasMarkdownSyntax(textToEvaluate);
+
+  // Detect messages containing only emojis for Discord-style Jumboji enlarged rendering
+  const emojiCount = !deleted && !isSystem && !isAction && !fileUrl ? getOnlyEmojiCount(cleanContent) : 0;
+  const isOnlyEmoji = jumbojiSize > 0 && emojiCount > 0 && emojiCount <= 16;
+  const emojiSizeProps = getEmojiSizeProps(emojiCount, jumbojiSize);
 
   const parseMentions = (text: string, keyPrefix: string | number) => {
     if (!text) return text;
@@ -425,7 +432,7 @@ const ChatItemInner = ({
                     </UserHoverCard>
                     <span>{renderContentWithLinks(actionText)}</span>
                   </p>
-                ) : shouldUseMarkdown ? (
+                ) : shouldUseMarkdown && !isOnlyEmoji ? (
                   <div className={cn(
                     "text-sm text-zinc-600 dark:text-zinc-300 min-w-0 w-full",
                     deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
@@ -439,10 +446,14 @@ const ChatItemInner = ({
                     />
                   </div>
                 ) : (
-                  <p className={cn(
-                    "text-sm text-zinc-600 dark:text-zinc-300 whitespace-pre-wrap break-words",
-                    deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
-                  )}>
+                  <p
+                    style={isOnlyEmoji ? emojiSizeProps.style : undefined}
+                    className={cn(
+                      "text-sm text-zinc-600 dark:text-zinc-300 whitespace-pre-wrap break-words",
+                      isOnlyEmoji && emojiSizeProps.className,
+                      deleted && "italic text-zinc-500 dark:text-zinc-400 text-xs mt-1"
+                    )}
+                  >
                     {renderContentWithLinks(cleanContent)}
                   </p>
                 )

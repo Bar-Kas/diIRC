@@ -1,9 +1,9 @@
+import { useParams } from "react-router-dom";
 import { useConnectionStatus } from "@/hooks/use-connection-status";
 import { useMockStore } from "@/lib/mock-store";
 import { useModal } from "@/hooks/use-modal-store";
 import { ActionTooltip } from "@/components/action-tooltip";
 import { cn } from "@/lib/utils";
-import { useParams } from "react-router-dom";
 import { Server } from "@/types";
 
 interface ConnectionStatusProps {
@@ -54,7 +54,7 @@ export const ConnectionStatus = ({ serverId: propServerId, server }: ConnectionS
   ];
 
   return (
-    <div className="relative group">
+    <div className="relative group z-30">
       <div
         onClick={() => onOpen("connectionDetails", { serverId, server })}
         className={cn(

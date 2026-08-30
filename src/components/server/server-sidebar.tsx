@@ -36,6 +36,7 @@ export const ServerSidebar = ({
   const pendingInvites = useMockStore((state) => state.pendingInvites);
   const acceptPendingInvite = useMockStore((state) => state.acceptPendingInvite);
   const ignorePendingInvite = useMockStore((state) => state.ignorePendingInvite);
+  const reorderChannels = useMockStore((state) => state.reorderChannels);
 
   const setMembersSidebar = useUIStore((state) => state.setMembersSidebar);
   const { onOpen } = useModal();
@@ -43,6 +44,11 @@ export const ServerSidebar = ({
   const [splitPercent, setSplitPercent] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
+
+  const [draggedChannelId, setDraggedChannelId] = useState<string | null>(null);
+  const [dragOverChannelId, setDragOverChannelId] = useState<string | null>(null);
+  const [channelDropPosition, setChannelDropPosition] = useState<"above" | "below" | null>(null);
+  const [channelDragPos, setChannelDragPos] = useState<{ x: number; y: number } | null>(null);
 
   const server = servers.find((s) => s.id === serverId) || (serverId ? servers[0] : undefined);
   const serverInvites = (server ? pendingInvites[server.id] : []) || [];
@@ -78,6 +84,168 @@ export const ServerSidebar = ({
   const handleDividerMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     isDraggingRef.current = true;
+  };
+
+  const channelDragRef = useRef<{
+    activeId: string;
+    sourceIndex: number;
+    startY: number;
+    isDragging: boolean;
+  } | null>(null);
+
+  const findTargetChannel = (
+    clientX: number,
+    clientY: number,
+    activeId: string
+  ): { targetId: string; position: "above" | "below" } | null => {
+    if (!server) return null;
+
+    const sidebarEl = containerRef.current || document.querySelector<HTMLElement>("[data-sidebar='server']");
+    if (sidebarEl) {
+      const rect = sidebarEl.getBoundingClientRect();
+      if (clientX < rect.left - 30 || clientX > rect.right + 30) {
+        return null;
+      }
+    }
+
+    const sourceIndex = server.channels.findIndex((c) => c.id === activeId);
+    if (sourceIndex === -1) return null;
+
+    const items = Array.from(document.querySelectorAll<HTMLElement>("[data-channel-id]"));
+    const otherItems = items.filter((el) => el.getAttribute("data-channel-id") !== activeId);
+    if (otherItems.length === 0) return null;
+
+    const itemsWithMid = otherItems.map((el) => {
+      const rect = el.getBoundingClientRect();
+      return {
+        id: el.getAttribute("data-channel-id")!,
+        midY: rect.top + rect.height / 2,
+      };
+    });
+
+    itemsWithMid.sort((a, b) => a.midY - b.midY);
+
+    const isSamePosition = (targetId: string, position: "above" | "below") => {
+      const targetIndex = server.channels.findIndex((c) => c.id === targetId);
+      if (targetIndex === -1) return false;
+      let destinationIndex = targetIndex;
+      if (sourceIndex < targetIndex) {
+        destinationIndex = position === "above" ? targetIndex - 1 : targetIndex;
+      } else if (sourceIndex > targetIndex) {
+        destinationIndex = position === "above" ? targetIndex : targetIndex + 1;
+      }
+      return destinationIndex === sourceIndex;
+    };
+
+    let target: { targetId: string; position: "above" | "below" } | null = null;
+
+    if (clientY < itemsWithMid[0].midY) {
+      target = { targetId: itemsWithMid[0].id, position: "above" };
+    } else if (clientY >= itemsWithMid[itemsWithMid.length - 1].midY) {
+      const lastItem = itemsWithMid[itemsWithMid.length - 1];
+      target = { targetId: lastItem.id, position: "below" };
+    } else {
+      for (let i = 0; i < itemsWithMid.length - 1; i++) {
+        if (clientY >= itemsWithMid[i].midY && clientY < itemsWithMid[i + 1].midY) {
+          target = { targetId: itemsWithMid[i + 1].id, position: "above" };
+          break;
+        }
+      }
+    }
+
+    if (target && isSamePosition(target.targetId, target.position)) {
+      return null;
+    }
+
+    return target;
+  };
+
+  const handleChannelPointerDown = (e: React.PointerEvent, channelId: string, index: number) => {
+    if (e.button !== 0 || !server) return; // only left click
+    channelDragRef.current = {
+      activeId: channelId,
+      sourceIndex: index,
+      startY: e.clientY,
+      isDragging: false,
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (!channelDragRef.current || !server) return;
+      const dist = Math.abs(moveEvent.clientY - channelDragRef.current.startY);
+      if (!channelDragRef.current.isDragging) {
+        if (dist > 4) {
+          channelDragRef.current.isDragging = true;
+          setDraggedChannelId(channelDragRef.current.activeId);
+          setChannelDragPos({ x: moveEvent.clientX, y: moveEvent.clientY });
+          document.body.style.userSelect = "none";
+          document.body.style.webkitUserSelect = "none";
+          document.body.style.cursor = "grabbing";
+        } else {
+          return;
+        }
+      }
+
+      moveEvent.preventDefault();
+      window.getSelection()?.removeAllRanges();
+      setChannelDragPos({ x: moveEvent.clientX, y: moveEvent.clientY });
+
+      const target = findTargetChannel(moveEvent.clientX, moveEvent.clientY, channelDragRef.current.activeId);
+      if (target) {
+        setDragOverChannelId(target.targetId);
+        setChannelDropPosition(target.position);
+      } else {
+        setDragOverChannelId(null);
+        setChannelDropPosition(null);
+      }
+    };
+
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+
+      document.body.style.userSelect = "";
+      document.body.style.webkitUserSelect = "";
+      document.body.style.cursor = "";
+      window.getSelection()?.removeAllRanges();
+
+      const state = channelDragRef.current;
+      channelDragRef.current = null;
+
+      if (!state || !state.isDragging || !server) {
+        setDraggedChannelId(null);
+        setDragOverChannelId(null);
+        setChannelDropPosition(null);
+        setChannelDragPos(null);
+        return;
+      }
+
+      const target = findTargetChannel(upEvent.clientX, upEvent.clientY, state.activeId);
+      if (target) {
+        const targetIndex = server.channels.findIndex((c) => c.id === target.targetId);
+        const sourceIndex = state.sourceIndex;
+        if (targetIndex !== -1 && sourceIndex !== -1) {
+          let destinationIndex = targetIndex;
+          if (sourceIndex < targetIndex) {
+            destinationIndex = target.position === "above" ? targetIndex - 1 : targetIndex;
+          } else if (sourceIndex > targetIndex) {
+            destinationIndex = target.position === "above" ? targetIndex : targetIndex + 1;
+          }
+          if (destinationIndex !== sourceIndex) {
+            reorderChannels(server.id, sourceIndex, destinationIndex);
+          }
+        }
+      }
+
+      setDraggedChannelId(null);
+      setDragOverChannelId(null);
+      setChannelDropPosition(null);
+      setChannelDragPos(null);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
   };
 
   if (!server) {
@@ -157,7 +325,21 @@ export const ServerSidebar = ({
   const isConversationPage = location.pathname.includes("/conversations/");
 
   return (
-    <div className="flex flex-col h-full text-primary w-full dark:bg-[#2B2D31] bg-[#F2F3F5] overflow-hidden select-none">
+    <>
+      {draggedChannelId && channelDragPos && (() => {
+        const draggedChannel = server.channels.find((c) => c.id === draggedChannelId);
+        if (!draggedChannel) return null;
+        return (
+          <div
+            className="fixed pointer-events-none z-[9999] -translate-x-4 -translate-y-1/2 opacity-70 scale-105 shadow-2xl rounded-md bg-zinc-900/90 dark:bg-[#1E1F22]/90 border border-indigo-500/50 px-3 py-2 flex items-center gap-x-2 text-white min-w-[140px] max-w-[200px] backdrop-blur-sm"
+            style={{ left: channelDragPos.x, top: channelDragPos.y }}
+          >
+            <Hash className="w-4 h-4 text-indigo-400 shrink-0" />
+            <span className="text-sm font-semibold truncate text-zinc-100">{draggedChannel.name}</span>
+          </div>
+        );
+      })()}
+      <div className="flex flex-col h-full text-primary w-full dark:bg-[#2B2D31] bg-[#F2F3F5] overflow-hidden select-none">
       <ServerHeader server={server} />
 
       <div ref={containerRef} className="flex flex-col flex-1 overflow-hidden relative">
@@ -291,11 +473,15 @@ export const ServerSidebar = ({
                   server={server}
                 />
                 <div className="space-y-[2px]">
-                  {section.channels.map((channel) => (
+                  {section.channels.map((channel, index) => (
                     <ServerChannel
                       key={channel.id}
                       channel={channel}
                       server={server}
+                      index={index}
+                      isDragging={draggedChannelId === channel.id}
+                      dropPosition={dragOverChannelId === channel.id ? channelDropPosition : null}
+                      onPointerDown={handleChannelPointerDown}
                     />
                   ))}
                 </div>
@@ -357,5 +543,6 @@ export const ServerSidebar = ({
         </div>
       </div>
     </div>
-  );
+  </>
+);
 };

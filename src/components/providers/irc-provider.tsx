@@ -56,6 +56,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   const removeServerMember = useMockStore((state) => state.removeServerMember);
   const updateChannelMembers = useMockStore((state) => state.updateChannelMembers);
   const setIrcConnected = useMockStore((state) => state.setIrcConnected);
+  const setIrcConnecting = useMockStore((state) => state.setIrcConnecting);
   const activeChatKey = useMockStore((state) => state.activeChatKey);
   const navigate = useNavigate();
   const connectedConfigsRef = useRef<Map<string, string>>(new Map());
@@ -162,6 +163,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   const attemptConnect = useCallback(async (server: Server) => {
     if (connectingRef.current.has(server.id)) return;
     connectingRef.current.add(server.id);
+    setIrcConnecting(server.id, true);
 
     const nicks = server.nicknames && server.nicknames.length > 0 
       ? server.nicknames 
@@ -190,11 +192,12 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     } catch (error) {
       console.error(`Failed to connect IRC for server ${server.name}:`, error);
       const errMsg = error instanceof Error ? error.message : String(error);
+      setIrcConnecting(server.id, false);
       setIrcConnected(server.id, false, errMsg);
     } finally {
       connectingRef.current.delete(server.id);
     }
-  }, [currentProfile.name, setIrcConnected]);
+  }, [currentProfile.name, setIrcConnected, setIrcConnecting]);
 
   // Connect / Reconnect servers to IRC when server configs or list change
   useEffect(() => {
@@ -403,7 +406,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
     const isDummySender = sender === "***" || !sender || !sender.trim();
     const effectiveIsSystem = isSystemMessage(sender, content, isSystem || isDummySender);
 
-    if (isDummySender && !isChannelMsg) {
+    if (effectiveIsSystem && !isChannelMsg && (!channel || !channel.trim() || channel === "*" || channel === "$server")) {
       const store = useMockStore.getState();
       const targetChan = targetServer.channels.find((c) => `channel:${c.id}` === store.activeChatKey) || targetServer.channels[0];
       if (targetChan) {

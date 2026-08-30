@@ -663,6 +663,34 @@ async fn append_log_line(
         .map_err(|error| format!("Failed to flush log line: {error}"))
 }
 
+async fn emit_and_log_system_message(
+    app: &AppHandle,
+    log_state: &LogState,
+    server_id: &str,
+    target_channel: &str,
+    content: &str,
+) {
+    if !target_channel.trim().is_empty() && (target_channel.starts_with('#') || target_channel.starts_with('&')) {
+        let _ = append_log_line(
+            app,
+            log_state,
+            server_id,
+            target_channel,
+            "System",
+            content,
+            None,
+        )
+        .await;
+    }
+    let msg_payload = IrcMessage::system(
+        server_id.to_string(),
+        "System".to_string(),
+        content.to_string(),
+        target_channel.to_string(),
+    );
+    let _ = app.emit("irc_message", msg_payload);
+}
+
 async fn close_server_logs(state: &LogState, server_id: &str) {
     let prefix = format!("{server_id}\0");
     state
@@ -1676,10 +1704,21 @@ async fn connect_irc(
                                     }
                                     Prefix::ServerName(name) => name,
                                 };
+                                let sys_content = format!("{} has joined", full_source);
+                                let _ = append_log_line(
+                                    &app_clone,
+                                    &log_state_clone,
+                                    &stream_server_id,
+                                    &channel,
+                                    "System",
+                                    &sys_content,
+                                    None,
+                                )
+                                .await;
                                 let payload = IrcMessage {
                                     server_id: stream_server_id.clone(),
                                     sender: sender_name.clone(),
-                                    content: format!("{} has joined", full_source),
+                                    content: sys_content,
                                     channel: channel.clone(),
                                     is_system: true,
                                 timestamp: None,
@@ -1733,6 +1772,16 @@ async fn connect_irc(
                                     }
                                     _ => format!("{} has left", full_source),
                                 };
+                                let _ = append_log_line(
+                                    &app_clone,
+                                    &log_state_clone,
+                                    &stream_server_id,
+                                    &channel,
+                                    "System",
+                                    &sys_content,
+                                    None,
+                                )
+                                .await;
                                 let payload = IrcMessage {
                                     server_id: stream_server_id.clone(),
                                     sender: sender_name.clone(),
@@ -1781,65 +1830,78 @@ async fn connect_irc(
                                     _ => format!("{} has quit", full_source),
                                 };
 
-                                // Find all channels the user was in and emit a message per channel
                                 let sender_lower = sender_name.to_lowercase();
                                 let prefix = format!("{}\x00", stream_server_id);
                                 let mut matched_channels: Vec<String> = Vec::new();
+                                let mut all_server_channels: Vec<String> = Vec::new();
                                 {
                                     let mut cm = channel_members_clone.lock().await;
-                                    let keys_to_update: Vec<String> = cm.keys()
+                                    let keys: Vec<String> = cm.keys()
                                         .filter(|k| k.starts_with(&prefix))
                                         .cloned()
                                         .collect();
-                                    for key in keys_to_update {
+                                    for key in keys {
+                                        let chan = key[prefix.len()..].to_string();
+                                        all_server_channels.push(chan.clone());
                                         if let Some(set) = cm.get_mut(&key) {
                                             if set.remove(&sender_lower) {
-                                                // key is "server_id\x00channel_lower"
-                                                let chan = key[prefix.len()..].to_string();
                                                 matched_channels.push(chan);
                                             }
                                         }
                                     }
-                                                            if matched_channels.is_empty() {
-                                    // Fallback: emit with empty channel so frontend can handle
-                                    let payload = IrcMessage {
-                                        server_id: stream_server_id.clone(),
-                                        sender: sender_name.clone(),
-                                        content: sys_content.clone(),
-                                        channel: "".to_string(),
-                                        is_system: true,
-                                        timestamp: None,
-                                msgid: None,
-                                reply_to_msgid: None,
-                                reply_nick: None,
-                                reply_preview: None,
-                                    };
-                                    let _ = app_clone.emit("irc_message", payload);
-                                } else {
-                                    for chan in &matched_channels {
-                                        let payload = IrcMessage {
-                                            server_id: stream_server_id.clone(),
-                                            sender: sender_name.clone(),
-                                            content: sys_content.clone(),
-                                            channel: chan.clone(),
-                                            is_system: true,
-                                            timestamp: None,
-                                msgid: None,
-                                reply_to_msgid: None,
-                                reply_nick: None,
-                                reply_preview: None,
-                                        };
-                                        let _ = app_clone.emit("irc_message", payload);
-                                    }
-                                }       }
+                                }
 
-                                let payload_users = IrcUserEvent {
-                                    server_id: stream_server_id.clone(),
-                                    channel: "".to_string(),
-                                    users: vec![sender_name],
-                                    event_type: "QUIT".to_string(),
+                                let target_channels = if !matched_channels.is_empty() {
+                                    matched_channels
+                                } else {
+                                    all_server_channels
                                 };
-                                let _ = app_clone.emit("irc_user_event", payload_users);
+
+                                if target_channels.is_empty() {
+                                    let payload = IrcMessage::system(
+                                        stream_server_id.clone(),
+                                        sender_name.clone(),
+                                        sys_content.clone(),
+                                        "".to_string(),
+                                    );
+                                    let _ = app_clone.emit("irc_message", payload);
+
+                                    let payload_users = IrcUserEvent {
+                                        server_id: stream_server_id.clone(),
+                                        channel: "".to_string(),
+                                        users: vec![sender_name.clone()],
+                                        event_type: "QUIT".to_string(),
+                                    };
+                                    let _ = app_clone.emit("irc_user_event", payload_users);
+                                } else {
+                                    for chan in &target_channels {
+                                        let _ = append_log_line(
+                                            &app_clone,
+                                            &log_state_clone,
+                                            &stream_server_id,
+                                            chan,
+                                            "System",
+                                            &sys_content,
+                                            None,
+                                        )
+                                        .await;
+                                        let payload = IrcMessage::system(
+                                            stream_server_id.clone(),
+                                            sender_name.clone(),
+                                            sys_content.clone(),
+                                            chan.clone(),
+                                        );
+                                        let _ = app_clone.emit("irc_message", payload);
+
+                                        let payload_users = IrcUserEvent {
+                                            server_id: stream_server_id.clone(),
+                                            channel: chan.clone(),
+                                            users: vec![sender_name.clone()],
+                                            event_type: "QUIT".to_string(),
+                                        };
+                                        let _ = app_clone.emit("irc_user_event", payload_users);
+                                    }
+                                }
                             }
                         }
                         Command::Response(Response::RPL_NAMREPLY, ref args) => {
@@ -2317,12 +2379,22 @@ async fn connect_irc(
                                 } else {
                                     format!("{} changed the topic to: {}", sender, topic_text)
                                 };
+                                let _ = append_log_line(
+                                    &app_clone,
+                                    &log_state_clone,
+                                    &stream_server_id,
+                                    channel,
+                                    "System",
+                                    &sys_content,
+                                    None,
+                                )
+                                .await;
                                 let msg_payload = IrcMessage::system(
-                                     stream_server_id.clone(),
-                                     sender.clone(),
-                                     sys_content,
-                                     channel.clone(),
-                                 );
+                                    stream_server_id.clone(),
+                                    sender.clone(),
+                                    sys_content,
+                                    channel.clone(),
+                                );
                                 let _ = app_clone.emit("irc_message", msg_payload);
                             }
                         }
@@ -2366,6 +2438,16 @@ async fn connect_irc(
                             } else {
                                 format!("{} was kicked from {} by {} ({})", target, channel, sender_name, reason)
                             };
+                            let _ = append_log_line(
+                                &app_clone,
+                                &log_state_clone,
+                                &stream_server_id,
+                                channel,
+                                "System",
+                                &sys_content,
+                                None,
+                            )
+                            .await;
 
                             let msg_payload = IrcMessage {
                                 server_id: stream_server_id.clone(),
@@ -2407,12 +2489,23 @@ async fn connect_irc(
                                 format!("{} set mode: {} {}", sender_name, channel, modes_str)
                             };
 
+                            let _ = append_log_line(
+                                &app_clone,
+                                &log_state_clone,
+                                &stream_server_id,
+                                channel,
+                                "System",
+                                &sys_text,
+                                None,
+                            )
+                            .await;
+
                             let msg_payload = IrcMessage::system(
-                                 stream_server_id.clone(),
-                                 sender_name.clone(),
-                                 sys_text,
-                                 channel.clone(),
-                             );
+                                stream_server_id.clone(),
+                                sender_name.clone(),
+                                sys_text,
+                                channel.clone(),
+                            );
                             let _ = app_clone.emit("irc_message", msg_payload);
 
                             let mode_payload = IrcModeEvent {
@@ -2437,12 +2530,25 @@ async fn connect_irc(
                                 } else {
                                     format!("{} set mode: {} {}", sender_name, target, modes_str)
                                 };
+                                if target.starts_with('#') || target.starts_with('&') {
+                                    let _ = append_log_line(
+                                        &app_clone,
+                                        &log_state_clone,
+                                        &stream_server_id,
+                                        target,
+                                        "System",
+                                        &sys_text,
+                                        None,
+                                    )
+                                    .await;
+                                }
+
                                 let msg_payload = IrcMessage::system(
-                                     stream_server_id.clone(),
-                                     sender_name.clone(),
-                                     sys_text,
-                                     target.clone(),
-                                 );
+                                    stream_server_id.clone(),
+                                    sender_name.clone(),
+                                    sys_text,
+                                    target.clone(),
+                                );
                                 let _ = app_clone.emit("irc_message", msg_payload);
 
                                 let mode_payload = IrcModeEvent {
@@ -2527,10 +2633,24 @@ async fn connect_irc(
                                 Prefix::ServerName(name) => name.clone(),
                             }).unwrap_or_else(|| "Server".to_string());
 
+                            let sys_content = format!("{} invited {} to join {}", sender_name, target, channel);
+                            if channel.starts_with('#') || channel.starts_with('&') {
+                                let _ = append_log_line(
+                                    &app_clone,
+                                    &log_state_clone,
+                                    &stream_server_id,
+                                    channel,
+                                    "System",
+                                    &sys_content,
+                                    None,
+                                )
+                                .await;
+                            }
+
                             let msg_payload = IrcMessage {
                                 server_id: stream_server_id.clone(),
                                 sender: sender_name.clone(),
-                                content: format!("{} invited {} to join {}", sender_name, target, channel),
+                                content: sys_content,
                                 channel: channel.clone(),
                                 is_system: true,
                                 timestamp: None,
@@ -2554,12 +2674,40 @@ async fn connect_irc(
                                     Prefix::Nickname(nick, _, _) => nick,
                                     Prefix::ServerName(name) => name,
                                 };
+                                let sys_content = format!("{} is now known as {}", sender_name, new_nick);
+                                let sender_lower = sender_name.to_lowercase();
+                                let new_lower = new_nick.to_lowercase();
+                                let prefix = format!("{}\x00", stream_server_id);
+                                let mut nick_channels: Vec<String> = Vec::new();
+                                {
+                                    let mut cm = channel_members_clone.lock().await;
+                                    for (key, set) in cm.iter_mut() {
+                                        if key.starts_with(&prefix) {
+                                            if set.remove(&sender_lower) {
+                                                set.insert(new_lower.clone());
+                                                nick_channels.push(key[prefix.len()..].to_string());
+                                            }
+                                        }
+                                    }
+                                }
+                                for chan in &nick_channels {
+                                    let _ = append_log_line(
+                                        &app_clone,
+                                        &log_state_clone,
+                                        &stream_server_id,
+                                        chan,
+                                        "System",
+                                        &sys_content,
+                                        None,
+                                    )
+                                    .await;
+                                }
                                 let msg_payload = IrcMessage::system(
-                                     stream_server_id.clone(),
-                                     sender_name.clone(),
-                                     format!("{} is now known as {}", sender_name, new_nick),
-                                     "".to_string(),
-                                 );
+                                    stream_server_id.clone(),
+                                    sender_name.clone(),
+                                    format!("{} is now known as {}", sender_name, new_nick),
+                                    "".to_string(),
+                                );
                                 let _ = app_clone.emit("irc_message", msg_payload);
 
                                 let nick_change_payload = IrcNickChangeEvent {
@@ -2788,6 +2936,156 @@ async fn connect_irc(
                                     },
                                 );
                             }
+                        }
+                        Command::Response(Response::ERR_BANNEDFROMCHAN, ref args) => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "Cannot join channel (+b) - You are banned".to_string());
+                            let err_text = format!("Cannot join channel {}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "474" => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "Cannot join channel (+b) - You are banned".to_string());
+                            let err_text = format!("Cannot join channel {}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Response(Response::ERR_CHANNELISFULL, ref args) => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "Cannot join channel (+l) - Channel is full".to_string());
+                            let err_text = format!("Cannot join channel {}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "471" => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "Cannot join channel (+l) - Channel is full".to_string());
+                            let err_text = format!("Cannot join channel {}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Response(Response::ERR_NICKNAMEINUSE, ref args) => {
+                            let nick = args.get(1).cloned().unwrap_or_else(|| "Nickname".to_string());
+                            let reason = args.last().cloned().unwrap_or_else(|| "Nickname is already in use".to_string());
+                            let err_text = format!("Nickname '{}': {}", nick, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "433" => {
+                            let nick = args.get(1).cloned().unwrap_or_else(|| "Nickname".to_string());
+                            let reason = args.last().cloned().unwrap_or_else(|| "Nickname is already in use".to_string());
+                            let err_text = format!("Nickname '{}': {}", nick, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &err_text).await;
+                        }
+                        Command::Response(Response::ERR_ERRONEOUSNICKNAME, ref args) => {
+                            let nick = args.get(1).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "Erroneous Nickname".to_string());
+                            let err_text = format!("Erroneous nickname '{}': {}", nick, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "432" => {
+                            let nick = args.get(1).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "Erroneous Nickname".to_string());
+                            let err_text = format!("Erroneous nickname '{}': {}", nick, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &err_text).await;
+                        }
+                        Command::Response(Response::ERR_NOTONCHANNEL, ref args) => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "You're not on that channel".to_string());
+                            let err_text = format!("{}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "442" => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "You're not on that channel".to_string());
+                            let err_text = format!("{}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Response(Response::ERR_USERNOTINCHANNEL, ref args) => {
+                            let target = args.get(1).cloned().unwrap_or_default();
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "They aren't on that channel".to_string());
+                            let err_text = format!("{} on {}: {}", target, channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "441" => {
+                            let target = args.get(1).cloned().unwrap_or_default();
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "They aren't on that channel".to_string());
+                            let err_text = format!("{} on {}: {}", target, channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Response(Response::ERR_UNKNOWNCOMMAND, ref args) => {
+                            let cmd_name = args.get(1).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "Unknown command".to_string());
+                            let err_text = format!("{}: {}", reason, cmd_name);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "421" => {
+                            let cmd_name = args.get(1).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "Unknown command".to_string());
+                            let err_text = format!("{}: {}", reason, cmd_name);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &err_text).await;
+                        }
+                        Command::Response(Response::ERR_NOTREGISTERED, ref args) => {
+                            let reason = args.last().cloned().unwrap_or_else(|| "You have not registered".to_string());
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &reason).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "451" => {
+                            let reason = args.last().cloned().unwrap_or_else(|| "You have not registered".to_string());
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &reason).await;
+                        }
+                        Command::Response(Response::ERR_PASSWDMISMATCH, ref args) => {
+                            let reason = args.last().cloned().unwrap_or_else(|| "Password incorrect".to_string());
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &format!("Authentication error: {}", reason)).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "464" => {
+                            let reason = args.last().cloned().unwrap_or_else(|| "Password incorrect".to_string());
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &format!("Authentication error: {}", reason)).await;
+                        }
+                        Command::Response(Response::ERR_TOOMANYCHANNELS, ref args) => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "You have joined too many channels".to_string());
+                            let err_text = format!("Cannot join {}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "405" => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "You have joined too many channels".to_string());
+                            let err_text = format!("Cannot join {}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Response(Response::ERR_NOSUCHCHANNEL, ref args) => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "No such channel".to_string());
+                            let err_text = format!("Cannot join {}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "403" => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let reason = args.last().cloned().unwrap_or_else(|| "No such channel".to_string());
+                            let err_text = format!("Cannot join {}: {}", channel, reason);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &err_text).await;
+                        }
+                        Command::WALLOPS(ref content) => {
+                            let sys_text = format!("-[Wallops]- {}", content);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &sys_text).await;
+                        }
+                        Command::Response(ref resp, ref args) if resp.is_error() => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let text = if args.len() > 1 {
+                                args.iter().skip(1).cloned().collect::<Vec<_>>().join(" ")
+                            } else {
+                                args.join(" ")
+                            };
+                            let sys_text = format!("-[Error {:?}]- {}", resp, text);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &sys_text).await;
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd.parse::<u16>().ok().map_or(false, |c| c >= 400 && c <= 599) => {
+                            let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
+                            let text = if args.len() > 1 {
+                                args.iter().skip(1).cloned().collect::<Vec<_>>().join(" ")
+                            } else {
+                                args.join(" ")
+                            };
+                            let sys_text = format!("-[Error {}]- {}", cmd, text);
+                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, &channel, &sys_text).await;
                         }
                         _ => {}
                     }

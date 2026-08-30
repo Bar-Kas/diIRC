@@ -190,11 +190,11 @@ export const ChatMembersSidebar = ({
               <h3 className="uppercase text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2 px-2">
                 {channel ? "Users" : "Conversations"} — {totalCount}
               </h3>
-              <div className={cn("space-y-[2px] transition-all duration-300", !isConnected && "grayscale opacity-60 pointer-events-none")}>
+              <div className={cn("space-y-[2px] transition-all duration-300", !isConnected && "grayscale opacity-60")}>
                 {selfMember && (
                   <>
-                    <div key={selfMember.id} className="pointer-events-auto">{renderMember(selfMember, true)}</div>
-                    <div className="my-1.5 border-b border-zinc-200 dark:border-zinc-700/60 pointer-events-none" />
+                    <div key={selfMember.id}>{renderMember(selfMember, true)}</div>
+                    <div className="my-1.5 border-b border-zinc-200 dark:border-zinc-700/60" />
                   </>
                 )}
                 {otherMembers.map((member) => (

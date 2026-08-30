@@ -1,7 +1,7 @@
 import * as z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Paperclip, Loader2, X, FileIcon, Command } from "lucide-react";
+import { Paperclip, Loader2, X, FileIcon, Command, Radio, User, Users } from "lucide-react";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -19,11 +19,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { useModal } from "@/hooks/use-modal-store";
 import { EmojiPicker } from "@/components/emoji-picker";
 import { Member } from "@/types";
-import { useMockStore, getServerSelfMember, getServerActiveNick } from "@/lib/mock-store";
-import { getHighestChannelRole } from "@/components/user-role-icon";
+import { useMockStore, getServerSelfMember, getServerActiveNick, formatNickCompletion } from "@/lib/mock-store";
+import { UserRoleIcon, getHighestChannelRole, ROLE_CONFIGS, UserRoleKey } from "@/components/user-role-icon";
+import { UserAvatar } from "@/components/user-avatar";
 import { uploadImage } from "@/lib/upload/services";
 import { ImageContextMenu } from "@/components/image-context-menu";
 import { isMediaUrl } from "@/lib/image-utils";
+import { cn } from "@/lib/utils";
 import { commandRegistry, expandCustomCommand, listSlashSuggestions } from "@/lib/commands/command-system";
 import { useDraftStore, AttachedImage } from "@/hooks/use-draft-store";
 import { formatCompatReply, replyTagOverheadBytes, useReplyStore } from "@/hooks/use-reply-store";
@@ -65,13 +67,20 @@ export const ChatInput = ({
 }: ChatInputProps) => {
   const addMessage = useMockStore((state) => state.addMessage);
   const addDirectMessage = useMockStore((state) => state.addDirectMessage);
+  const markTailSeen = useMockStore((state) => state.markTailSeen);
+  const clearUnreadMarker = useMockStore((state) => state.clearUnreadMarker);
+  const setTailPinned = useMockStore((state) => state.setTailPinned);
   const servers = useMockStore((state) => state.servers);
   const currentProfile = useMockStore((state) => state.currentProfile);
   const uploadConfig = useMockStore((state) => state.uploadConfig);
   const ircConnectedServers = useMockStore((state) => state.ircConnectedServers);
+  const ircConnectingServers = useMockStore((state) => state.ircConnectingServers);
+  const connectServer = useMockStore((state) => state.connectServer);
   const enableCommandSuggestions = useMockStore((state) => state.enableCommandSuggestions ?? true);
   const { onOpen } = useModal();
   const navigate = useNavigate();
+
+  const [localConnecting, setLocalConnecting] = useState(false);
 
   const activeId = query?.channelId || query?.conversationId;
 
@@ -97,6 +106,9 @@ export const ChatInput = ({
 
   const channelModesMap = useMockStore((state) => state.channelModes);
   const channelUserModesMap = useMockStore((state) => state.channelUserModes);
+  const channelMembersMap = useMockStore((state) => state.channelMembers);
+  const nickCompletionFormat = useMockStore((state) => state.nickCompletionFormat || "plain");
+  const customNickCompletionFormat = useMockStore((state) => state.customNickCompletionFormat || "{nick}: ");
   
   const currentChannelModes = (type === "channel" && activeId) ? (channelModesMap[activeId] || []) : [];
   const isModerated = currentChannelModes.includes("m");
@@ -148,6 +160,9 @@ export const ChatInput = ({
 
   useEffect(() => {
     if (!activeId) return;
+
+    setShowNickMenu(false);
+    setNickQueryInfo(null);
 
     isSwitchingRef.current = true;
 
@@ -595,6 +610,228 @@ export const ChatInput = ({
     setShowCommands(false);
   };
 
+  const [showNickMenu, setShowNickMenu] = useState(false);
+  const [selectedNickIndex, setSelectedNickIndex] = useState(0);
+  const [nickSuggestions, setNickSuggestions] = useState<{
+    nick: string;
+    roleKey: UserRoleKey | null;
+    roleLabel: string;
+    avatarUrl?: string;
+  }[]>([]);
+  const [nickQueryInfo, setNickQueryInfo] = useState<{
+    queryWord: string;
+    startIndex: number;
+    endIndex: number;
+    isStartOfMessage: boolean;
+  } | null>(null);
+  const nickListRef = useRef<HTMLDivElement>(null);
+
+  const getChannelNicknames = useCallback((): string[] => {
+    const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : servers[0];
+    if (!activeServer) return [];
+    const nicksSet = new Set<string>();
+
+    const isIgnoredNick = (nick: string) => {
+      const lower = nick.toLowerCase().trim();
+      return (
+        !lower ||
+        lower.startsWith("*") ||
+        lower === "_status" ||
+        lower === "*status" ||
+        lower === "status" ||
+        lower === "*nickserv" ||
+        lower === "*chanserv" ||
+        lower === "*sasl" ||
+        lower === "*control"
+      );
+    };
+
+    if (type === "channel" && activeId) {
+      const channelNicks = channelMembersMap[activeId];
+      if (channelNicks && channelNicks.length > 0) {
+        for (const n of channelNicks) {
+          if (n && !isIgnoredNick(n)) {
+            nicksSet.add(n.trim());
+          }
+        }
+      }
+    } else if (type === "conversation") {
+      if (activeServer.members) {
+        for (const m of activeServer.members) {
+          const name = m.profile?.name;
+          if (name && !isIgnoredNick(name)) {
+            nicksSet.add(name.trim());
+          }
+        }
+      }
+    }
+
+    const ourNick = getServerActiveNick(activeServer).toLowerCase();
+    const sortedNicks = Array.from(nicksSet).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+    return sortedNicks.filter((n) => n.toLowerCase() !== ourNick);
+  }, [servers, query?.serverId, type, activeId, channelMembersMap]);
+
+  const openNickSuggestionsMenu = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const currentText = form.getValues("content") || "";
+    const cursorPos = textarea.selectionStart ?? currentText.length;
+    const textBeforeCursor = currentText.slice(0, cursorPos);
+
+    const match = textBeforeCursor.match(/([^\s]+)$/);
+    const rawWord = match ? match[1] : "";
+    const wordStartIndex = match ? cursorPos - rawWord.length : cursorPos;
+    const isStartOfMessage = textBeforeCursor.slice(0, wordStartIndex).trim().length === 0;
+
+    const allNicks = getChannelNicknames();
+    if (allNicks.length === 0) {
+      setShowNickMenu(false);
+      return;
+    }
+
+    const filtered = rawWord
+      ? allNicks.filter((n) => n.toLowerCase().startsWith(rawWord.toLowerCase()))
+      : allNicks;
+
+    if (filtered.length === 0) {
+      setShowNickMenu(false);
+      return;
+    }
+
+    const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : servers[0];
+    const suggestions = filtered.map((n) => {
+      const modes = (type === "channel" && activeId) ? (channelUserModesMap[activeId]?.[n.toLowerCase()] || []) : [];
+      const roleKey = getHighestChannelRole(modes);
+      const roleLabel = roleKey ? ROLE_CONFIGS[roleKey]?.label || "Member" : "Member";
+      const memberObj = activeServer?.members?.find((m) => m.profile?.name?.toLowerCase() === n.toLowerCase());
+      return { nick: n, roleKey, roleLabel, avatarUrl: memberObj?.profile?.imageUrl };
+    });
+
+    setNickQueryInfo({
+      queryWord: rawWord,
+      startIndex: wordStartIndex,
+      endIndex: cursorPos,
+      isStartOfMessage,
+    });
+    setNickSuggestions(suggestions);
+    setSelectedNickIndex(0);
+    setShowNickMenu(true);
+  }, [form, getChannelNicknames, servers, query?.serverId, type, activeId, channelUserModesMap]);
+
+  useEffect(() => {
+    if (!showNickMenu || !nickQueryInfo) return;
+
+    const textarea = textareaRef.current;
+    const cursorPos = textarea ? (textarea.selectionStart ?? content.length) : content.length;
+
+    if (cursorPos < nickQueryInfo.startIndex) {
+      setShowNickMenu(false);
+      setNickQueryInfo(null);
+      return;
+    }
+
+    const currentWord = content.slice(nickQueryInfo.startIndex, cursorPos);
+
+    if (!currentWord || /\s/.test(currentWord)) {
+      setShowNickMenu(false);
+      setNickQueryInfo(null);
+      return;
+    }
+
+    if (currentWord === nickQueryInfo.queryWord) return;
+
+    const allNicks = getChannelNicknames();
+    const filtered = allNicks.filter((n) =>
+      n.toLowerCase().startsWith(currentWord.toLowerCase())
+    );
+
+    if (filtered.length === 0) {
+      setShowNickMenu(false);
+      setNickQueryInfo(null);
+      return;
+    }
+
+    const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : servers[0];
+    const suggestions = filtered.map((n) => {
+      const modes = (type === "channel" && activeId) ? (channelUserModesMap[activeId]?.[n.toLowerCase()] || []) : [];
+      const roleKey = getHighestChannelRole(modes);
+      const roleLabel = roleKey ? ROLE_CONFIGS[roleKey]?.label || "Member" : "Member";
+      const memberObj = activeServer?.members?.find((m) => m.profile?.name?.toLowerCase() === n.toLowerCase());
+      return { nick: n, roleKey, roleLabel, avatarUrl: memberObj?.profile?.imageUrl };
+    });
+
+    setNickSuggestions(suggestions);
+    setNickQueryInfo((prev) =>
+      prev
+        ? {
+            ...prev,
+            queryWord: currentWord,
+            endIndex: cursorPos,
+          }
+        : null
+    );
+    setSelectedNickIndex(0);
+  }, [
+    content,
+    showNickMenu,
+    nickQueryInfo,
+    getChannelNicknames,
+    servers,
+    query?.serverId,
+    type,
+    activeId,
+    channelUserModesMap,
+  ]);
+
+  const onNickSelect = (selectedNick: string) => {
+    const textarea = textareaRef.current;
+    const currentText = form.getValues("content") || "";
+    const info = nickQueryInfo;
+
+    let startIndex = textarea ? textarea.selectionStart : currentText.length;
+    let endIndex = startIndex;
+    let isStartOfMessage = false;
+
+    if (info) {
+      startIndex = info.startIndex;
+      endIndex = info.endIndex;
+      isStartOfMessage = info.isStartOfMessage;
+    }
+
+    // Format nickname according to configured settings (plain, colon, comma, @, custom, etc.)
+    const replacement = formatNickCompletion(selectedNick, nickCompletionFormat, customNickCompletionFormat);
+
+    const newContent =
+      currentText.slice(0, startIndex) +
+      replacement +
+      currentText.slice(endIndex);
+
+    form.setValue("content", newContent);
+    setShowNickMenu(false);
+    setNickQueryInfo(null);
+
+    const newCursorPos = startIndex + replacement.length;
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
+      }
+      autoResize();
+    }, 0);
+  };
+
+  useEffect(() => {
+    if (showNickMenu && nickListRef.current) {
+      const activeEl = nickListRef.current.children[selectedNickIndex] as HTMLElement | undefined;
+      if (activeEl) {
+        activeEl.scrollIntoView({ block: "nearest" });
+      }
+    }
+  }, [selectedNickIndex, showNickMenu]);
+
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (showCommands && filteredCommands.length > 0) {
       if (e.key === "ArrowDown") {
@@ -624,6 +861,43 @@ export const ChatInput = ({
       }
     }
 
+    if (showNickMenu && nickSuggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedNickIndex((prev) => (prev + 1) % nickSuggestions.length);
+        return;
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedNickIndex((prev) => (prev - 1 + nickSuggestions.length) % nickSuggestions.length);
+        return;
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          setSelectedNickIndex((prev) => (prev - 1 + nickSuggestions.length) % nickSuggestions.length);
+        } else {
+          setSelectedNickIndex((prev) => (prev + 1) % nickSuggestions.length);
+        }
+        return;
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        const selected = nickSuggestions[selectedNickIndex];
+        if (selected) {
+          onNickSelect(selected.nick);
+        }
+        return;
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        setShowNickMenu(false);
+        return;
+      }
+    }
+
+    if (e.key === "Tab" && !showCommands) {
+      e.preventDefault();
+      openNickSuggestionsMenu();
+      return;
+    }
+
     if (e.key === "Escape" && pendingReply && activeId) {
       e.preventDefault();
       clearPendingReply(activeId);
@@ -648,6 +922,9 @@ export const ChatInput = ({
   }, [content, autoResize]);
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    setShowNickMenu(false);
+    setNickQueryInfo(null);
+
     const textContent = values.content?.trim() || "";
     const readyImages = attachedImages.filter((img) => !img.isUploading && img.url);
     const replyTarget = activeId ? useReplyStore.getState().getPending(activeId) : undefined;
@@ -713,7 +990,10 @@ export const ChatInput = ({
                   replyPreview: null,
                   replyParentOffset: null,
                   }).catch((e) => console.error(e));
-                  addMessage(query.channelId, senderMember, img.url);
+                  const created = addMessage(query.channelId, senderMember, img.url);
+                  markTailSeen(created.id);
+                  clearUnreadMarker();
+                  setTailPinned(true);
                 } else if (type === "conversation" && query?.conversationId) {
                   await invoke("send_message", {
                     serverId: activeServer.id,
@@ -724,7 +1004,10 @@ export const ChatInput = ({
                   replyPreview: null,
                   replyParentOffset: null,
                   }).catch((e) => console.error(e));
-                  addDirectMessage(query.conversationId, senderMember, img.url);
+                  const created = addDirectMessage(query.conversationId, senderMember, img.url);
+                  markTailSeen(created.id);
+                  clearUnreadMarker();
+                  setTailPinned(true);
                   if (query.targetMemberId) {
                     useMockStore.getState().addToHistoricalConversations(activeServer.id, query.targetMemberId);
                   }
@@ -785,11 +1068,17 @@ export const ChatInput = ({
 
         if (type === "channel" && query?.channelId) {
           const created = addMessage(query.channelId, senderMember, line, null, false, replyMeta);
+          markTailSeen(created.id);
+          clearUnreadMarker();
+          setTailPinned(true);
           if (isReplyLineLocal && replyTarget) {
             rememberSentReply(created.id, replyTarget);
           }
         } else if (type === "conversation" && query?.conversationId) {
           const created = addDirectMessage(query.conversationId, senderMember, line, null, false, replyMeta);
+          markTailSeen(created.id);
+          clearUnreadMarker();
+          setTailPinned(true);
           if (isReplyLineLocal && replyTarget) {
             rememberSentReply(created.id, replyTarget);
           }
@@ -838,6 +1127,55 @@ export const ChatInput = ({
       console.error(error);
     }
   };
+
+  const isServerConnecting = activeServer ? !!ircConnectingServers[activeServer.id] : false;
+  const isConnecting = localConnecting || isServerConnecting;
+
+  const handleReconnect = async () => {
+    if (!activeServer) return;
+    setLocalConnecting(true);
+    try {
+      await connectServer(activeServer.id);
+    } finally {
+      setLocalConnecting(false);
+    }
+  };
+
+  if (!isIrcConnected && activeServer) {
+    return (
+      <div className="p-4 pb-6">
+        <div className="flex items-center justify-between gap-x-3 p-3.5 bg-zinc-200/90 dark:bg-[#2b2d31] rounded-lg border border-amber-500/30 text-zinc-600 dark:text-zinc-300 shadow-sm animate-in fade-in duration-200">
+          <div className="flex items-center gap-x-3 min-w-0">
+            <div className={cn(
+              "h-3 w-3 rounded-full shrink-0 ring-2",
+              isConnecting ? "bg-indigo-500 ring-indigo-500/20 animate-ping" : "bg-amber-500 ring-amber-500/20 animate-pulse"
+            )} />
+            <div className="flex flex-col min-w-0">
+              <span className="text-xs sm:text-sm font-semibold text-zinc-800 dark:text-zinc-100 truncate">
+                {isConnecting ? `Connecting to ${activeServer.name}...` : `Disconnected from ${activeServer.name}`}
+              </span>
+              <span className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
+                {isConnecting ? "Establishing IRC connection..." : "You cannot send messages while disconnected."}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleReconnect}
+            disabled={isConnecting}
+            className="shrink-0 flex items-center gap-x-2 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-xs font-semibold shadow transition active:scale-95 disabled:opacity-75 disabled:cursor-not-allowed"
+          >
+            {isConnecting ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Radio className="w-3.5 h-3.5" />
+            )}
+            <span>{isConnecting ? "Connecting..." : "Connect to server"}</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Form {...form}>
@@ -957,6 +1295,52 @@ export const ChatInput = ({
                               <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
                                 {cmd.description}
                               </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {showNickMenu && nickSuggestions.length > 0 && (
+                    <div className="absolute bottom-full left-4 mb-2 w-80 bg-white dark:bg-[#2b2d31] border border-zinc-200 dark:border-zinc-800 rounded-md shadow-xl overflow-hidden z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                      <div className="px-3 py-2 text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider bg-zinc-50 dark:bg-[#232428] border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+                        <div className="flex items-center gap-x-1.5 min-w-0">
+                          <Users className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                          <span className="truncate">
+                            Members {nickQueryInfo?.queryWord ? `matching "${nickQueryInfo.queryWord}"` : `in channel`}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-normal text-zinc-400">
+                          {nickSuggestions.length}
+                        </span>
+                      </div>
+                      <div ref={nickListRef} className="max-h-60 overflow-y-auto p-1">
+                        {nickSuggestions.map((item, idx) => (
+                          <div
+                            key={`${item.nick}-${idx}`}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              onNickSelect(item.nick);
+                            }}
+                            className={`flex items-center gap-x-3 px-3 py-2 rounded-md cursor-pointer transition-colors ${
+                              idx === selectedNickIndex
+                                ? "bg-zinc-100 dark:bg-zinc-700/50"
+                                : "hover:bg-zinc-100 dark:hover:bg-zinc-700/30"
+                            }`}
+                          >
+                            <UserAvatar
+                              src={item.avatarUrl}
+                              name={item.nick}
+                              className="h-8 w-8 md:h-8 md:w-8"
+                            />
+                            <div className="flex items-center gap-x-1.5 min-w-0 flex-1">
+                              <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate">
+                                {item.nick}
+                              </span>
+                              {item.roleKey && (
+                                <UserRoleIcon role={item.roleKey} className="w-3.5 h-3.5" showTooltip={false} />
+                              )}
                             </div>
                           </div>
                         ))}
