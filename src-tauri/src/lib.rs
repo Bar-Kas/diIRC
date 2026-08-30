@@ -3920,6 +3920,9 @@ pub fn run() {
         ])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
+                if let Some(icon) = app.default_window_icon() {
+                    let _ = window.set_icon(icon.clone());
+                }
                 let _ = window.show();
                 let _ = window.set_focus();
             }
