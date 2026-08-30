@@ -1,6 +1,8 @@
+import { invoke } from "@tauri-apps/api/core";
 import { check, Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { useMockStore } from "@/lib/mock-store";
 
 export interface UpdateProgress {
   status: "idle" | "checking" | "downloading" | "installing" | "ready" | "error";
@@ -12,24 +14,41 @@ export interface UpdateProgress {
 }
 
 export const GITHUB_RELEASES_URL = "https://github.com/TheStami/diIRC/releases/latest";
+export const DEFAULT_UPDATE_ENDPOINT = "https://irc-update.a15-5fc.workers.dev/";
 
 /** Check if running inside Tauri context */
 export const isTauriEnvironment = (): boolean => {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 };
 
+/** Get currently configured update endpoint based on user settings */
+export const getActiveUpdateEndpoint = (): string | undefined => {
+  const { updateSourceMode, customUpdateUrl } = useMockStore.getState();
+  if (updateSourceMode === "custom" && customUpdateUrl?.trim()) {
+    return customUpdateUrl.trim();
+  }
+  return undefined;
+};
+
 /** Perform update check */
-export const checkForAppUpdate = async (): Promise<Update | null> => {
+export const checkForAppUpdate = async (overrideEndpoint?: string): Promise<Update | null> => {
   if (!isTauriEnvironment()) {
     console.warn("Update check skipped: Not running in Tauri desktop environment.");
     return null;
   }
   try {
-    const update = await check();
-    return update;
+    const endpoint = overrideEndpoint !== undefined ? overrideEndpoint : getActiveUpdateEndpoint();
+    const metadata = await invoke<any>("check_app_update", { endpoint });
+    return metadata ? new Update(metadata) : null;
   } catch (error) {
-    console.error("Error checking for updates:", error);
-    throw error;
+    console.error("Error checking for updates via custom command, falling back to plugin check:", error);
+    try {
+      const update = await check();
+      return update;
+    } catch (fallbackError) {
+      console.error("Fallback update check failed:", fallbackError);
+      throw fallbackError;
+    }
   }
 };
 

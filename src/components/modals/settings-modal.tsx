@@ -108,6 +108,11 @@ export const SettingsModal = () => {
   const autoUpdateMode = useMockStore((state) => state.autoUpdateMode) || "ask";
   const setAutoUpdateMode = useMockStore((state) => state.setAutoUpdateMode);
 
+  const updateSourceMode = useMockStore((state) => state.updateSourceMode) || "default";
+  const setUpdateSourceMode = useMockStore((state) => state.setUpdateSourceMode);
+  const customUpdateUrl = useMockStore((state) => state.customUpdateUrl) || "";
+  const setCustomUpdateUrl = useMockStore((state) => state.setCustomUpdateUrl);
+
   const sortDmByUnread = useMockStore((state) => state.sortDmByUnread ?? true);
   const setSortDmByUnread = useMockStore((state) => state.setSortDmByUnread);
 
@@ -335,6 +340,46 @@ export const SettingsModal = () => {
                   </div>
                 </div>
               </label>
+            </div>
+
+            {/* Version source selector */}
+            <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700/60 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-x-1.5">
+                    <Server className="w-3.5 h-3.5 text-indigo-500" />
+                    Update version source
+                  </div>
+                  <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    Choose whether to fetch version manifests from the default server or a custom URL.
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 pt-1">
+                <select
+                  value={updateSourceMode}
+                  onChange={(e) => setUpdateSourceMode(e.target.value as "default" | "custom")}
+                  className="w-full bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-xs font-semibold text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  <option value="default">Default (Cloudflare Worker)</option>
+                  <option value="custom">Custom URL</option>
+                </select>
+
+                {updateSourceMode === "custom" && (
+                  <div className="space-y-1 mt-1">
+                    <Input
+                      value={customUpdateUrl}
+                      onChange={(e) => setCustomUpdateUrl(e.target.value)}
+                      placeholder="https://your-custom-worker.workers.dev/latest.json"
+                      className="bg-white dark:bg-[#1e1f22] border-zinc-300 dark:border-zinc-700 text-xs font-mono"
+                    />
+                    <div className="text-[10px] text-zinc-500 dark:text-zinc-400 pl-1">
+                      Must be a valid HTTP(S) endpoint returning a Tauri update JSON manifest.
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Check / Update action row */}

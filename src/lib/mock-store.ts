@@ -481,6 +481,10 @@ interface MockState {
   conversationNotificationSettings: Record<string, NotificationOverride>;
   autoUpdateMode: "auto" | "ask" | "disabled";
   setAutoUpdateMode: (mode: "auto" | "ask" | "disabled") => void;
+  updateSourceMode: "default" | "custom";
+  customUpdateUrl: string;
+  setUpdateSourceMode: (mode: "default" | "custom") => void;
+  setCustomUpdateUrl: (url: string) => void;
   serverMotds: Record<string, string[]>;
   setServerMotd: (serverId: string, motd: string[]) => void;
   globalMotdPolicy: MotdDisplayPolicy;
@@ -724,6 +728,10 @@ export const useMockStore = create<MockState>()(
       conversationNotificationSettings: {},
       autoUpdateMode: "ask",
       setAutoUpdateMode: (mode) => set({ autoUpdateMode: mode }),
+      updateSourceMode: "default",
+      customUpdateUrl: "",
+      setUpdateSourceMode: (mode) => set({ updateSourceMode: mode }),
+      setCustomUpdateUrl: (url) => set({ customUpdateUrl: url }),
       serverMotds: {},
       setServerMotd: (serverId: string, motd: string[]) =>
         set((state) => ({

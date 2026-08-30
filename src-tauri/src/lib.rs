@@ -3822,6 +3822,58 @@ async fn request_motd(
     }
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateMetadata {
+    rid: u32,
+    current_version: String,
+    version: String,
+    date: Option<String>,
+    body: Option<String>,
+    raw_json: serde_json::Value,
+}
+
+#[tauri::command]
+async fn check_app_update(
+    app: tauri::AppHandle,
+    endpoint: Option<String>,
+) -> Result<Option<UpdateMetadata>, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    use reqwest::Url;
+
+    let mut builder = app.updater_builder();
+    if let Some(ep) = endpoint {
+        let ep_clean = ep.trim();
+        if !ep_clean.is_empty() {
+            let url = Url::parse(ep_clean).map_err(|e| format!("Invalid update URL: {e}"))?;
+            builder = builder.endpoints(vec![url]).map_err(|e| format!("Updater config error: {e}"))?;
+        }
+    }
+
+    let updater = builder.build().map_err(|e| format!("Failed to build updater: {e}"))?;
+    let update_opt = updater.check().await.map_err(|e| format!("Failed to check for update: {e}"))?;
+
+    if let Some(update) = update_opt {
+        let date_str = update.date.as_ref().map(|d| d.to_string());
+        let current_version = update.current_version.clone();
+        let version = update.version.clone();
+        let body = update.body.clone();
+        let raw_json = update.raw_json.clone();
+        let rid = app.resources_table().add(update);
+
+        Ok(Some(UpdateMetadata {
+            rid: rid as u32,
+            current_version,
+            version,
+            date: date_str,
+            body,
+            raw_json,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -3863,7 +3915,8 @@ pub fn run() {
             send_os_notification,
             clear_os_notification,
             request_motd,
-            send_away
+            send_away,
+            check_app_update
         ])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
