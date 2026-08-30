@@ -241,7 +241,7 @@ export type ServerWithMembersWithProfiles = Server;
 
 export type StatusDisplayMode = "always" | "on_error" | "disabled";
 
-
-
-
-
+export interface ActiveChatTarget {
+  type: "channel" | "conversation";
+  id: string;
+}

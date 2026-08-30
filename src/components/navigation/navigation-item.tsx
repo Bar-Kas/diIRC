@@ -39,11 +39,28 @@ export const NavigationItem = ({
   const navigate = useNavigate();
 
   const onClick = () => {
-    navigate(`/servers/${id}`);
     const store = useMockStore.getState();
+    const lastActive = store.lastActiveChatPerServer[id];
+    const targetServer = store.servers.find((s) => s.id === id);
+
+    if (lastActive && targetServer) {
+      if (lastActive.type === "channel" && targetServer.channels.some((c) => c.id === lastActive.id)) {
+        navigate(`/servers/${id}/channels/${lastActive.id}`);
+      } else if (lastActive.type === "conversation" && targetServer.members.some((m) => m.id === lastActive.id)) {
+        navigate(`/servers/${id}/conversations/${lastActive.id}`);
+      } else if (targetServer.channels.length > 0) {
+        navigate(`/servers/${id}/channels/${targetServer.channels[0].id}`);
+      } else {
+        navigate(`/servers/${id}`);
+      }
+    } else if (targetServer && targetServer.channels.length > 0) {
+      navigate(`/servers/${id}/channels/${targetServer.channels[0].id}`);
+    } else {
+      navigate(`/servers/${id}`);
+    }
+
     const motd = store.serverMotds[id];
     if (motd && motd.length > 0 && store.shouldAutoShowMotd(id, motd)) {
-      const targetServer = store.servers.find((s) => s.id === id);
       useModalStore.getState().onOpen("motd", {
         server: targetServer,
         serverId: id,

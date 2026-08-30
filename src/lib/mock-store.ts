@@ -24,6 +24,7 @@ import {
   ServerUserDisplayNameMode,
   MediaCollapseMode,
   ServerMediaCollapseMode,
+  ActiveChatTarget,
 } from "@/types";
 import {
   INITIAL_SERVERS,
@@ -509,6 +510,8 @@ interface MockState {
   serverMediaCollapsePolicies: Record<string, ServerMediaCollapseMode>;
   setServerMediaCollapsePolicy: (serverId: string, policy: ServerMediaCollapseMode) => void;
   shouldAutoCollapseImages: (serverId?: string | null) => boolean;
+  lastActiveChatPerServer: Record<string, ActiveChatTarget>;
+  setLastActiveChat: (serverId: string, chat: ActiveChatTarget) => void;
 
   // Connection Actions
   setIrcConnected: (serverId: string, isConnected: boolean, error?: string | null) => void;
@@ -780,6 +783,22 @@ export const useMockStore = create<MockState>()(
         if (serverPolicy === "collapsed") return true;
         if (serverPolicy === "expanded") return false;
         return state.autoCollapseImages ?? false;
+      },
+      lastActiveChatPerServer: {},
+      setLastActiveChat: (serverId: string, chat: ActiveChatTarget) => {
+        if (!serverId || !chat?.id) return;
+        set((state) => {
+          const current = state.lastActiveChatPerServer[serverId];
+          if (current && current.type === chat.type && current.id === chat.id) {
+            return state;
+          }
+          return {
+            lastActiveChatPerServer: {
+              ...state.lastActiveChatPerServer,
+              [serverId]: chat,
+            },
+          };
+        });
       },
       markServerMotdSeen: (serverId: string, motd: string[]) => {
         const hash = computeMotdHash(motd);
@@ -1311,11 +1330,14 @@ export const useMockStore = create<MockState>()(
           channelIdsToRemove.forEach((id) => delete nextMessages[id]);
           const nextManuallyDisconnected = { ...state.manuallyDisconnectedServers };
           delete nextManuallyDisconnected[serverId];
+          const nextActiveChat = { ...state.lastActiveChatPerServer };
+          delete nextActiveChat[serverId];
 
           return {
             servers: state.servers.filter((s) => s.id !== serverId),
             messages: nextMessages,
             manuallyDisconnectedServers: nextManuallyDisconnected,
+            lastActiveChatPerServer: nextActiveChat,
           };
         });
       },
@@ -1489,6 +1511,10 @@ export const useMockStore = create<MockState>()(
         set((state) => {
           const nextMessages = { ...state.messages };
           delete nextMessages[channelId];
+          const nextActiveChat = { ...state.lastActiveChatPerServer };
+          if (nextActiveChat[serverId]?.type === "channel" && nextActiveChat[serverId]?.id === channelId) {
+            delete nextActiveChat[serverId];
+          }
 
           return {
             servers: state.servers.map((s) =>
@@ -1497,6 +1523,7 @@ export const useMockStore = create<MockState>()(
                 : s
             ),
             messages: nextMessages,
+            lastActiveChatPerServer: nextActiveChat,
           };
         });
       },
@@ -3103,6 +3130,7 @@ export const useMockStore = create<MockState>()(
           customNickCompletionFormat: "{nick}: ",
           autoCollapseImages: false,
           serverMediaCollapsePolicies: {},
+          lastActiveChatPerServer: {},
           ...persistedState,
           jumbojiSize: typeof persistedState?.jumbojiSize === "number" ? persistedState.jumbojiSize : 42,
           servers: sanitizedServers,
