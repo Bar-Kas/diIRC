@@ -3835,13 +3835,13 @@ struct UpdateMetadata {
 
 #[tauri::command]
 async fn check_app_update(
-    app: tauri::AppHandle,
+    webview: tauri::WebviewWindow,
     endpoint: Option<String>,
 ) -> Result<Option<UpdateMetadata>, String> {
     use tauri_plugin_updater::UpdaterExt;
     use reqwest::Url;
 
-    let mut builder = app.updater_builder();
+    let mut builder = webview.updater_builder();
     if let Some(ep) = endpoint {
         let ep_clean = ep.trim();
         if !ep_clean.is_empty() {
@@ -3859,7 +3859,7 @@ async fn check_app_update(
         let version = update.version.clone();
         let body = update.body.clone();
         let raw_json = update.raw_json.clone();
-        let rid = app.resources_table().add(update);
+        let rid = webview.resources_table().add(update);
 
         Ok(Some(UpdateMetadata {
             rid: rid as u32,
