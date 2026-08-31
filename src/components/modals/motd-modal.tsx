@@ -29,7 +29,6 @@ import {
 import { openExternalUrl } from "@/lib/system-utils";
 import { MarkdownRenderer } from "@/lib/markdown/markdown-renderer";
 import { extractUrlsFromMarkdownText } from "@/lib/markdown/markdown-utils";
-import { isImageUrl, isVideoUrl } from "@/lib/image-utils";
 import {
   hasIrcControlCodes,
   IrcLineRenderer,
@@ -37,7 +36,6 @@ import {
   detectMotdFormat,
   stripIrcCodes,
 } from "@/lib/irc-formatting";
-import { LinkPreview } from "@/components/chat/link-preview";
 import { ServerMotdDisplayPolicy } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -51,7 +49,6 @@ export const MotdModal = () => {
   const setServerMotdPolicy = useMockStore((state) => state.setServerMotdPolicy);
   const setGlobalMotdPolicy = useMockStore((state) => state.setGlobalMotdPolicy);
   const markServerMotdSeen = useMockStore((state) => state.markServerMotdSeen);
-  const enableLinkPreviews = useMockStore((state) => state.enableLinkPreviews ?? true);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   const activeServerId = data?.server?.id || data?.serverId || params.serverId || servers[0]?.id;
@@ -96,7 +93,7 @@ export const MotdModal = () => {
     return detectMotdFormat(rawMotdLines);
   }, [rawMotdLines]);
 
-  // Extract all media/web links from the MOTD content
+  // Extract all media/web links from the MOTD content for clickable link list in ASCII mode
   const detectedUrls = useMemo(() => {
     if (!motdLines.length) return [];
     return extractUrlsFromMarkdownText(motdLines.join("\n"));
@@ -108,11 +105,8 @@ export const MotdModal = () => {
 
     const totalLines = motdLines.length;
     const maxLineLength = Math.max(0, ...motdLines.map((l) => stripIrcCodes(l).length));
-    const hasMedia = detectedUrls.some((u) => isImageUrl(u) || isVideoUrl(u) || /youtu\.?be/.test(u));
 
     if (isDirc) {
-      // diIRC Mode
-      if (hasMedia) return "max-w-3xl lg:max-w-4xl";
       if (totalLines > 16 || maxLineLength > 85) return "max-w-3xl";
       if (totalLines > 7 || maxLineLength > 55) return "max-w-2xl";
       return "max-w-xl";
@@ -123,7 +117,7 @@ export const MotdModal = () => {
     if (maxLineLength > 65 || totalLines > 20) return "max-w-3xl lg:max-w-4xl";
     if (maxLineLength > 45 || totalLines > 10) return "max-w-2xl";
     return "max-w-xl";
-  }, [motdLines, detectedUrls, isDirc]);
+  }, [motdLines, isDirc]);
 
   const serverDisplayName = activeServer?.name || activeServer?.host || "Server";
 
@@ -192,33 +186,18 @@ export const MotdModal = () => {
                 /* ========================================================================= */
                 /* Luna IRC Enhanced Mode: Markdown Lines with In-Place Media Embeds         */
                 /* ========================================================================= */
-                <div className="text-sm text-zinc-800 dark:text-zinc-200 leading-relaxed break-words space-y-2">
-                  {motdLines.map((line, idx) => {
-                    const lineUrls = enableLinkPreviews ? extractUrlsFromMarkdownText(line) : [];
-
-                    return (
-                      <div key={idx} className="space-y-2">
-                        <div className="min-h-[1.25rem]">
-                          {hasIrcControlCodes(line) ? (
-                            <IrcLineRenderer line={line} />
-                          ) : line.trim() ? (
-                            <MarkdownRenderer content={line} compact />
-                          ) : (
-                            <div className="h-2" />
-                          )}
-                        </div>
-
-                        {/* In-place media previews directly under the line where they appear */}
-                        {lineUrls.length > 0 && (
-                          <div className="space-y-2 my-2 max-w-2xl">
-                            {lineUrls.map((url, urlIdx) => (
-                              <LinkPreview key={urlIdx} url={url} />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                <div className="text-sm text-zinc-800 dark:text-zinc-200 leading-relaxed break-words space-y-1.5">
+                  {motdLines.map((line, idx) => (
+                    <div key={idx} className="min-h-[1.25rem]">
+                      {hasIrcControlCodes(line) ? (
+                        <IrcLineRenderer line={line} />
+                      ) : line.trim() ? (
+                        <MarkdownRenderer content={line} compact allowImages={false} />
+                      ) : (
+                        <div className="h-2" />
+                      )}
+                    </div>
+                  ))}
                 </div>
               ) : (
                 /* ========================================================================= */
