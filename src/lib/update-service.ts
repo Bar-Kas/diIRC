@@ -31,24 +31,17 @@ export const getActiveUpdateEndpoint = (): string | undefined => {
 };
 
 /** Perform update check */
-export const checkForAppUpdate = async (overrideEndpoint?: string): Promise<Update | null> => {
+export const checkForAppUpdate = async (_overrideEndpoint?: string): Promise<Update | null> => {
   if (!isTauriEnvironment()) {
     console.warn("Update check skipped: Not running in Tauri desktop environment.");
     return null;
   }
   try {
-    const endpoint = overrideEndpoint !== undefined ? overrideEndpoint : getActiveUpdateEndpoint();
-    const metadata = await invoke<any>("check_app_update", { endpoint });
-    return metadata ? new Update(metadata) : null;
+    const update = await check();
+    return update;
   } catch (error) {
-    console.error("Error checking for updates via custom command, falling back to plugin check:", error);
-    try {
-      const update = await check();
-      return update;
-    } catch (fallbackError) {
-      console.error("Fallback update check failed:", fallbackError);
-      throw fallbackError;
-    }
+    console.error("Error checking for updates:", error);
+    throw error;
   }
 };
 
@@ -125,13 +118,17 @@ export const installAppUpdate = async (
     const errStr = String(error?.message || error || "");
     console.error("Failed to install update:", error);
     
-    // Check if error is related to system package / permission on Linux (.deb)
+    // Check if error is specifically related to Debian / Linux system package manager (.deb)
+    const isLinuxPlatform = typeof navigator !== "undefined" && /linux/i.test(navigator.userAgent);
     const isDebOrPermissionError = 
-      errStr.includes("Permission denied") || 
-      errStr.includes("dpkg") || 
-      errStr.includes("usr") || 
-      errStr.includes("read-only") || 
-      errStr.includes("operation not permitted");
+      isLinuxPlatform && (
+        errStr.includes("Permission denied") || 
+        errStr.includes("dpkg") || 
+        errStr.includes("usr") || 
+        errStr.includes("read-only") || 
+        errStr.includes("operation not permitted") ||
+        errStr.includes("deb")
+      );
 
     onProgress?.({
       status: "error",
