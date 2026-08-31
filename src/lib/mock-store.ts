@@ -172,10 +172,8 @@ const dedupOffsetlessAgainstFetched = (
   fetched: (Message | DirectMessage)[],
 ): (Message | DirectMessage)[] => {
   const offsetless = existing.filter((m) => m.offset === undefined);
-  if (offsetless.length === 0) return existing;
-  const logged = existing.filter((m) => m.offset !== undefined);
-  const kept = offsetless.filter((ol) => !fetched.some((f) => isSameLogLine(ol, f)));
-  return [...logged, ...kept];
+  if (offsetless.length === 0) return [];
+  return offsetless.filter((ol) => !fetched.some((f) => isSameLogLine(ol, f)));
 };
 
 export const formatMessageDate = (
@@ -2254,7 +2252,7 @@ export const useMockStore = create<MockState>()(
             hasOlder: page.nextOffset !== null,
             olderCursor: page.nextOffset,
             // If the buffer was trimmed or we are in history, we have newer messages
-            hasNewer: wasTrimmed ? true : (current.historyWindow.hasNewer || newestOffset !== null),
+            hasNewer: wasTrimmed ? true : current.historyWindow.hasNewer,
             newerCursor: wasTrimmed ? newestOffset : (current.historyWindow.newerCursor ?? newestOffset),
             ready: true,
           });
