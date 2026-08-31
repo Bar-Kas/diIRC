@@ -132,6 +132,16 @@ export const ChatMessages = ({
     markTailSeen(items[items.length - 1].id);
   }, [items, atBottom, hasNewer, markTailSeen, chatId]);
 
+  useEffect(() => {
+    const handleFocus = () => {
+      if (atBottom && !hasNewer && items.length > 0) {
+        markTailSeen(items[items.length - 1].id);
+      }
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [atBottom, hasNewer, items, markTailSeen]);
+
   // Unread counter (Model v2): event-driven, stored in historyWindow.unreadCount.
   // Arrivals while away-from-bottom increment it inside addMessage/addDirectMessage;
   // genuine "seen" stamps below zero it. Window trimming/chunk loads never touch it,
