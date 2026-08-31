@@ -2024,16 +2024,14 @@ export const useMockStore = create<MockState>()(
 
           let firstUnreadId: string | null = null;
           let effectiveUnreadCount = initialUnreadCount;
-          if (initialUnreadCount > 0) {
+          if (initialUnreadCount > 0 && combined.length > 0) {
             if (lastReadId) {
               const lastReadIndex = combined.findIndex((m) => m.id === lastReadId);
               if (lastReadIndex !== -1 && lastReadIndex + 1 < combined.length) {
                 firstUnreadId = combined[lastReadIndex + 1].id;
-              } else if (lastReadIndex === -1) {
-                const startIdx = Math.max(0, combined.length - initialUnreadCount);
-                firstUnreadId = combined[startIdx]?.id || null;
               }
-            } else {
+            }
+            if (!firstUnreadId) {
               const startIdx = Math.max(0, combined.length - initialUnreadCount);
               firstUnreadId = combined[startIdx]?.id || null;
             }
