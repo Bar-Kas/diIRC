@@ -176,7 +176,9 @@ export const UpdateModal = () => {
                 className="w-full text-xs font-semibold bg-rose-500 text-white hover:bg-rose-600 flex items-center justify-center gap-x-1.5"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                Download .deb package from GitHub Releases
+                {progress.isDebFallback 
+                  ? "Download .deb package from GitHub Releases" 
+                  : "Download update from GitHub Releases"}
               </Button>
             </div>
           )}
