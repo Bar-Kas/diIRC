@@ -31,14 +31,18 @@ export const getActiveUpdateEndpoint = (): string | undefined => {
 };
 
 /** Perform update check */
-export const checkForAppUpdate = async (_overrideEndpoint?: string): Promise<Update | null> => {
+export const checkForAppUpdate = async (overrideEndpoint?: string): Promise<Update | null> => {
   if (!isTauriEnvironment()) {
     console.warn("Update check skipped: Not running in Tauri desktop environment.");
     return null;
   }
   try {
-    const update = await check();
-    return update;
+    const endpoint = overrideEndpoint ?? getActiveUpdateEndpoint();
+    const metadata = await invoke<any>("check_app_update", { endpoint: endpoint || null });
+    if (!metadata) {
+      return null;
+    }
+    return new Update(metadata);
   } catch (error) {
     console.error("Error checking for updates:", error);
     throw error;

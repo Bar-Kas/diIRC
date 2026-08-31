@@ -648,43 +648,10 @@ export const useMockStore = create<MockState>()(
       },
       clearUnread: (key: string) => {
         set((state) => {
+          if (!state.unreadState[key]) return state;
           const nextState = { ...state.unreadState };
-          let changed = false;
-
-          if (nextState[key]) {
-            delete nextState[key];
-            changed = true;
-          }
-
-          if (key.startsWith("conversation:")) {
-            const parts = key.split(":");
-            if (parts.length >= 3) {
-              const sId = parts[1];
-              const targetId = parts.slice(2).join(":");
-              for (const uKey of Object.keys(nextState)) {
-                if (uKey.startsWith(`conversation:${sId}:`)) {
-                  const raw = uKey.replace(`conversation:${sId}:`, "");
-                  if (raw === targetId || targetId.includes(raw) || raw.includes(targetId)) {
-                    delete nextState[uKey];
-                    changed = true;
-                  }
-                }
-              }
-            } else {
-              const targetId = key.replace("conversation:", "");
-              for (const uKey of Object.keys(nextState)) {
-                if (uKey.startsWith("conversation:")) {
-                  const raw = uKey.replace("conversation:", "");
-                  if (raw === targetId || targetId.includes(raw) || raw.includes(targetId)) {
-                    delete nextState[uKey];
-                    changed = true;
-                  }
-                }
-              }
-            }
-          }
-
-          return changed ? { unreadState: nextState } : state;
+          delete nextState[key];
+          return { unreadState: nextState };
         });
       },
       historyLoadToken: 0,
@@ -2037,20 +2004,7 @@ export const useMockStore = create<MockState>()(
         const isSameChatCheck = get().activeChatKey === requestedKey;
         const previousFirstUnreadId = isSameChatCheck ? get().historyWindow.firstUnreadMessageId : null;
         const previousUnreadCount = isSameChatCheck ? get().historyWindow.unreadCount : 0;
-        let initialUnreadInfo = get().unreadState[requestedKey];
-        if (!initialUnreadInfo && type === "conversation") {
-          const convId = chatId;
-          for (const [uKey, info] of Object.entries(get().unreadState)) {
-            if (uKey.startsWith("conversation:")) {
-              const parts = uKey.split(":");
-              const raw = parts.length >= 3 ? parts.slice(2).join(":") : uKey.replace("conversation:", "");
-              if (raw === convId || convId.includes(raw) || raw.includes(convId)) {
-                initialUnreadInfo = info;
-                break;
-              }
-            }
-          }
-        }
+        const initialUnreadInfo = get().unreadState[requestedKey];
         const initialUnreadCount = initialUnreadInfo?.count || 0;
         const lastReadId = initialUnreadInfo?.lastReadMessageId || null;
 
@@ -2074,40 +2028,6 @@ export const useMockStore = create<MockState>()(
               count: 0,
               hasMention: false,
             };
-          }
-          if (type === "conversation") {
-            const convId = chatId;
-            for (const uKey of Object.keys(nextUnreads)) {
-              if (uKey.startsWith("conversation:")) {
-                const parts = uKey.split(":");
-                if (parts.length >= 3) {
-                  const sId = parts[1];
-                  if (sId === serverId) {
-                    const raw = parts.slice(2).join(":");
-                    if (raw === convId || convId.includes(raw) || raw.includes(convId)) {
-                      if (nextUnreads[uKey]) {
-                        nextUnreads[uKey] = {
-                          ...nextUnreads[uKey],
-                          count: 0,
-                          hasMention: false,
-                        };
-                      }
-                    }
-                  }
-                } else {
-                  const raw = uKey.replace("conversation:", "");
-                  if (raw === convId || convId.includes(raw) || raw.includes(convId)) {
-                    if (nextUnreads[uKey]) {
-                      nextUnreads[uKey] = {
-                        ...nextUnreads[uKey],
-                        count: 0,
-                        hasMention: false,
-                      };
-                    }
-                  }
-                }
-              }
-            }
           }
 
           return {
@@ -2161,16 +2081,14 @@ export const useMockStore = create<MockState>()(
 
           let firstUnreadId: string | null = null;
           let effectiveUnreadCount = initialUnreadCount;
-          if (initialUnreadCount > 0) {
+          if (initialUnreadCount > 0 && combined.length > 0) {
             if (lastReadId) {
               const lastReadIndex = combined.findIndex((m) => m.id === lastReadId);
               if (lastReadIndex !== -1 && lastReadIndex + 1 < combined.length) {
                 firstUnreadId = combined[lastReadIndex + 1].id;
-              } else if (lastReadIndex === -1) {
-                const startIdx = Math.max(0, combined.length - initialUnreadCount);
-                firstUnreadId = combined[startIdx]?.id || null;
               }
-            } else {
+            }
+            if (!firstUnreadId) {
               const startIdx = Math.max(0, combined.length - initialUnreadCount);
               firstUnreadId = combined[startIdx]?.id || null;
             }
