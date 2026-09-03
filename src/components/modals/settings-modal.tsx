@@ -14,6 +14,7 @@ import { useMockStore } from "@/lib/mock-store";
 import { ImageUploadProvider, LitterboxTime } from "@/lib/upload/types";
 import {
   Settings,
+  Eye,
   EyeOff,
   Link2,
   Server,
@@ -71,6 +72,9 @@ export const SettingsModal = () => {
 
   const enableMarkdown = useMockStore((state) => state.enableMarkdown ?? true);
   const setEnableMarkdown = useMockStore((state) => state.setEnableMarkdown);
+
+  const enableFormattingPreview = useMockStore((state) => state.enableFormattingPreview ?? true);
+  const setEnableFormattingPreview = useMockStore((state) => state.setEnableFormattingPreview);
 
   const linkPreviewApiUrl = useMockStore((state) => state.linkPreviewApiUrl);
   const setLinkPreviewApiUrl = useMockStore((state) => state.setLinkPreviewApiUrl);
@@ -530,10 +534,33 @@ export const SettingsModal = () => {
               <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
                 Render <span className="font-mono">**bold**</span> <span className="font-mono">*italic*</span> <span className="font-mono">__underline__</span> <span className="font-mono">~~strike~~</span> <span className="font-mono">`code`</span> <span className="font-mono">```block```</span> <span className="font-mono">&gt;quote</span> <span className="font-mono">||spoiler||</span> and links.
               </p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed pt-1">
+                Composer shortcuts: <span className="font-mono">Ctrl+B</span> bold, <span className="font-mono">Ctrl+I</span> italic, <span className="font-mono">Ctrl+U</span> underline, <span className="font-mono">Ctrl+Shift+X</span> strike, <span className="font-mono">Ctrl+Shift+E</span> inline code, <span className="font-mono">Ctrl+Shift+H</span> spoiler, <span className="font-mono">Ctrl+Z</span> undo, <span className="font-mono">Ctrl+Y</span> / <span className="font-mono">Ctrl+Shift+Z</span> redo.
+              </p>
             </div>
             <Switch
               checked={enableMarkdown}
               onCheckedChange={(checked) => setEnableMarkdown(checked)}
+            />
+          </div>
+
+          {/* Formatting Preview */}
+          <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
+            <div className="space-y-0.5 pr-4">
+              <div className="flex items-center gap-x-2">
+                <Eye className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
+                <label className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 cursor-pointer">
+                  Message formatting preview
+                </label>
+              </div>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                Show a live preview of bold, italic, underline, and strikethrough while composing messages.
+              </p>
+            </div>
+            <Switch
+              checked={enableFormattingPreview}
+              onCheckedChange={(checked) => setEnableFormattingPreview(checked)}
+              disabled={!enableMarkdown}
             />
           </div>
 

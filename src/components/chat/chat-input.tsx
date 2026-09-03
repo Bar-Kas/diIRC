@@ -1,8 +1,8 @@
 import * as z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Paperclip, Loader2, X, FileIcon, Command, Radio, User, Users } from "lucide-react";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { Paperclip, Loader2, X, FileIcon, Command, Radio, User, Users, Bold, Italic, Underline, Strikethrough, GripHorizontal, EyeOff, MoreHorizontal, Code, SquareCode, Heading, Quote, List, ListOrdered } from "lucide-react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { readImage } from "@tauri-apps/plugin-clipboard-manager";
@@ -29,6 +29,45 @@ import { cn } from "@/lib/utils";
 import { commandRegistry, expandCustomCommand, listSlashSuggestions } from "@/lib/commands/command-system";
 import { useDraftStore, AttachedImage } from "@/hooks/use-draft-store";
 import { formatCompatReply, replyTagOverheadBytes, useReplyStore } from "@/hooks/use-reply-store";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { toggleMarkdownWrap, hasMarkdownSyntax, isMarkdownFormatActive, wrapCodeBlock, toggleLinePrefix, toggleHeadingPrefix } from "@/lib/markdown/markdown-utils";
+import { MarkdownRenderer } from "@/lib/markdown/markdown-renderer";
+import { ActionTooltip } from "@/components/action-tooltip";
+
+const MARKDOWN_FORMATS = [
+  { id: "bold", icon: Bold, before: "**", after: "**", label: "Bold (Ctrl+B)", shortcut: "b", shift: false },
+  { id: "italic", icon: Italic, before: "*", after: "*", label: "Italic (Ctrl+I)", shortcut: "i", shift: false },
+  { id: "underline", icon: Underline, before: "__", after: "__", label: "Underline (Ctrl+U)", shortcut: "u", shift: false },
+  { id: "strikethrough", icon: Strikethrough, before: "~~", after: "~~", label: "Strikethrough (Ctrl+Shift+X)", shortcut: "x", shift: true },
+  { id: "spoiler", icon: EyeOff, before: "||", after: "||", label: "Spoiler (Ctrl+Shift+H)", shortcut: "h", shift: true },
+] as const;
+
+const EXTRA_MARKDOWN_ACTIONS = [
+  { id: "code-block", label: "Code block", icon: Code, apply: (textarea: HTMLTextAreaElement) => wrapCodeBlock(textarea) },
+  { id: "quote", label: "Quote", icon: Quote, apply: (textarea: HTMLTextAreaElement) => toggleLinePrefix(textarea, "> ") },
+  { id: "bullet-list", label: "Bullet list", icon: List, apply: (textarea: HTMLTextAreaElement) => toggleLinePrefix(textarea, "- ") },
+  { id: "numbered-list", label: "Numbered list", icon: ListOrdered, apply: (textarea: HTMLTextAreaElement) => toggleLinePrefix(textarea, "", { numbered: true }) },
+] as const;
+
+const HEADING_LEVELS = [
+  { level: 1 as const, label: "Heading 1", preview: "#" },
+  { level: 2 as const, label: "Heading 2", preview: "##" },
+  { level: 3 as const, label: "Heading 3", preview: "###" },
+] as const;
+
+const INPUT_UNDO_LIMIT = 100;
+
+const FORMATTING_PREVIEW_HEIGHT_DEFAULT = 88;
+const FORMATTING_PREVIEW_HEIGHT_MIN = 56;
+const FORMATTING_PREVIEW_HEIGHT_MAX = 320;
 
 export const getIrcByteCount = (text: string): number => {
   if (!text) return 0;
@@ -77,6 +116,8 @@ export const ChatInput = ({
   const ircConnectingServers = useMockStore((state) => state.ircConnectingServers);
   const connectServer = useMockStore((state) => state.connectServer);
   const enableCommandSuggestions = useMockStore((state) => state.enableCommandSuggestions ?? true);
+  const enableMarkdown = useMockStore((state) => state.enableMarkdown ?? true);
+  const enableFormattingPreview = useMockStore((state) => state.enableFormattingPreview ?? true);
   const { onOpen } = useModal();
   const navigate = useNavigate();
 
@@ -99,10 +140,15 @@ export const ChatInput = ({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const undoStackRef = useRef<string[]>([]);
+  const redoStackRef = useRef<string[]>([]);
+  const isUndoRedoRef = useRef(false);
 
   const [showCommands, setShowCommands] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [isFocused, setIsFocused] = useState(true);
+  const [formattingPreviewHeight, setFormattingPreviewHeight] = useState(FORMATTING_PREVIEW_HEIGHT_DEFAULT);
+  const [selectionRange, setSelectionRange] = useState({ start: 0, end: 0 });
 
   const channelModesMap = useMockStore((state) => state.channelModes);
   const channelUserModesMap = useMockStore((state) => state.channelUserModes);
@@ -181,6 +227,10 @@ export const ChatInput = ({
 
     prevActiveIdRef.current = activeId;
 
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    isUndoRedoRef.current = false;
+
     focusInput();
 
     const timer = setTimeout(() => {
@@ -190,6 +240,38 @@ export const ChatInput = ({
   }, [activeId, form, getDraft, setDraft, focusInput]);
 
   const content = form.watch("content") || "";
+  const showFormattingPreview =
+    enableMarkdown &&
+    enableFormattingPreview &&
+    Boolean(content.trim()) &&
+    !content.trim().startsWith("/") &&
+    hasMarkdownSyntax(content);
+
+  const activeFormatIds = useMemo(() => {
+    if (!enableMarkdown) return new Set<string>();
+    return new Set(
+      MARKDOWN_FORMATS.filter((format) =>
+        isMarkdownFormatActive(content, selectionRange.start, selectionRange.end, format.before, format.after)
+      ).map((format) => format.id)
+    );
+  }, [content, selectionRange, enableMarkdown]);
+
+  const pushUndoState = useCallback((previousValue: string) => {
+    undoStackRef.current.push(previousValue);
+    if (undoStackRef.current.length > INPUT_UNDO_LIMIT) {
+      undoStackRef.current.shift();
+    }
+    redoStackRef.current = [];
+  }, []);
+
+  const updateSelection = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    setSelectionRange({
+      start: textarea.selectionStart,
+      end: textarea.selectionEnd,
+    });
+  }, []);
 
   const targetName = type === "channel" ? (name.startsWith("#") ? name : `#${name}`) : name;
   const currentNick = primaryNick || currentMember?.profile?.name || "You";
@@ -832,6 +914,141 @@ export const ChatInput = ({
     }
   }, [selectedNickIndex, showNickMenu]);
 
+  const handleFormattingPreviewResizeStart = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const startY = e.clientY;
+      const startHeight = formattingPreviewHeight;
+
+      const onMove = (moveEvent: MouseEvent) => {
+        const nextHeight = Math.min(
+          FORMATTING_PREVIEW_HEIGHT_MAX,
+          Math.max(FORMATTING_PREVIEW_HEIGHT_MIN, startHeight - (moveEvent.clientY - startY))
+        );
+        setFormattingPreviewHeight(nextHeight);
+      };
+
+      const onUp = () => {
+        document.body.style.removeProperty("user-select");
+        document.body.style.removeProperty("cursor");
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      };
+
+      document.body.style.userSelect = "none";
+      document.body.style.cursor = "ns-resize";
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    },
+    [formattingPreviewHeight]
+  );
+
+  const applyMarkdownWrap = useCallback(
+    (before: string, after: string) => {
+      const textarea = textareaRef.current;
+      if (!textarea || isInputDisabled) return;
+
+      const currentValue = form.getValues("content") || "";
+      const { newValue, newSelectionStart, newSelectionEnd } = toggleMarkdownWrap(
+        textarea,
+        before,
+        after
+      );
+
+      if (wireBytesFor(newValue) > maxBytes) {
+        onOpen("ircError", {
+          title: "Message length limit exceeded",
+          description: `Formatting would exceed the maximum allowed message limit of ${maxBytes} bytes.`,
+        });
+        return;
+      }
+
+      pushUndoState(currentValue);
+      form.setValue("content", newValue, { shouldDirty: true });
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(newSelectionStart, newSelectionEnd);
+        setSelectionRange({ start: newSelectionStart, end: newSelectionEnd });
+        autoResize();
+      }, 0);
+    },
+    [form, isInputDisabled, maxBytes, onOpen, wireBytesFor, autoResize, pushUndoState]
+  );
+
+  const applyMarkdownTransform = useCallback(
+    (transform: (textarea: HTMLTextAreaElement) => {
+      newValue: string;
+      newSelectionStart: number;
+      newSelectionEnd: number;
+    }) => {
+      const textarea = textareaRef.current;
+      if (!textarea || isInputDisabled) return;
+
+      const currentValue = form.getValues("content") || "";
+      const { newValue, newSelectionStart, newSelectionEnd } = transform(textarea);
+
+      if (wireBytesFor(newValue) > maxBytes) {
+        onOpen("ircError", {
+          title: "Message length limit exceeded",
+          description: `Formatting would exceed the maximum allowed message limit of ${maxBytes} bytes.`,
+        });
+        return;
+      }
+
+      pushUndoState(currentValue);
+      form.setValue("content", newValue, { shouldDirty: true });
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(newSelectionStart, newSelectionEnd);
+        setSelectionRange({ start: newSelectionStart, end: newSelectionEnd });
+        autoResize();
+      }, 0);
+    },
+    [form, isInputDisabled, maxBytes, onOpen, wireBytesFor, autoResize, pushUndoState]
+  );
+
+  const handleUndo = useCallback(() => {
+    const current = form.getValues("content") || "";
+    const previous = undoStackRef.current.pop();
+    if (previous === undefined) return;
+
+    redoStackRef.current.push(current);
+    isUndoRedoRef.current = true;
+    form.setValue("content", previous, { shouldDirty: true });
+    setTimeout(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      const pos = Math.min(previous.length, textarea.selectionStart);
+      textarea.focus();
+      textarea.setSelectionRange(pos, pos);
+      setSelectionRange({ start: pos, end: pos });
+      autoResize();
+    }, 0);
+  }, [form, autoResize]);
+
+  const handleRedo = useCallback(() => {
+    const current = form.getValues("content") || "";
+    const next = redoStackRef.current.pop();
+    if (next === undefined) return;
+
+    undoStackRef.current.push(current);
+    if (undoStackRef.current.length > INPUT_UNDO_LIMIT) {
+      undoStackRef.current.shift();
+    }
+
+    isUndoRedoRef.current = true;
+    form.setValue("content", next, { shouldDirty: true });
+    setTimeout(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      const pos = Math.min(next.length, textarea.selectionStart);
+      textarea.focus();
+      textarea.setSelectionRange(pos, pos);
+      setSelectionRange({ start: pos, end: pos });
+      autoResize();
+    }, 0);
+  }, [form, autoResize]);
+
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (showCommands && filteredCommands.length > 0) {
       if (e.key === "ArrowDown") {
@@ -902,6 +1119,36 @@ export const ChatInput = ({
       e.preventDefault();
       clearPendingReply(activeId);
       return;
+    }
+
+    if (!isInputDisabled && (e.ctrlKey || e.metaKey) && !e.altKey) {
+      const key = e.key.toLowerCase();
+      if (key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+      if (key === "y" || (key === "z" && e.shiftKey)) {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+      if (key === "e" && e.shiftKey) {
+        e.preventDefault();
+        applyMarkdownWrap("`", "`");
+        return;
+      }
+
+      const format = MARKDOWN_FORMATS.find(
+        (item) =>
+          e.key.toLowerCase() === item.shortcut &&
+          e.shiftKey === item.shift
+      );
+      if (format) {
+        e.preventDefault();
+        applyMarkdownWrap(format.before, format.after);
+        return;
+      }
     }
 
     if (e.key === "Enter" && !e.shiftKey) {
@@ -1348,11 +1595,47 @@ export const ChatInput = ({
                     </div>
                   )}
 
-                  <div className="relative flex flex-col">
+                  <div
+                    className={cn(
+                      "relative flex flex-col rounded-lg overflow-hidden",
+                      "bg-zinc-200/90 dark:bg-zinc-700/75"
+                    )}
+                  >
+                    {showFormattingPreview && (
+                      <div className="flex flex-col border-b border-zinc-300/50 dark:border-zinc-600/50">
+                        <div
+                          role="separator"
+                          aria-orientation="horizontal"
+                          aria-label="Resize formatting preview"
+                          title="Drag to resize preview"
+                          onMouseDown={handleFormattingPreviewResizeStart}
+                          onDoubleClick={() => setFormattingPreviewHeight(FORMATTING_PREVIEW_HEIGHT_DEFAULT)}
+                          className="flex items-center justify-between px-3 py-1 cursor-ns-resize hover:bg-zinc-300/40 dark:hover:bg-zinc-600/40 transition-colors group shrink-0 border-b border-zinc-300/40 dark:border-zinc-600/40 select-none"
+                        >
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                            Preview
+                          </span>
+                          <GripHorizontal className="w-4 h-4 text-zinc-400 dark:text-zinc-500 group-hover:text-zinc-600 dark:group-hover:text-zinc-300" />
+                        </div>
+                        <div
+                          className="px-3 py-2 overflow-y-auto"
+                          style={{ height: formattingPreviewHeight }}
+                        >
+                          <MarkdownRenderer
+                            content={content}
+                            compact
+                            className="text-sm text-zinc-700 dark:text-zinc-200"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="relative">
                     <Textarea
                       disabled={isInputDisabled}
                       autoFocus
-                      className="min-h-[44px] max-h-[120px] w-full bg-zinc-200/90 dark:bg-zinc-700/75 border-none focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200 placeholder:text-zinc-500 dark:placeholder:text-zinc-400 py-3 pr-36 resize-none overflow-y-auto disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="min-h-[44px] max-h-[120px] w-full bg-transparent border-none focus-visible:ring-0 focus-visible:ring-offset-0 text-zinc-600 dark:text-zinc-200 placeholder:text-zinc-500 dark:placeholder:text-zinc-400 py-3 resize-none overflow-y-auto disabled:opacity-60 disabled:cursor-not-allowed"
+                      style={{ paddingRight: enableMarkdown ? "20rem" : "9rem" }}
                       placeholder={
                         !isIrcConnected
                           ? "Disconnected from IRC server"
@@ -1369,9 +1652,14 @@ export const ChatInput = ({
                       onChange={(e) => {
                         const newVal = e.target.value;
                         const bytes = wireBytesFor(newVal);
-                        if (bytes <= maxBytes) {
-                          field.onChange(e);
+                        if (bytes > maxBytes) return;
+
+                        const currentVal = field.value || "";
+                        if (!isUndoRedoRef.current && newVal !== currentVal) {
+                          pushUndoState(currentVal);
                         }
+                        isUndoRedoRef.current = false;
+                        field.onChange(e);
                       }}
                       onPaste={handlePaste}
                       ref={(e) => {
@@ -1381,11 +1669,108 @@ export const ChatInput = ({
                       }}
                       onFocus={() => setIsFocused(true)}
                       onBlur={() => setIsFocused(false)}
+                      onSelect={updateSelection}
+                      onClick={updateSelection}
+                      onKeyUp={updateSelection}
                       onKeyDown={handleInputKeyDown}
                       onInput={autoResize}
                     />
 
-                    <div className="absolute right-3 bottom-2 z-10 flex items-center gap-x-2">
+                    <div className="absolute right-3 bottom-2 z-10 flex items-center gap-x-1">
+                      {enableMarkdown &&
+                        MARKDOWN_FORMATS.map(({ id, icon: Icon, before, after, label }) => (
+                        <ActionTooltip key={id} label={label} side="top">
+                          <button
+                            type="button"
+                            disabled={isInputDisabled}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => applyMarkdownWrap(before, after)}
+                            className={cn(
+                              "h-7 w-7 transition flex items-center justify-center rounded-md disabled:opacity-50 disabled:cursor-not-allowed",
+                              activeFormatIds.has(id)
+                                ? "bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/30"
+                                : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-300/50 dark:hover:bg-zinc-600/50"
+                            )}
+                          >
+                            <Icon className="w-3.5 h-3.5" />
+                          </button>
+                        </ActionTooltip>
+                      ))}
+
+                      {enableMarkdown && (
+                        <DropdownMenu>
+                          <ActionTooltip label="More formatting" side="top">
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                disabled={isInputDisabled}
+                                onMouseDown={(e) => e.preventDefault()}
+                                className="h-7 w-7 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition flex items-center justify-center rounded-md hover:bg-zinc-300/50 dark:hover:bg-zinc-600/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <MoreHorizontal className="w-3.5 h-3.5" />
+                              </button>
+                            </DropdownMenuTrigger>
+                          </ActionTooltip>
+                          <DropdownMenuContent
+                            side="top"
+                            align="end"
+                            className="min-w-[10rem] bg-white dark:bg-[#2b2d31] border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200"
+                          >
+                            <DropdownMenuItem
+                              className="gap-x-2 cursor-pointer focus:bg-zinc-100 dark:focus:bg-zinc-700/60"
+                              onSelect={() => applyMarkdownTransform((textarea) => wrapCodeBlock(textarea))}
+                            >
+                              <Code className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
+                              <span>Code block</span>
+                            </DropdownMenuItem>
+
+                            <DropdownMenuItem
+                              className="gap-x-2 cursor-pointer focus:bg-zinc-100 dark:focus:bg-zinc-700/60"
+                              onSelect={() => applyMarkdownTransform((textarea) => toggleMarkdownWrap(textarea, "`", "`"))}
+                            >
+                              <SquareCode className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
+                              <span>Inline code</span>
+                            </DropdownMenuItem>
+
+                            <DropdownMenuSub>
+                              <DropdownMenuSubTrigger className="gap-x-2 cursor-pointer focus:bg-zinc-100 dark:focus:bg-zinc-700/60">
+                                <Heading className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
+                                <span>Heading</span>
+                              </DropdownMenuSubTrigger>
+                              <DropdownMenuSubContent className="bg-white dark:bg-[#2b2d31] border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200">
+                                {HEADING_LEVELS.map(({ level, label, preview }) => (
+                                  <DropdownMenuItem
+                                    key={level}
+                                    className="gap-x-2 cursor-pointer focus:bg-zinc-100 dark:focus:bg-zinc-700/60"
+                                    onSelect={() =>
+                                      applyMarkdownTransform((textarea) => toggleHeadingPrefix(textarea, level))
+                                    }
+                                  >
+                                    <span className="w-8 font-mono text-xs text-zinc-500 dark:text-zinc-400">{preview}</span>
+                                    <span>{label}</span>
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+
+                            {EXTRA_MARKDOWN_ACTIONS.slice(1).map(({ id, label, icon: Icon, apply }) => (
+                              <DropdownMenuItem
+                                key={id}
+                                className="gap-x-2 cursor-pointer focus:bg-zinc-100 dark:focus:bg-zinc-700/60"
+                                onSelect={() => applyMarkdownTransform(apply)}
+                              >
+                                <Icon className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
+                                <span>{label}</span>
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+
+                      {enableMarkdown && (
+                        <div className="w-px h-4 bg-zinc-300/80 dark:bg-zinc-600/80 mx-0.5" />
+                      )}
+
                       <div
                         className={`text-[10px] font-mono font-medium px-1.5 py-0.5 rounded transition-colors select-none ${
                           currentBytes >= maxBytes
@@ -1428,6 +1813,7 @@ export const ChatInput = ({
                           }
                         }}
                       />
+                    </div>
                     </div>
                   </div>
 
