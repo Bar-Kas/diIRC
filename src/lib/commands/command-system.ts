@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { CustomCommand, Member, Server } from "@/types";
 import { inviteUserToChannel } from "@/lib/irc-actions";
+import { dedentCode } from "@/lib/markdown/markdown-utils";
 
 export interface CommandContext {
   serverId: string;
@@ -463,7 +464,8 @@ commandRegistry.register({
   name: "code",
   description: "Sends code wrapped in a code block: /code [code]",
   execute: async (args: string, ctx: CommandContext) => {
-    const codeMessage = `\`\`\`\n${args}\n\`\`\``;
+    const cleanedCode = dedentCode(args.trim());
+    const codeMessage = `\`\`\`\n${cleanedCode}\n\`\`\``;
     const ircMessage = codeMessage.replace(/\r?\n/g, "\u0085");
 
     if (ctx.type === "channel" && ctx.channelId) {

@@ -38,7 +38,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { toggleMarkdownWrap, hasMarkdownSyntax, isMarkdownFormatActive, wrapCodeBlock, toggleLinePrefix, toggleHeadingPrefix } from "@/lib/markdown/markdown-utils";
+import { toggleMarkdownWrap, hasMarkdownSyntax, isMarkdownFormatActive, wrapCodeBlock, toggleLinePrefix, toggleHeadingPrefix, dedentCode } from "@/lib/markdown/markdown-utils";
 import { MarkdownRenderer } from "@/lib/markdown/markdown-renderer";
 import { ActionTooltip } from "@/components/action-tooltip";
 
@@ -299,9 +299,10 @@ export const ChatInput = ({
   const currentBytes = wireBytesFor(content);
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const pasteText = e.clipboardData.getData("text");
-    if (!pasteText) return;
+    const rawPasteText = e.clipboardData.getData("text");
+    if (!rawPasteText) return;
 
+    const pasteText = dedentCode(rawPasteText);
     const textarea = e.currentTarget;
     const selectionStart = textarea.selectionStart ?? 0;
     const selectionEnd = textarea.selectionEnd ?? 0;
@@ -316,6 +317,20 @@ export const ChatInput = ({
         title: "Message length limit exceeded",
         description: `Pasted message exceeds the maximum allowed limit of ${maxBytes} bytes (attempted paste size: ${nextBytes} bytes).`,
       });
+      return;
+    }
+
+    if (pasteText !== rawPasteText) {
+      e.preventDefault();
+      form.setValue("content", nextVal, { shouldDirty: true });
+      const newPos = selectionStart + pasteText.length;
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(newPos, newPos);
+        }
+        autoResize();
+      }, 0);
     }
   };
 

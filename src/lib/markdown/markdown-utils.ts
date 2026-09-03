@@ -376,6 +376,38 @@ function getSelectedLineRange(value: string, selectionStart: number, selectionEn
   return { lineStart, lineEnd, selectionStart: start, selectionEnd: end };
 }
 
+/**
+ * Strips uniform leading whitespace/tabs (common indentation) from multiline or indented text blocks.
+ */
+export function dedentCode(text: string): string {
+  if (!text) return text;
+
+  const lines = text.split("\n");
+  let minIndent: number | null = null;
+
+  for (const line of lines) {
+    if (line.trim().length === 0) continue;
+
+    const match = line.match(/^([ \t]+)/);
+    const indentLength = match ? match[1].length : 0;
+
+    if (minIndent === null || indentLength < minIndent) {
+      minIndent = indentLength;
+    }
+  }
+
+  if (minIndent === null || minIndent === 0) {
+    return text;
+  }
+
+  return lines
+    .map((line) => {
+      if (line.trim().length === 0) return "";
+      return line.slice(minIndent!);
+    })
+    .join("\n");
+}
+
 export function wrapCodeBlock(textarea: HTMLTextAreaElement, placeholder = "code") {
   const start = textarea.selectionStart;
   const end = textarea.selectionEnd;
@@ -388,7 +420,7 @@ export function wrapCodeBlock(textarea: HTMLTextAreaElement, placeholder = "code
   if (!selected) {
     selected = placeholder;
   } else {
-    selected = selected.replace(/^\n+|\n+$/g, "");
+    selected = dedentCode(selected.replace(/^\n+|\n+$/g, ""));
   }
 
   const newValue = value.slice(0, start) + fenceBefore + selected + fenceAfter + value.slice(end);
