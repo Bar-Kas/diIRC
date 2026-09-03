@@ -179,13 +179,22 @@ export const ChatInput = ({
   const isLoading = isUploading || !isIrcConnected || isMuted;
   const isInputDisabled = !isIrcConnected || isMuted;
 
+  const autoResize = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    const newHeight = Math.min(ta.scrollHeight, 120);
+    ta.style.height = `${newHeight}px`;
+  }, []);
+
   const focusInput = useCallback(() => {
     textareaRef.current?.focus();
     setTimeout(() => {
       textareaRef.current?.focus();
       form.setFocus("content");
+      autoResize();
     }, 0);
-  }, [form]);
+  }, [form, autoResize]);
 
   useEffect(() => {
     if (!activeId) return;
@@ -597,14 +606,6 @@ export const ChatInput = ({
       e.target.value = "";
     }
   };
-
-  const autoResize = useCallback(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    const newHeight = Math.min(ta.scrollHeight, 120);
-    ta.style.height = `${newHeight}px`;
-  }, []);
 
   const createCommandContext = useCallback((onInputUpdated?: () => void) => {
     const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : (servers[0] || null);
@@ -1149,6 +1150,10 @@ export const ChatInput = ({
 
   useEffect(() => {
     autoResize();
+    const timer = setTimeout(() => {
+      autoResize();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [content, autoResize]);
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
@@ -1251,7 +1256,7 @@ export const ChatInput = ({
               }
               form.reset({ content: "" });
               clearAllAttachments();
-              form.setFocus("content");
+              focusInput();
             }
             return;
           }
@@ -1352,7 +1357,7 @@ export const ChatInput = ({
 
       // Safety net: make sure the composer regains keyboard focus once the
       // async send finishes (e.g. if anything grabbed focus mid-send).
-      form.setFocus("content");
+      focusInput();
     } catch (error) {
       console.error(error);
     }
