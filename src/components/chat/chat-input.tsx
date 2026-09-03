@@ -739,6 +739,47 @@ export const ChatInput = ({
     return sortedNicks.filter((n) => n.toLowerCase() !== ourNick);
   }, [servers, query?.serverId, type, activeId, channelMembersMap]);
 
+  const onNickSelect = useCallback(
+    (
+      selectedNick: string,
+      overrideInfo?: { startIndex: number; endIndex: number; isStartOfMessage: boolean }
+    ) => {
+      const textarea = textareaRef.current;
+      const currentText = form.getValues("content") || "";
+      const info = overrideInfo || nickQueryInfo;
+
+      let startIndex = textarea ? textarea.selectionStart : currentText.length;
+      let endIndex = startIndex;
+
+      if (info) {
+        startIndex = info.startIndex;
+        endIndex = info.endIndex;
+      }
+
+      // Format nickname according to configured settings (plain, colon, comma, @, custom, etc.)
+      const replacement = formatNickCompletion(selectedNick, nickCompletionFormat, customNickCompletionFormat);
+
+      const newContent =
+        currentText.slice(0, startIndex) +
+        replacement +
+        currentText.slice(endIndex);
+
+      form.setValue("content", newContent, { shouldDirty: true });
+      setShowNickMenu(false);
+      setNickQueryInfo(null);
+
+      const newCursorPos = startIndex + replacement.length;
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
+        }
+        autoResize();
+      }, 0);
+    },
+    [form, nickQueryInfo, nickCompletionFormat, customNickCompletionFormat, autoResize]
+  );
+
   const openNickSuggestionsMenu = useCallback(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -767,6 +808,15 @@ export const ChatInput = ({
       return;
     }
 
+    if (filtered.length === 1) {
+      onNickSelect(filtered[0], {
+        startIndex: wordStartIndex,
+        endIndex: cursorPos,
+        isStartOfMessage,
+      });
+      return;
+    }
+
     const activeServer = query?.serverId ? servers.find((s) => s.id === query.serverId) : servers[0];
     const suggestions = filtered.map((n) => {
       const modes = (type === "channel" && activeId) ? (channelUserModesMap[activeId]?.[n.toLowerCase()] || []) : [];
@@ -785,7 +835,7 @@ export const ChatInput = ({
     setNickSuggestions(suggestions);
     setSelectedNickIndex(0);
     setShowNickMenu(true);
-  }, [form, getChannelNicknames, servers, query?.serverId, type, activeId, channelUserModesMap]);
+  }, [form, getChannelNicknames, servers, query?.serverId, type, activeId, channelUserModesMap, onNickSelect]);
 
   useEffect(() => {
     if (!showNickMenu || !nickQueryInfo) return;
@@ -851,43 +901,6 @@ export const ChatInput = ({
     activeId,
     channelUserModesMap,
   ]);
-
-  const onNickSelect = (selectedNick: string) => {
-    const textarea = textareaRef.current;
-    const currentText = form.getValues("content") || "";
-    const info = nickQueryInfo;
-
-    let startIndex = textarea ? textarea.selectionStart : currentText.length;
-    let endIndex = startIndex;
-    let isStartOfMessage = false;
-
-    if (info) {
-      startIndex = info.startIndex;
-      endIndex = info.endIndex;
-      isStartOfMessage = info.isStartOfMessage;
-    }
-
-    // Format nickname according to configured settings (plain, colon, comma, @, custom, etc.)
-    const replacement = formatNickCompletion(selectedNick, nickCompletionFormat, customNickCompletionFormat);
-
-    const newContent =
-      currentText.slice(0, startIndex) +
-      replacement +
-      currentText.slice(endIndex);
-
-    form.setValue("content", newContent);
-    setShowNickMenu(false);
-    setNickQueryInfo(null);
-
-    const newCursorPos = startIndex + replacement.length;
-    setTimeout(() => {
-      if (textareaRef.current) {
-        textareaRef.current.focus();
-        textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
-      }
-      autoResize();
-    }, 0);
-  };
 
   useEffect(() => {
     if (showNickMenu && nickListRef.current) {
@@ -1073,10 +1086,17 @@ export const ChatInput = ({
         return;
       } else if (e.key === "Tab") {
         e.preventDefault();
-        if (e.shiftKey) {
-          setSelectedNickIndex((prev) => (prev - 1 + nickSuggestions.length) % nickSuggestions.length);
+        if (nickSuggestions.length === 1) {
+          const selected = nickSuggestions[0];
+          if (selected) {
+            onNickSelect(selected.nick);
+          }
         } else {
-          setSelectedNickIndex((prev) => (prev + 1) % nickSuggestions.length);
+          if (e.shiftKey) {
+            setSelectedNickIndex((prev) => (prev - 1 + nickSuggestions.length) % nickSuggestions.length);
+          } else {
+            setSelectedNickIndex((prev) => (prev + 1) % nickSuggestions.length);
+          }
         }
         return;
       } else if (e.key === "Enter") {
