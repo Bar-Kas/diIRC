@@ -27,8 +27,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
+
+      - name: Restore npm cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ matrix.platform }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            npm-${{ matrix.platform }}-
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -38,6 +44,8 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
           cache-on-failure: true
+          shared-key: "tauri-${{ matrix.platform }}"
+          save-always: true
 
       - name: install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
@@ -57,9 +65,9 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'diIRC ${{ github.ref_name }}'
-          releaseBody: 'See the assets to download the release for your platform.'
+          releaseBody: '${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}'
           releaseDraft: true
-          prerelease: false
+          prerelease: true
           includeUpdaterJson: true
           updaterJsonKeepSignatures: true
           args: ${{ matrix.args }}
