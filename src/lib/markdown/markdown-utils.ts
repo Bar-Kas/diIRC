@@ -399,6 +399,35 @@ export function wrapCodeBlock(textarea: HTMLTextAreaElement, placeholder = "code
   };
 }
 
+function calculateNewSelection(
+  selectionStart: number,
+  selectionEnd: number,
+  lineStart: number,
+  oldBlockLength: number,
+  newBlockLength: number,
+  allEmpty: boolean
+): { newSelectionStart: number; newSelectionEnd: number } {
+  let newSelectionStart: number;
+  let newSelectionEnd: number;
+
+  if (selectionStart === selectionEnd) {
+    if (allEmpty) {
+      newSelectionStart = lineStart + newBlockLength;
+      newSelectionEnd = lineStart + newBlockLength;
+    } else {
+      const delta = newBlockLength - oldBlockLength;
+      const newPos = Math.max(lineStart, selectionStart + delta);
+      newSelectionStart = newPos;
+      newSelectionEnd = newPos;
+    }
+  } else {
+    newSelectionStart = lineStart;
+    newSelectionEnd = lineStart + newBlockLength;
+  }
+
+  return { newSelectionStart, newSelectionEnd };
+}
+
 export function toggleLinePrefix(
   textarea: HTMLTextAreaElement,
   prefix: string,
@@ -409,32 +438,53 @@ export function toggleLinePrefix(
   const oldBlock = value.slice(lineStart, lineEnd);
   const lines = oldBlock.split("\n");
 
+  const hasAnyNonEmpty = lines.some((line) => line !== "");
+  const allEmpty = !hasAnyNonEmpty;
+
   let newLines: string[];
   if (options?.numbered) {
     const orderedPattern = /^\d+\.\s/;
-    const allNumbered = lines.every((line) => line === "" || orderedPattern.test(line));
+    const hasNumbered = lines.some((line) => orderedPattern.test(line));
+    const allNumbered = hasNumbered && lines.every((line) => line === "" || orderedPattern.test(line));
     if (allNumbered) {
       newLines = lines.map((line) => (line === "" ? line : line.replace(orderedPattern, "")));
     } else {
       let index = 1;
-      newLines = lines.map((line) => (line === "" ? line : `${index++}. ${line}`));
+      newLines = lines.map((line) => {
+        if (line === "" && !allEmpty) return line;
+        return `${index++}. ${line}`;
+      });
     }
   } else {
-    const allPrefixed = lines.every((line) => line === "" || line.startsWith(prefix));
+    const hasPrefixed = lines.some((line) => line.startsWith(prefix));
+    const allPrefixed = hasPrefixed && lines.every((line) => line === "" || line.startsWith(prefix));
     if (allPrefixed) {
       newLines = lines.map((line) => (line.startsWith(prefix) ? line.slice(prefix.length) : line));
     } else {
-      newLines = lines.map((line) => (line === "" || line.startsWith(prefix) ? line : `${prefix}${line}`));
+      newLines = lines.map((line) => {
+        if (line === "" && !allEmpty) return line;
+        if (line.startsWith(prefix)) return line;
+        return `${prefix}${line}`;
+      });
     }
   }
 
   const newBlock = newLines.join("\n");
   const newValue = value.slice(0, lineStart) + newBlock + value.slice(lineEnd);
 
+  const { newSelectionStart, newSelectionEnd } = calculateNewSelection(
+    selectionStart,
+    selectionEnd,
+    lineStart,
+    oldBlock.length,
+    newBlock.length,
+    allEmpty
+  );
+
   return {
     newValue,
-    newSelectionStart: lineStart,
-    newSelectionEnd: lineStart + newBlock.length,
+    newSelectionStart,
+    newSelectionEnd,
   };
 }
 
@@ -445,8 +495,11 @@ export function toggleHeadingPrefix(textarea: HTMLTextAreaElement, level: 1 | 2 
   const oldBlock = value.slice(lineStart, lineEnd);
   const lines = oldBlock.split("\n");
 
+  const hasAnyNonEmpty = lines.some((line) => line !== "");
+  const allEmpty = !hasAnyNonEmpty;
+
   const newLines = lines.map((line) => {
-    if (line === "") return line;
+    if (line === "" && !allEmpty) return line;
 
     const headingMatch = line.match(/^(#{1,6})\s/);
     if (headingMatch) {
@@ -464,10 +517,19 @@ export function toggleHeadingPrefix(textarea: HTMLTextAreaElement, level: 1 | 2 
   const newBlock = newLines.join("\n");
   const newValue = value.slice(0, lineStart) + newBlock + value.slice(lineEnd);
 
+  const { newSelectionStart, newSelectionEnd } = calculateNewSelection(
+    selectionStart,
+    selectionEnd,
+    lineStart,
+    oldBlock.length,
+    newBlock.length,
+    allEmpty
+  );
+
   return {
     newValue,
-    newSelectionStart: lineStart,
-    newSelectionEnd: lineStart + newBlock.length,
+    newSelectionStart,
+    newSelectionEnd,
   };
 }
 
