@@ -69,25 +69,8 @@ const FORMATTING_PREVIEW_HEIGHT_DEFAULT = 88;
 const FORMATTING_PREVIEW_HEIGHT_MIN = 56;
 const FORMATTING_PREVIEW_HEIGHT_MAX = 320;
 
-export const getIrcByteCount = (text: string): number => {
-  if (!text) return 0;
-  const ircMessage = text.replace(/\r?\n/g, "\u0085");
-  return new TextEncoder().encode(ircMessage).length;
-};
-
-export const getIrcMaxMessageBytes = (
-  target: string,
-  nick?: string,
-  username?: string,
-  host?: string
-): number => {
-  const defaultNick = nick || "user";
-  const defaultUser = username || defaultNick;
-  const defaultHost = host || "localhost";
-  const rawPrefix = `:${defaultNick}!${defaultUser}@${defaultHost} PRIVMSG ${target} :\r\n`;
-  const overhead = new TextEncoder().encode(rawPrefix).length;
-  return Math.max(0, 512 - overhead);
-};
+import { getIrcByteCount, getIrcMaxMessageBytes } from "@/lib/system-utils";
+export { getIrcByteCount, getIrcMaxMessageBytes };
 
 interface ChatInputProps {
   query: Record<string, string>;

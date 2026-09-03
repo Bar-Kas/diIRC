@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { CustomCommand, Member, Server } from "@/types";
 import { inviteUserToChannel } from "@/lib/irc-actions";
-import { dedentCode } from "@/lib/markdown/markdown-utils";
+import { dedentCode, detectCodeLanguage } from "@/lib/markdown/markdown-utils";
+import { getIrcByteCount, getIrcMaxMessageBytes } from "@/lib/system-utils";
 
 export interface CommandContext {
   serverId: string;
@@ -465,7 +466,26 @@ commandRegistry.register({
   description: "Sends code wrapped in a code block: /code [code]",
   execute: async (args: string, ctx: CommandContext) => {
     const cleanedCode = dedentCode(args.trim());
-    const codeMessage = `\`\`\`\n${cleanedCode}\n\`\`\``;
+    let detectedLang = detectCodeLanguage(cleanedCode) || "";
+
+    if (detectedLang) {
+      const channelTarget = ctx.type === "channel"
+        ? (ctx.channelName.startsWith("#") ? ctx.channelName : `#${ctx.channelName}`)
+        : ctx.channelName;
+      const ourNick = ctx.activeServer.nicknames?.[0] || ctx.currentMember.profile.name || "user";
+      const ourUser = ctx.activeServer.realname || ourNick;
+      const ourHost = ctx.activeServer.host || "localhost";
+
+      const maxBytes = getIrcMaxMessageBytes(channelTarget, ourNick, ourUser, ourHost);
+      const codeMessageWithLang = `\`\`\`${detectedLang}\n${cleanedCode}\n\`\`\``;
+      const codeMessageNoLang = `\`\`\`\n${cleanedCode}\n\`\`\``;
+
+      if (getIrcByteCount(codeMessageWithLang) > maxBytes && getIrcByteCount(codeMessageNoLang) <= maxBytes) {
+        detectedLang = "";
+      }
+    }
+
+    const codeMessage = `\`\`\`${detectedLang}\n${cleanedCode}\n\`\`\``;
     const ircMessage = codeMessage.replace(/\r?\n/g, "\u0085");
 
     if (ctx.type === "channel" && ctx.channelId) {

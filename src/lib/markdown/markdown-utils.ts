@@ -1,3 +1,5 @@
+import hljs from "highlight.js";
+
 /**
  * Utilities for Markdown handling — link extraction, trailing punctuation fix, etc.
  * Keeps compatibility with existing `image-utils.ts` and `link-preview.tsx` expectations.
@@ -406,6 +408,29 @@ export function dedentCode(text: string): string {
       return line.slice(minIndent!);
     })
     .join("\n");
+}
+
+const HLJS_SUBSET = [
+  "javascript", "typescript", "python", "rust", "cpp", "c", "csharp",
+  "java", "html", "css", "json", "sql", "bash", "go", "php", "ruby",
+  "yaml", "xml", "markdown"
+];
+
+/**
+ * Detects the programming language of a snippet of code.
+ * Returns language identifier (e.g. "javascript", "python") or null if unknown / low confidence.
+ */
+export function detectCodeLanguage(code: string): string | null {
+  if (!code || !code.trim()) return null;
+  try {
+    const result = hljs.highlightAuto(code, HLJS_SUBSET);
+    if (result.language && result.relevance >= 3) {
+      return result.language;
+    }
+  } catch (e) {
+    console.error("Language detection error:", e);
+  }
+  return null;
 }
 
 export function wrapCodeBlock(textarea: HTMLTextAreaElement, placeholder = "code") {
