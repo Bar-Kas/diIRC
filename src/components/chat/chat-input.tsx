@@ -672,21 +672,6 @@ export const ChatInput = ({
   ]);
 
   const onCommandSelect = (insert: string) => {
-    const trimmedInsert = insert.trim();
-    if (trimmedInsert === "/code") {
-      const currentContent = form.getValues("content") || "";
-      let args = "";
-      if (currentContent.toLowerCase().startsWith(`/code`)) {
-        args = currentContent.slice(5).trim();
-      }
-      const ctx = createCommandContext();
-      if (ctx) {
-        commandRegistry.execute(`/code ${args}`, ctx);
-      }
-      setShowCommands(false);
-      return;
-    }
-
     form.setValue("content", insert);
     form.setFocus("content");
     setShowCommands(false);
