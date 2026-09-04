@@ -44,3 +44,23 @@ next-env.d.ts
 
 test/reports
 test/reports/**
+Dziennik_Praktyk_diIRC_Opis_Commitow.md
+AGENTS.md
+clear-motd-hashes.bat
+CONTEXT.md
+GEMINI.md
+quick-build.bat
+rebuild-and-start.bat
+start-server-and-app.bat
+start-second-server.bat
+start-both-servers.bat
+.agents/rules/architecture.md
+.agents/rules/change-safety.md
+.agents/rules/irc-protocol.md
+.agents/rules/ui-guidelines.md
+.agents/skills/diirc-dev/SKILL.md
+devtools/irc-test-server/config.json
+devtools/irc-test-server/config-server2.json
+devtools/irc-test-server/index.js
+devtools/irc-test-server/README.md
+ZADANIA_BACKLOG_NEW.md

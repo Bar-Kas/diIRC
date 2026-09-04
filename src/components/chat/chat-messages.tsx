@@ -195,11 +195,13 @@ export const ChatMessages = ({
     useAnimationFrameWithResizeObserver: true,
   });
 
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, instance) => {
-    if (shouldStickToBottomRef.current) return false;
-    const firstVisible = instance.getVirtualItems()[0];
-    if (!firstVisible) return false;
-    return item.index < firstVisible.index;
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
+    if (isLoadingOlderRef.current) {
+      const firstVisible = instance.getVirtualItems()[0];
+      if (!firstVisible) return false;
+      return item.index <= firstVisible.index;
+    }
+    return false;
   };
 
   const markProgrammaticScroll = useCallback((durationMs = 160) => {
@@ -344,6 +346,7 @@ export const ChatMessages = ({
   const handleChatScroll = useCallback(() => {
     const element = chatRef.current;
     if (!element) return;
+    if (!hasInitializedRef.current) return;
 
     if (jumpingToLatestRef.current) {
       shouldStickToBottomRef.current = true;
@@ -372,7 +375,7 @@ export const ChatMessages = ({
       ? prevAtBottom
       : prevAtBottom
         ? !hasNewer && (!canScroll || distanceFromBottom < BOTTOM_EXIT_THRESHOLD_PX)
-        : !hasNewer && !movingUp && (!canScroll || distanceFromBottom < BOTTOM_ENTER_THRESHOLD_PX);
+        : !hasNewer && !movingUp && (!canScroll || distanceFromBottom < 5);
 
     if (prevAtBottom !== isAtBottom) {
       setTailPinned(isAtBottom);
@@ -380,12 +383,10 @@ export const ChatMessages = ({
     shouldStickToBottomRef.current = isAtBottom;
     setAtBottom((prev) => (prev === isAtBottom ? prev : isAtBottom));
 
-    if (isAtBottom) {
+    if (isAtBottom && !isProgrammatic) {
       anchorRef.current = null;
-      // Never stamp messages as seen while scrolling AWAY from the bottom (Fix A):
-      // slow upward scrolling passes through the grace zone over many events and
-      // used to wipe the unread counter.
-      if (!movingUp && items.length > 0) {
+      // Only mark messages seen if the user was already sticking to bottom or deliberately scrolled to tail
+      if (!movingUp && items.length > 0 && prevAtBottom) {
         if (typeof document !== "undefined" && !document.hasFocus()) {
           // Do not mark seen if unfocused!
         } else {
@@ -457,14 +458,14 @@ export const ChatMessages = ({
 
   useEffect(() => {
     hasInitializedRef.current = false;
-    shouldStickToBottomRef.current = true;
+    shouldStickToBottomRef.current = false;
     isLoadingOlderRef.current = false;
     isLoadingNewerRef.current = false;
     anchorRef.current = null;
     lastScrollTopRef.current = 0;
     rowElementsRef.current.clear();
     remeasureCallbacksRef.current.clear();
-    setAtBottom(true);
+    setAtBottom(false);
     clearProxyCache();
     void loadChatHistory(
       type,
@@ -477,6 +478,7 @@ export const ChatMessages = ({
   useLayoutEffect(() => {
     const element = chatRef.current;
     if (!element) return;
+    if (!hasInitializedRef.current) return;
 
     const canScroll = element.scrollHeight > element.clientHeight + 5;
     if (!canScroll && !hasNewer) {
@@ -561,6 +563,9 @@ export const ChatMessages = ({
       }
 
       // No unread messages -> pin to bottom
+      shouldStickToBottomRef.current = true;
+      setTailPinned(true);
+      setAtBottom(true);
       pinToBottom("auto", "initialMount");
       hasInitializedRef.current = true;
     }
@@ -603,13 +608,11 @@ export const ChatMessages = ({
         const element = rowElementsRef.current.get(messageId);
         if (!element) return;
 
-        if (shouldStickToBottomRef.current) {
-          virtualizer.measureElement(element);
-          pinToBottom("auto", `remeasure on ${messageId}`);
-          return;
-        }
-
         virtualizer.measureElement(element);
+
+        if (shouldStickToBottomRef.current) {
+          pinToBottom("auto", `remeasure on ${messageId}`);
+        }
       };
       remeasureCallbacksRef.current.set(messageId, cb);
     }
