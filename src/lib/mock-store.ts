@@ -460,6 +460,7 @@ interface MockState {
   historyWindow: HistoryWindow;
   compactMode: boolean;
   enableMarkdown: boolean;
+  enableFormattingPreview: boolean;
   confirmLeaveChannel: boolean;
   enableCommandSuggestions: boolean;
   enableLinkPreviews: boolean;
@@ -528,6 +529,7 @@ interface MockState {
   // Settings Actions
   setCompactMode: (enabled: boolean) => void;
   setEnableMarkdown: (enabled: boolean) => void;
+  setEnableFormattingPreview: (enabled: boolean) => void;
   setConfirmLeaveChannel: (enabled: boolean) => void;
   setEnableCommandSuggestions: (enabled: boolean) => void;
   setEnableLinkPreviews: (enabled: boolean) => void;
@@ -669,6 +671,7 @@ export const useMockStore = create<MockState>()(
       historicalConversations: {},
       compactMode: false,
       enableMarkdown: true,
+      enableFormattingPreview: true,
       confirmLeaveChannel: true,
       enableCommandSuggestions: true,
       enableLinkPreviews: true,
@@ -1083,6 +1086,7 @@ export const useMockStore = create<MockState>()(
 
       setCompactMode: (enabled: boolean) => set({ compactMode: enabled }),
       setEnableMarkdown: (enabled: boolean) => set({ enableMarkdown: enabled }),
+      setEnableFormattingPreview: (enabled: boolean) => set({ enableFormattingPreview: enabled }),
       setConfirmLeaveChannel: (enabled: boolean) => set({ confirmLeaveChannel: enabled }),
       setEnableCommandSuggestions: (enabled: boolean) => set({ enableCommandSuggestions: enabled }),
       setEnableLinkPreviews: (enabled: boolean) => set({ enableLinkPreviews: enabled }),

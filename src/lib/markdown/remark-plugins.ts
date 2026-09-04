@@ -73,50 +73,32 @@ export function remarkSpoiler() {
 
 /**
  * Remark plugin for `__underline__` syntax (Discord style).
- * Converts __text__ to <underline> nodes.
- * Note: GFM also treats __text__ as strong when len=2. This plugin runs *before* GFM parsing,
- * but mdast text still contains __. We need to ensure GFM doesn't double-parse.
- * Approach: split text nodes on __...__ before GFM's strong handling would, by running at text level
- * and creating underline nodes that GFM will leave alone.
- * 
- * To avoid conflict where __text__ should be underline not bold, we consume __...__ here.
- * **bold** uses **, so __ remains free for underline.
+ * remark-parse parses both **text** and __text__ as `strong` AST nodes.
+ * This plugin inspects `strong` nodes, checks if the raw source delimiters were `__`,
+ * and converts those nodes to `underline` nodes.
  */
 export function remarkUnderline() {
-  return (tree: Root) => {
-    visit(tree, "text", (node: Text, index: number | undefined, parent: Parent | undefined) => {
-      if (!parent || index === undefined) return;
-      const value = node.value;
-      if (!value.includes("__")) return;
-      if (parent.type === "inlineCode" || parent.type === "code") return;
-      // Avoid inside links/images? Allow but simple.
-      // Regex for __underline__ : double underscore, not triple, not empty, no newline
-      const regex = /__([^_\n]+?)__/g;
-      let match: RegExpExecArray | null;
-      let lastIndex = 0;
-      const newNodes: any[] = [];
-      let hasUnderline = false;
+  return (tree: Root, file: any) => {
+    const source = typeof file?.value === "string" ? file.value : String(file || "");
 
-      while ((match = regex.exec(value)) !== null) {
-        // Avoid matching four underscores ____ (empty) or overlapping with *** etc.
-        // Ensure match not part of longer ____ sequence? simple check: char before/after not _
-        const beforeChar = value[match.index - 1];
-        const afterChar = value[match.index + match[0].length];
-        if (beforeChar === "_" || afterChar === "_") continue;
-        hasUnderline = true;
-        const before = value.slice(lastIndex, match.index);
-        if (before) newNodes.push({ type: "text", value: before });
-        const inner = match[1];
-        newNodes.push(createUnderlineNode([{ type: "text", value: inner }]));
-        lastIndex = match.index + match[0].length;
+    visit(tree, "strong", (node: any) => {
+      if (
+        !source ||
+        !node.position ||
+        node.position.start?.offset === undefined ||
+        node.position.end?.offset === undefined
+      ) {
+        return;
       }
 
-      if (!hasUnderline) return;
-      const after = value.slice(lastIndex);
-      if (after) newNodes.push({ type: "text", value: after });
-
-      parent.children.splice(index, 1, ...newNodes);
-      return index + newNodes.length;
+      const rawText = source.slice(node.position.start.offset, node.position.end.offset);
+      if (rawText.startsWith("__") && rawText.endsWith("__")) {
+        node.type = "underline";
+        node.data = {
+          hName: "underline",
+          hProperties: {},
+        };
+      }
     });
   };
 }

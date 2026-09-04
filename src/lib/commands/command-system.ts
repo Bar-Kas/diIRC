@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { CustomCommand, Member, Server } from "@/types";
 import { inviteUserToChannel } from "@/lib/irc-actions";
+import { dedentCode, detectCodeLanguage } from "@/lib/markdown/markdown-utils";
+import { getIrcByteCount, getIrcMaxMessageBytes } from "@/lib/system-utils";
 
 export interface CommandContext {
   serverId: string;
@@ -461,14 +463,66 @@ commandRegistry.register({
 
 commandRegistry.register({
   name: "code",
-  description: "Inserts a markdown code block template",
-  execute: (args: string, ctx: CommandContext) => {
-    const lang = args.trim();
-    const template = `\`\`\`${lang}\n\n\`\`\``;
-    const cursorPosition = 3 + lang.length + 1;
+  description: "Sends code wrapped in a code block: /code [code]",
+  execute: async (args: string, ctx: CommandContext) => {
+    const cleanedCode = dedentCode(args.trim());
+    let detectedLang = detectCodeLanguage(cleanedCode) || "";
 
-    if (ctx.setInputContent) {
-      ctx.setInputContent(template, cursorPosition);
+    if (detectedLang) {
+      const channelTarget = ctx.type === "channel"
+        ? (ctx.channelName.startsWith("#") ? ctx.channelName : `#${ctx.channelName}`)
+        : ctx.channelName;
+      const ourNick = ctx.activeServer.nicknames?.[0] || ctx.currentMember.profile.name || "user";
+      const ourUser = ctx.activeServer.realname || ourNick;
+      const ourHost = ctx.activeServer.host || "localhost";
+
+      const maxBytes = getIrcMaxMessageBytes(channelTarget, ourNick, ourUser, ourHost);
+      const codeMessageWithLang = `\`\`\`${detectedLang}\n${cleanedCode}\n\`\`\``;
+      const codeMessageNoLang = `\`\`\`\n${cleanedCode}\n\`\`\``;
+
+      if (getIrcByteCount(codeMessageWithLang) > maxBytes && getIrcByteCount(codeMessageNoLang) <= maxBytes) {
+        detectedLang = "";
+      }
+    }
+
+    const codeMessage = `\`\`\`${detectedLang}\n${cleanedCode}\n\`\`\``;
+    const ircMessage = codeMessage.replace(/\r?\n/g, "\u0085");
+
+    if (ctx.type === "channel" && ctx.channelId) {
+      const channelTarget = ctx.channelName.startsWith("#") ? ctx.channelName : `#${ctx.channelName}`;
+      try {
+        await invoke("send_message", {
+          serverId: ctx.serverId,
+          channel: channelTarget,
+          message: ircMessage,
+          replyToMsgid: null,
+          replyNick: null,
+          replyPreview: null,
+          replyParentOffset: null,
+        });
+        ctx.addMessage(ctx.channelId, ctx.currentMember, codeMessage);
+      } catch (err) {
+        console.error("Failed to send /code channel message via Tauri IRC:", err);
+      }
+    } else if (ctx.type === "conversation" && ctx.conversationId) {
+      try {
+        await invoke("send_message", {
+          serverId: ctx.serverId,
+          channel: ctx.channelName,
+          message: ircMessage,
+          replyToMsgid: null,
+          replyNick: null,
+          replyPreview: null,
+          replyParentOffset: null,
+        });
+        ctx.addDirectMessage(ctx.conversationId, ctx.currentMember, codeMessage);
+        if (ctx.targetMemberId) {
+          const { useMockStore } = await import("@/lib/mock-store");
+          useMockStore.getState().addToHistoricalConversations(ctx.serverId, ctx.targetMemberId);
+        }
+      } catch (err) {
+        console.error("Failed to send /code direct message via Tauri IRC:", err);
+      }
     }
     return true;
   },
