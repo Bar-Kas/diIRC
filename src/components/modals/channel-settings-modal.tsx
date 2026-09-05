@@ -43,6 +43,7 @@ export const ChannelSettingsModal = () => {
   const [soundOverride, setSoundOverride] = useState<NotificationOverrideValue>("default");
   const [popupOverride, setPopupOverride] = useState<NotificationOverrideValue>("default");
   const [taskbarOverride, setTaskbarOverride] = useState<NotificationOverrideValue>("default");
+  const [anonymousNotificationsOverride, setAnonymousNotificationsOverride] = useState<NotificationOverrideValue>("default");
   const [soundCooldownOverride, setSoundCooldownOverride] = useState<"default" | number>("default");
   const [soundPresetOverride, setSoundPresetOverride] = useState<"default" | SoundPreset>("default");
   const [customSoundUrlOverride, setCustomSoundUrlOverride] = useState<string | undefined>(undefined);
@@ -54,6 +55,7 @@ export const ChannelSettingsModal = () => {
       setSoundOverride(targetOverrides?.sound || "default");
       setPopupOverride(targetOverrides?.popup || "default");
       setTaskbarOverride(targetOverrides?.taskbar || "default");
+      setAnonymousNotificationsOverride(targetOverrides?.anonymousNotifications || "default");
       setSoundCooldownOverride(targetOverrides?.soundCooldown ?? "default");
       setSoundPresetOverride(targetOverrides?.soundPreset || "default");
       setCustomSoundUrlOverride(targetOverrides?.customSoundUrl);
@@ -71,6 +73,7 @@ export const ChannelSettingsModal = () => {
       sound: soundOverride,
       popup: popupOverride,
       taskbar: taskbarOverride,
+      anonymousNotifications: anonymousNotificationsOverride,
       soundCooldown: soundCooldownOverride,
       soundPreset: soundPresetOverride,
       customSoundUrl: customSoundUrlOverride,
@@ -105,6 +108,7 @@ export const ChannelSettingsModal = () => {
   const parentSoundStr = parentEffective.sound ? "Enabled" : "Muted";
   const parentPopupStr = parentEffective.popup ? "Enabled" : "Off";
   const parentTaskbarStr = parentEffective.taskbar ? "Enabled" : "Off";
+  const parentAnonymousNotificationsStr = parentEffective.anonymousNotifications ? "Hide content" : "Show content";
   const parentCooldownSec = (parentEffective.soundCooldownMs / 1000).toFixed(1);
   const parentSoundPresetStr = parentEffective.soundPreset;
 
@@ -145,6 +149,7 @@ export const ChannelSettingsModal = () => {
               soundCooldown: soundCooldownOverride,
               popup: popupOverride,
               taskbar: taskbarOverride,
+              anonymousNotifications: anonymousNotificationsOverride,
             }}
             inherited={{
               channelNotificationsStr: parentChannelNotificationsStr,
@@ -154,6 +159,7 @@ export const ChannelSettingsModal = () => {
               cooldownSec: parentCooldownSec,
               popupStr: parentPopupStr,
               taskbarStr: parentTaskbarStr,
+              anonymousNotificationsStr: parentAnonymousNotificationsStr,
             }}
             onChange={(field, val) => {
               if (field === "channelNotifications") setChannelNotificationsOverride(val);
@@ -164,6 +170,7 @@ export const ChannelSettingsModal = () => {
               else if (field === "soundCooldown") setSoundCooldownOverride(val);
               else if (field === "popup") setPopupOverride(val);
               else if (field === "taskbar") setTaskbarOverride(val);
+              else if (field === "anonymousNotifications") setAnonymousNotificationsOverride(val);
             }}
           />
         </div>

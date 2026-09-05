@@ -10,6 +10,8 @@ import { useModal } from "@/hooks/use-modal-store";
 import { useMockStore } from "@/lib/mock-store";
 import { useChangelog } from "@/lib/changelog-service";
 import { MarkdownRenderer } from "@/lib/markdown/markdown-renderer";
+import { parseMarkdownContentBlocks } from "@/lib/markdown/markdown-utils";
+import { LinkPreview } from "@/components/chat/link-preview";
 import { 
   History, 
   ChevronDown, 
@@ -28,6 +30,7 @@ export const ChangelogModal = () => {
   const { isOpen, onClose, type } = useModal();
   const isModalOpen = isOpen && type === "changelog";
 
+  const enableLinkPreviews = useMockStore((state) => state.enableLinkPreviews ?? true);
   const { versions, hasCurrentVersion, currentVersion, loading, error, refresh } = useChangelog();
 
   // Expanded version items state (Set of version strings)
@@ -199,9 +202,27 @@ export const ChangelogModal = () => {
                     {/* Collapsible Content */}
                     {isExpanded && (
                       <div className="p-4 space-y-3 bg-white/40 dark:bg-[#2B2D31]/40">
-                        <div className="text-sm text-zinc-800 dark:text-zinc-200">
-                          <MarkdownRenderer content={v.content} allowImages={false} />
-                        </div>
+                        {(() => {
+                          const blocks = parseMarkdownContentBlocks(v.content, enableLinkPreviews);
+                          return (
+                            <div className="text-sm text-zinc-800 dark:text-zinc-200 space-y-3">
+                              {blocks.map((block) => (
+                                <div key={block.id} className="space-y-2">
+                                  {block.markdown.trim() && (
+                                    <MarkdownRenderer content={block.markdown} compact />
+                                  )}
+                                  {block.urls.length > 0 && (
+                                    <div className="space-y-2 my-2 max-w-2xl">
+                                      {block.urls.map((url) => (
+                                        <LinkPreview key={url} url={url} />
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>

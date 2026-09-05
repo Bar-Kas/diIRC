@@ -49,9 +49,43 @@ import { MotdDisplayPolicy, UserDisplayNameMode } from "@/types";
 import { playNotificationSound, SoundPreset } from "@/lib/notification-sound";
 import { requestDesktopNotificationPermission } from "@/lib/notification-service";
 import { NotificationSettingsFields } from "@/components/notifications/notification-settings-fields";
+import { SettingsTabs, matchesSettingsSearch, type SettingsTab } from "@/components/settings/settings-tabs";
 import { checkForAppUpdate } from "@/lib/update-service";
 import { Update } from "@tauri-apps/plugin-updater";
 import tauriConfig from "../../../src-tauri/tauri.conf.json";
+
+const CLIENT_SETTINGS_TABS: SettingsTab[] = [
+  {
+    id: "notifications",
+    label: "Notifications",
+    icon: Bell,
+    keywords: ["sound", "popup", "taskbar", "cooldown", "anonymous", "system", "desktop", "alert"],
+  },
+  {
+    id: "appearance-chat",
+    label: "Appearance & chat",
+    icon: Sparkles,
+    keywords: ["display name", "avatar", "compact", "markdown", "formatting", "emoji", "jumboji", "private messages", "sort", "status", "motd", "date", "nickname"],
+  },
+  {
+    id: "media",
+    label: "Media & upload",
+    icon: UploadCloud,
+    keywords: ["image", "link", "preview", "web", "upload", "litterbox", "pomf"],
+  },
+  {
+    id: "privacy",
+    label: "Privacy",
+    icon: Key,
+    keywords: ["authorization", "header", "token", "private", "security"],
+  },
+  {
+    id: "updates",
+    label: "Updates",
+    icon: DownloadCloud,
+    keywords: ["software", "version", "release", "automatic"],
+  },
+];
 
 export const SettingsModal = () => {
   const { isOpen, onClose, type, onOpen } = useModal();
@@ -109,6 +143,7 @@ export const SettingsModal = () => {
     soundPreset: "chime",
     popupEnabled: true,
     taskbarHighlightEnabled: true,
+    anonymousNotifications: false,
   };
   const setGlobalNotificationSettings = useMockStore((state) => state.setGlobalNotificationSettings);
 
@@ -176,6 +211,8 @@ export const SettingsModal = () => {
   const [newRulePrefix, setNewRulePrefix] = useState("");
   const [newRuleHeaderName, setNewRuleHeaderName] = useState("Authorization");
   const [newRuleHeaderValue, setNewRuleHeaderValue] = useState("");
+  const [activeTab, setActiveTab] = useState("notifications");
+  const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
 
   const isModalOpen = isOpen && type === "settings";
 
@@ -215,8 +252,8 @@ export const SettingsModal = () => {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={handleClose}>
-      <DialogContent className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden sm:max-w-xl border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl">
-        <DialogHeader className="pt-6 px-6 space-y-1">
+      <DialogContent className="flex h-[720px] max-h-[90vh] flex-col overflow-hidden bg-white p-0 text-zinc-900 dark:bg-[#313338] dark:text-zinc-100 sm:max-w-4xl border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl">
+        <DialogHeader className="shrink-0 pt-6 px-6 space-y-1">
           <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100 flex items-center justify-center gap-x-2">
             <Settings className="w-6 h-6 text-indigo-500" />
             Settings
@@ -226,10 +263,23 @@ export const SettingsModal = () => {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="px-6 py-6 space-y-5 max-h-[75vh] overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col border-t border-zinc-200 dark:border-zinc-800 sm:flex-row">
+          <SettingsTabs
+            activeTab={activeTab}
+            tabs={CLIENT_SETTINGS_TABS}
+            onTabChange={setActiveTab}
+            ariaLabel="client-settings"
+            searchQuery={settingsSearchQuery}
+            onSearchQueryChange={setSettingsSearchQuery}
+          />
+
+          <div className="min-w-0 flex-1 overflow-y-auto px-6 pb-6 pt-5">
+          {activeTab === "notifications" && (
+            <div id="client-settings-panel-notifications" role="tabpanel" aria-labelledby="client-settings-tab-notifications" className="space-y-5">
           {/* SECTION: GLOBAL NOTIFICATIONS */}
           <NotificationSettingsFields
             mode="global"
+            searchQuery={settingsSearchQuery}
             values={{
               channelNotifications: notificationSettings.channelNotifications || "mentions",
               dmNotifications: notificationSettings.dmNotifications || "all",
@@ -241,6 +291,7 @@ export const SettingsModal = () => {
               soundCooldown: notificationSettings.soundCooldownMs ?? 3000,
               popup: notificationSettings.popupEnabled,
               taskbar: notificationSettings.taskbarHighlightEnabled,
+              anonymousNotifications: notificationSettings.anonymousNotifications ?? false,
             }}
             onChange={(field, val) => {
               if (field === "channelNotifications") setGlobalNotificationSettings({ channelNotifications: val });
@@ -253,10 +304,16 @@ export const SettingsModal = () => {
               else if (field === "soundCooldown") setGlobalNotificationSettings({ soundCooldownMs: Number(val) });
               else if (field === "popup") setGlobalNotificationSettings({ popupEnabled: Boolean(val) });
               else if (field === "taskbar") setGlobalNotificationSettings({ taskbarHighlightEnabled: Boolean(val) });
+              else if (field === "anonymousNotifications") setGlobalNotificationSettings({ anonymousNotifications: Boolean(val) });
             }}
           />
+            </div>
+          )}
 
+          {activeTab === "updates" && (
+            <div id="client-settings-panel-updates" role="tabpanel" aria-labelledby="client-settings-tab-updates" className="space-y-5">
           {/* SECTION: AUTOMATIC UPDATES */}
+          {matchesSettingsSearch(settingsSearchQuery, "software updates", "automatic update", "version", "release", "custom URL", "check for updates", "updates") && (
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-4 shadow-sm transition">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-x-2">
@@ -445,8 +502,15 @@ export const SettingsModal = () => {
               </div>
             </div>
           </div>
+          )}
 
+            </div>
+          )}
+
+          {activeTab === "appearance-chat" && (
+            <div id="client-settings-panel-appearance-chat" role="tabpanel" aria-labelledby="client-settings-tab-appearance-chat" className="space-y-5">
           {/* SECTION: USER DISPLAY NAME FORMAT */}
+          {matchesSettingsSearch(settingsSearchQuery, "user display name", "nickname", "realname", "username", "appearance") && (
           <div className="flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-3 shadow-sm transition">
             <div className="flex items-center gap-x-2">
               <Sparkles className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
@@ -467,8 +531,10 @@ export const SettingsModal = () => {
               <option value="username">Username (fallback to nickname)</option>
             </select>
           </div>
+          )}
 
           {/* Compact Mode */}
+          {matchesSettingsSearch(settingsSearchQuery, "compact mode", "avatar", "appearance") && (
           <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
             <div className="space-y-0.5 pr-4">
               <div className="flex items-center gap-x-2">
@@ -486,8 +552,10 @@ export const SettingsModal = () => {
               onCheckedChange={(checked) => setCompactMode(checked)}
             />
           </div>
+          )}
 
           {/* Confirm Before Leaving Channel */}
+          {matchesSettingsSearch(settingsSearchQuery, "confirm before leaving channel", "leave channel", "confirmation") && (
           <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
             <div className="space-y-0.5 pr-4">
               <div className="flex items-center gap-x-2">
@@ -505,8 +573,10 @@ export const SettingsModal = () => {
               onCheckedChange={(checked) => setConfirmLeaveChannel(checked)}
             />
           </div>
+          )}
 
           {/* Slash Command Autocomplete */}
+          {matchesSettingsSearch(settingsSearchQuery, "slash command autocomplete", "command suggestions", "suggestions") && (
           <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
             <div className="space-y-0.5 pr-4">
               <div className="flex items-center gap-x-2">
@@ -524,8 +594,10 @@ export const SettingsModal = () => {
               onCheckedChange={(checked) => setEnableCommandSuggestions(checked)}
             />
           </div>
+          )}
 
           {/* Markdown Rendering */}
+          {matchesSettingsSearch(settingsSearchQuery, "markdown rendering", "markdown", "bold", "italic", "underline", "strike", "code", "spoiler") && (
           <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
             <div className="space-y-0.5 pr-4">
               <div className="flex items-center gap-x-2">
@@ -546,8 +618,10 @@ export const SettingsModal = () => {
               onCheckedChange={(checked) => setEnableMarkdown(checked)}
             />
           </div>
+          )}
 
           {/* Formatting Preview */}
+          {matchesSettingsSearch(settingsSearchQuery, "message formatting preview", "formatting", "composer") && (
           <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
             <div className="space-y-0.5 pr-4">
               <div className="flex items-center gap-x-2">
@@ -566,8 +640,10 @@ export const SettingsModal = () => {
               disabled={!enableMarkdown}
             />
           </div>
+          )}
 
           {/* Jumboji Enlarged Emoji Size */}
+          {matchesSettingsSearch(settingsSearchQuery, "enlarged emoji size", "jumboji", "emoji") && (
           <div className="flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-3 shadow-sm transition">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-x-2">
@@ -602,8 +678,10 @@ export const SettingsModal = () => {
               />
             </div>
           </div>
+          )}
 
           {/* Sort Private Messages by Unread */}
+          {matchesSettingsSearch(settingsSearchQuery, "sort private messages by unread", "private messages", "unread") && (
           <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
             <div className="space-y-0.5 pr-4">
               <div className="flex items-center gap-x-2">
@@ -621,8 +699,10 @@ export const SettingsModal = () => {
               onCheckedChange={(checked) => setSortDmByUnread(checked)}
             />
           </div>
+          )}
 
           {/* Base Private Message Sorting */}
+          {matchesSettingsSearch(settingsSearchQuery, "sort private messages", "private messages", "opening order", "alphabetical") && (
           <div className="flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-3 shadow-sm transition">
             <div className="flex items-center gap-x-2">
               <ArrowUpDown className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
@@ -642,8 +722,10 @@ export const SettingsModal = () => {
               <option value="alphabetical">Alphabetical</option>
             </select>
           </div>
+          )}
 
           {/* Status Indicator Display Mode */}
+          {matchesSettingsSearch(settingsSearchQuery, "connection status indicator", "status", "IRC", "resource server", "internet") && (
           <div className="flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-3 shadow-sm transition">
             <div className="flex items-center gap-x-2">
               <Activity className="w-4 h-4 text-emerald-500" />
@@ -664,8 +746,10 @@ export const SettingsModal = () => {
               <option value="disabled">Disabled (hidden)</option>
             </select>
           </div>
+          )}
 
           {/* Message of the day (MOTD) */}
+          {matchesSettingsSearch(settingsSearchQuery, "message of the day", "MOTD", "server", "popup", "connect", "join") && (
           <div className="flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-3 shadow-sm transition">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-x-2">
@@ -696,8 +780,10 @@ export const SettingsModal = () => {
               </select>
             )}
           </div>
+          )}
 
           {/* Date Display Format */}
+          {matchesSettingsSearch(settingsSearchQuery, "date display format", "timestamp", "time", "date", "ISO 8601") && (
           <div className="flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-3 shadow-sm transition">
             <div className="flex items-center gap-x-2">
               <Calendar className="w-4 h-4 text-indigo-500" />
@@ -745,8 +831,10 @@ export const SettingsModal = () => {
               </span>
             </div>
           </div>
+          )}
 
           {/* Nickname Completion / Addressing Format */}
+          {matchesSettingsSearch(settingsSearchQuery, "nickname completion format", "nickname", "addressing", "Tab", "prefix", "suffix") && (
           <div className="flex flex-col rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-3 shadow-sm transition">
             <div className="flex items-center gap-x-2">
               <AtSign className="w-4 h-4 text-indigo-500" />
@@ -797,8 +885,15 @@ export const SettingsModal = () => {
               </span>
             </div>
           </div>
+          )}
 
+            </div>
+          )}
+
+          {activeTab === "media" && (
+            <div id="client-settings-panel-media" role="tabpanel" aria-labelledby="client-settings-tab-media" className="space-y-5">
           {/* Switch 1: Enable Link Previews (All embeds) */}
+          {matchesSettingsSearch(settingsSearchQuery, "link previews", "embeds", "images", "videos", "YouTube", "websites", "media") && (
           <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
             <div className="space-y-0.5 pr-4">
               <div className="flex items-center gap-x-2">
@@ -816,8 +911,10 @@ export const SettingsModal = () => {
               onCheckedChange={(checked) => setEnableLinkPreviews(checked)}
             />
           </div>
+          )}
 
           {/* Switch 1b: Collapse Images by Default */}
+          {matchesSettingsSearch(settingsSearchQuery, "collapse images by default", "image", "collapse", "attachments", "media") && (
           <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
             <div className="space-y-0.5 pr-4">
               <div className="flex items-center gap-x-2">
@@ -835,9 +932,10 @@ export const SettingsModal = () => {
               onCheckedChange={(checked) => setAutoCollapseImages(checked)}
             />
           </div>
+          )}
 
           {/* Switch 2: Web Page Metadata API Previews */}
-          {enableLinkPreviews && (
+          {enableLinkPreviews && matchesSettingsSearch(settingsSearchQuery, "fetch web page metadata", "web page", "metadata", "API", "thumbnail") && (
             <div className="flex flex-row items-center justify-between rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm transition">
               <div className="space-y-0.5 pr-4">
                 <div className="flex items-center gap-x-2">
@@ -858,7 +956,7 @@ export const SettingsModal = () => {
           )}
 
           {/* Custom Link Preview API Endpoint Input */}
-          {enableLinkPreviews && enableWebPagePreviews && (
+          {enableLinkPreviews && enableWebPagePreviews && matchesSettingsSearch(settingsSearchQuery, "preview API endpoint", "API", "metadata", "endpoint", "URL") && (
             <div className="rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-2 shadow-sm transition">
               <div className="flex items-center gap-x-2">
                 <Server className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
@@ -879,6 +977,7 @@ export const SettingsModal = () => {
           )}
 
           {/* SECTION: IMAGE UPLOADER SERVER */}
+          {matchesSettingsSearch(settingsSearchQuery, "image upload provider", "upload", "image", "Litterbox", "POMF", "retention", "hosting", "media") && (
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-4 shadow-sm transition">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-x-2">
@@ -969,8 +1068,15 @@ export const SettingsModal = () => {
               </div>
             )}
           </div>
+          )}
 
+            </div>
+          )}
+
+          {activeTab === "privacy" && (
+            <div id="client-settings-panel-privacy" role="tabpanel" aria-labelledby="client-settings-tab-privacy" className="space-y-5">
           {/* SECTION: READING AUTHORIZATION (URL RULES) */}
+          {matchesSettingsSearch(settingsSearchQuery, "image read authorization", "authorization", "URL headers", "header", "token", "security", "privacy") && (
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 space-y-3 shadow-sm transition">
             <div className="flex items-center gap-x-2">
               <Key className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
@@ -1045,6 +1151,10 @@ export const SettingsModal = () => {
                 <Plus className="w-3.5 h-3.5 mr-1" /> Add authorization rule
               </Button>
             </form>
+          </div>
+          )}
+            </div>
+          )}
           </div>
         </div>
       </DialogContent>

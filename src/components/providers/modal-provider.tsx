@@ -11,6 +11,7 @@ import { DeleteChannelModal } from "@/components/modals/delete-channel-modal";
 import { SettingsModal } from "@/components/modals/settings-modal";
 import { ImagePreviewModal } from "@/components/modals/image-preview-modal";
 import { IrcErrorModal } from "@/components/modals/irc-error-modal";
+import { WhoisModal } from "@/components/modals/whois-modal";
 import { EditTopicModal } from "@/components/modals/edit-topic-modal";
 import { JoinChannelPasswordModal } from "@/components/modals/join-channel-password-modal";
 import { ChannelSettingsModal } from "@/components/modals/channel-settings-modal";
@@ -47,6 +48,7 @@ export const ModalProvider = () => {
       <SettingsModal />
       <ImagePreviewModal />
       <IrcErrorModal />
+      <WhoisModal />
       <EditTopicModal />
       <JoinChannelPasswordModal />
       <ChannelSettingsModal />

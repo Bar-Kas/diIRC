@@ -6,7 +6,7 @@ import { useMockStore, getServerSelfMember, getServerActiveNick, isSystemMessage
 import { useModalStore } from "@/hooks/use-modal-store";
 import { useDraftStore } from "@/hooks/use-draft-store";
 import { stripCompatReply, useReplyStore } from "@/hooks/use-reply-store";
-import { Server, ChannelType } from "@/types";
+import { Server, ChannelType, WhoisData } from "@/types";
 import { extractFlag } from "@/lib/flag-tips";
 import {
   resolveEffectiveNotificationSettings,
@@ -63,6 +63,7 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
   const connectingRef = useRef<Set<string>>(new Set());
   const attemptsRef = useRef<Map<string, number>>(new Map());
   const nextReconnectTimeRef = useRef<Map<string, number>>(new Map());
+  const whoisRepliesRef = useRef<Map<string, WhoisData>>(new Map());
 
   // Clear notifications & unreads for active chat when switched or focused
   useEffect(() => {
@@ -1200,6 +1201,128 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
 
     setupModeErrorListener();
 
+    let unlistenCommandErrorFn: (() => void) | null = null;
+    const setupCommandErrorListener = async () => {
+      try {
+        const unlistenCommandError = await listen<{
+          server_id: string;
+          command: string;
+          error: string;
+        }>("irc_command_error", (event) => {
+          const command = event.payload.command?.trim().replace(/[\r\n\u0000]/g, " ") || "command";
+          const error = event.payload.error?.trim().replace(/[\r\n\u0000]/g, " ") || "Unknown IRC command.";
+
+          if (command.toUpperCase() === "WHOIS") {
+            useModalStore.getState().onClose("whois");
+          }
+          useModalStore.getState().onOpen("ircError", {
+            title: "IRC command error",
+            description: `/${command}: ${error}`,
+          });
+        });
+
+        if (isCancelled) {
+          unlistenCommandError();
+        } else {
+          unlistenCommandErrorFn = unlistenCommandError;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC command error listener:", error);
+      }
+    };
+
+    setupCommandErrorListener();
+
+    let unlistenWhoisFn: (() => void) | null = null;
+    const setupWhoisListener = async () => {
+      try {
+        const unlistenWhois = await listen<{
+          server_id: string;
+          query: string;
+          kind: string;
+          nick?: string;
+          username?: string;
+          host?: string;
+          realname?: string;
+          server?: string;
+          server_info?: string;
+          channels?: string[];
+          away?: boolean;
+          away_reason?: string;
+          idle_seconds?: number;
+          is_operator?: boolean;
+        }>("irc_whois_event", (event) => {
+          const payload = event.payload;
+          const query = payload.query?.trim();
+          if (!query || !payload.server_id) return;
+
+          const key = `${payload.server_id}:${query.toLowerCase()}`;
+          const knownMember = useMockStore.getState().servers
+            .find((item) => item.id === payload.server_id)
+            ?.members.find((item) => item.profile.name.toLowerCase() === query.toLowerCase());
+          const current = whoisRepliesRef.current.get(key) || {
+            nick: query,
+            imageUrl: knownMember?.profile.imageUrl,
+          };
+          const next: WhoisData = {
+            ...current,
+            nick: payload.nick?.trim() || current.nick || query,
+            username: payload.username?.trim() || current.username,
+            host: payload.host?.trim() || current.host,
+            realname: payload.realname?.trim() || current.realname,
+            server: payload.server?.trim() || current.server,
+            serverInfo: payload.server_info?.trim() || current.serverInfo,
+            channels: payload.channels?.length ? payload.channels : current.channels,
+            away: payload.away || current.away,
+            awayReason: payload.away_reason?.trim() || current.awayReason,
+            idleSeconds: payload.idle_seconds ?? current.idleSeconds,
+            isOperator: payload.is_operator || current.isOperator,
+          };
+
+          if (payload.kind === "complete") {
+            whoisRepliesRef.current.delete(key);
+            const hasWhoisDetails = Boolean(
+              next.username?.trim() ||
+              next.host?.trim() ||
+              next.realname?.trim() ||
+              next.server?.trim() ||
+              next.serverInfo?.trim() ||
+              next.channels?.length ||
+              next.away ||
+              next.awayReason?.trim() ||
+              next.idleSeconds !== undefined ||
+              next.isOperator
+            );
+
+            if (hasWhoisDetails) {
+              useModalStore.getState().onOpen("whois", {
+                serverId: payload.server_id,
+                whois: next,
+              });
+            } else {
+              useModalStore.getState().onClose("whois");
+              useModalStore.getState().onOpen("ircError", {
+                title: "WHOIS request failed",
+                description: `No WHOIS information was returned for ${next.nick || query}.`,
+              });
+            }
+          } else {
+            whoisRepliesRef.current.set(key, next);
+          }
+        });
+
+        if (isCancelled) {
+          unlistenWhois();
+        } else {
+          unlistenWhoisFn = unlistenWhois;
+        }
+      } catch (error) {
+        console.error("Failed to setup IRC WHOIS listener:", error);
+      }
+    };
+
+    setupWhoisListener();
+
     let unlistenMotdFn: (() => void) | null = null;
     const setupMotdListener = async () => {
       try {
@@ -1270,6 +1393,8 @@ export const IrcProvider = ({ children }: { children: React.ReactNode }) => {
       if (unlistenInvitedFn) unlistenInvitedFn();
       if (unlistenModeFn) unlistenModeFn();
       if (unlistenModeErrorFn) unlistenModeErrorFn();
+      if (unlistenCommandErrorFn) unlistenCommandErrorFn();
+      if (unlistenWhoisFn) unlistenWhoisFn();
       if (unlistenMotdFn) unlistenMotdFn();
       if (unlistenAwayFn) unlistenAwayFn();
     };

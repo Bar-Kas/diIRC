@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useParams } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -41,7 +41,7 @@ import { cn } from "@/lib/utils";
 
 export const MotdModal = () => {
   const { isOpen, onClose, type, data } = useModal();
-  const params = useParams();
+  const location = useLocation();
   const servers = useMockStore((state) => state.servers);
   const serverMotds = useMockStore((state) => state.serverMotds);
   const globalMotdPolicy = useMockStore((state) => state.globalMotdPolicy);
@@ -51,10 +51,18 @@ export const MotdModal = () => {
   const markServerMotdSeen = useMockStore((state) => state.markServerMotdSeen);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
-  const activeServerId = data?.server?.id || data?.serverId || params.serverId || servers[0]?.id;
-  const activeServer = (activeServerId ? servers.find((s) => s.id === activeServerId) : null) || servers[0];
-
-  const rawMotdLines = (activeServerId && serverMotds[activeServerId]) || data?.motd || activeServer?.motd || [];
+  // ModalProvider is mounted next to Routes, so useParams() is empty here. Prefer the
+  // explicit serverId carried by the opener and only use the current route as a fallback.
+  const routeServerId = location.pathname.match(/^\/servers\/([^/]+)/)?.[1];
+  const activeServerId = data?.serverId || routeServerId || data?.server?.id;
+  const dataServerMatchesSelection =
+    (!data?.serverId || data.serverId === activeServerId) &&
+    (!data?.server || data.server.id === activeServerId);
+  const activeServer = activeServerId
+    ? servers.find((s) => s.id === activeServerId) || (dataServerMatchesSelection ? data?.server : undefined)
+    : undefined;
+  const storedMotd = activeServerId ? serverMotds[activeServerId] : undefined;
+  const rawMotdLines = storedMotd ?? (dataServerMatchesSelection ? data?.motd : undefined) ?? activeServer?.motd ?? [];
 
   const [isRefreshing, setIsRefreshing] = useState(false);
 

@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "release": "bumpp package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml",
+    "devtools:irc": "node devtools/irc-test-server/index.js",
     "devtools:bots": "node devtools/bot-joiner/index.js",
+    "test:irc": "node --test devtools/irc-test-server/test-harness.mjs",
     "build:e2e": "cargo build --manifest-path src-tauri/Cargo.toml",
     "test:e2e": "npm run build:e2e && wdio run test/wdio.conf.js"
   },

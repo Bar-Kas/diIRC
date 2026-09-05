@@ -63,6 +63,23 @@ export const ChatMembersSidebar = ({
     m.profileId !== currentProfile.id &&
     m.profile.name.toLowerCase() !== selfNickLower;
 
+  const getAwayState = (member: Member, isSelf = false) => {
+    const memberNickLower = member.profile.name.toLowerCase();
+    const serverAwayUsers = awayUsersMap[server.id];
+    const serverAwayReasons = awayReasonsMap[server.id];
+    const rawReason = isSelf
+      ? serverAwayReasons?.[ourNick.toLowerCase()] || serverAwayReasons?.[memberNickLower]
+      : serverAwayReasons?.[memberNickLower];
+    const trimmedReason = rawReason?.trim();
+
+    return {
+      isAway: isSelf
+        ? !!selfAwayMap[server.id] || !!serverAwayUsers?.[ourNick.toLowerCase()] || !!serverAwayUsers?.[memberNickLower]
+        : !!serverAwayUsers?.[memberNickLower],
+      awayReason: trimmedReason && trimmedReason.toLowerCase() !== "away" ? trimmedReason : undefined,
+    };
+  };
+
   // Determine list of remaining users to display:
   // in channel mode: filter members in this channel
   // in PM mode: show active conversation partners
@@ -132,14 +149,7 @@ export const ChatMembersSidebar = ({
     const displayName = getMemberDisplayName(member, server);
     const userModes = channel ? channelUserModesMap[channel.id]?.[member.profile.name.toLowerCase()] || [] : [];
     const highestRole = getHighestChannelRole(userModes);
-
-    const memberNickLower = member.profile.name.toLowerCase();
-    const isAway = isSelf
-      ? !!selfAwayMap[server.id] || !!awayUsersMap[server.id]?.[ourNick.toLowerCase()] || !!awayUsersMap[server.id]?.[memberNickLower]
-      : !!awayUsersMap[server.id]?.[memberNickLower];
-    const awayReason = isSelf
-      ? awayReasonsMap[server.id]?.[ourNick.toLowerCase()] || awayReasonsMap[server.id]?.[memberNickLower]
-      : awayReasonsMap[server.id]?.[memberNickLower];
+    const { isAway, awayReason } = getAwayState(member, isSelf);
 
     return (
       <UserHoverCard member={member} server={server} channel={channel} side="left">
@@ -156,7 +166,9 @@ export const ChatMembersSidebar = ({
             {isAway && (
               <ActionTooltip label={awayReason ? `Away: ${awayReason}` : "Away"} side="left">
                 <span 
-                  className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-yellow-500 dark:bg-yellow-400 rounded-full ring-2 ring-[#F2F3F5] dark:ring-[#2B2D31] cursor-pointer"
+                  role="img"
+                  aria-label={awayReason ? `Away: ${awayReason}` : "Away"}
+                  className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-zinc-400 dark:bg-zinc-500 rounded-full ring-2 ring-[#F2F3F5] dark:ring-[#2B2D31] cursor-pointer"
                 />
               </ActionTooltip>
             )}

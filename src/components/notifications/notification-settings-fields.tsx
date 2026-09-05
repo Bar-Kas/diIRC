@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { Bell, Volume2, Monitor, Clock, Play, FolderOpen, Music, AlertTriangle, AlertCircle, MessageSquare, Hash } from "lucide-react";
+import { Bell, Volume2, Monitor, Clock, Play, FolderOpen, Music, AlertTriangle, AlertCircle, MessageSquare, Hash, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -8,6 +8,7 @@ import { playNotificationSound } from "@/lib/notification-sound";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { readFile, stat } from "@tauri-apps/plugin-fs";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { matchesSettingsSearch } from "@/components/settings/settings-tabs";
 
 export interface NotificationSettingsValues {
   channelNotifications?: ChannelNotificationMode | ChannelNotificationOverrideValue;
@@ -20,6 +21,7 @@ export interface NotificationSettingsValues {
   soundCooldown?: number | "default";
   popup?: boolean | NotificationOverrideValue;
   taskbar?: boolean | NotificationOverrideValue;
+  anonymousNotifications?: boolean | NotificationOverrideValue;
 }
 
 export interface InheritedNotificationValues {
@@ -31,6 +33,7 @@ export interface InheritedNotificationValues {
   cooldownSec?: string;
   popupStr?: string;
   taskbarStr?: string;
+  anonymousNotificationsStr?: string;
 }
 
 interface NotificationSettingsFieldsProps {
@@ -38,6 +41,7 @@ interface NotificationSettingsFieldsProps {
   values: NotificationSettingsValues;
   inherited?: InheritedNotificationValues;
   onChange: (field: keyof NotificationSettingsValues, value: any) => void;
+  searchQuery?: string;
 }
 
 const isTauriEnv =
@@ -52,6 +56,7 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
   values,
   inherited = {},
   onChange,
+  searchQuery = "",
 }) => {
   const channelFileInputRef = useRef<HTMLInputElement>(null);
   const dmFileInputRef = useRef<HTMLInputElement>(null);
@@ -64,6 +69,42 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
   const isChannelOrDm = mode === "channel" || mode === "dm";
   const isChannelMode = mode === "channel";
   const isDmMode = mode === "dm";
+
+  const matchesNotificationSetting = (...terms: string[]) =>
+    matchesSettingsSearch(searchQuery, ...terms);
+  const showChannelNotifications =
+    (isGlobal || isServer || isChannelMode) &&
+    matchesNotificationSetting("channel notifications", "messages", "mentions");
+  const showPrivateMessageNotifications =
+    (isGlobal || isServer || isDmMode) &&
+    matchesNotificationSetting("private message notifications", "direct messages", "DM");
+  const showAnonymousNotifications = matchesNotificationSetting(
+    "anonymous notifications",
+    "message content privacy",
+    "hide content"
+  );
+  const showSoundAlert = matchesNotificationSetting("sound alert", "audio", "sound");
+  const showChannelSoundTone = matchesNotificationSetting(
+    "channel sound tone",
+    "sound tone",
+    "notification sound",
+    "custom audio"
+  );
+  const showDmSoundTone =
+    (isGlobal || isServer) &&
+    matchesNotificationSetting("private message tone", "DM sound", "private message sound");
+  const showCooldown = matchesNotificationSetting(
+    "notification cooldown",
+    "rate limit",
+    "cooldown"
+  );
+  const showPopup = matchesNotificationSetting(
+    "system desktop popup",
+    "desktop",
+    "popup",
+    "system"
+  );
+  const showTaskbar = matchesNotificationSetting("taskbar alert", "taskbar");
 
   const triggerFileSelection = async (
     field: "customSoundUrl" | "customDmSoundUrl",
@@ -186,6 +227,15 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
   const soundIsEnabled = isGlobal
     ? Boolean(values.sound)
     : values.sound !== "disabled";
+  const hasVisibleSetting =
+    showChannelNotifications ||
+    showPrivateMessageNotifications ||
+    showAnonymousNotifications ||
+    showSoundAlert ||
+    (soundIsEnabled && (showChannelSoundTone || showDmSoundTone)) ||
+    showCooldown ||
+    showPopup ||
+    showTaskbar;
 
   return (
     <div className="space-y-4 rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-4 shadow-sm">
@@ -208,7 +258,7 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
       </p>
 
       {/* CHANNEL NOTIFICATIONS CONTROL */}
-      {(isGlobal || isServer || isChannelMode) && (
+      {showChannelNotifications && (
         <div className="flex items-center justify-between gap-x-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
           <div className="flex items-center gap-x-1.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
             <Hash className="w-3.5 h-3.5 text-zinc-500" />
@@ -240,7 +290,7 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
       )}
 
       {/* PRIVATE MESSAGE NOTIFICATIONS CONTROL */}
-      {(isGlobal || isServer || isDmMode) && (
+      {showPrivateMessageNotifications && (
         <div className="flex items-center justify-between gap-x-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
           <div className="flex items-center gap-x-1.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
             <MessageSquare className="w-3.5 h-3.5 text-zinc-500" />
@@ -269,8 +319,32 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
         </div>
       )}
 
+      {/* MESSAGE CONTENT PRIVACY CONTROL */}
+      {showAnonymousNotifications && <div className="flex items-center justify-between gap-x-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
+        <div className="flex items-center gap-x-1.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+          <EyeOff className="w-3.5 h-3.5 text-zinc-500" />
+          Anonymous notifications
+        </div>
+        {isGlobal ? (
+          <Switch
+            checked={Boolean(values.anonymousNotifications)}
+            onCheckedChange={(checked) => onChange("anonymousNotifications", checked)}
+          />
+        ) : (
+          <select
+            value={(values.anonymousNotifications as string) || "default"}
+            onChange={(e) => onChange("anonymousNotifications", e.target.value as NotificationOverrideValue)}
+            className="bg-white dark:bg-[#1e1f22] border border-zinc-300 dark:border-zinc-700 rounded-lg px-2.5 py-1 text-xs font-medium text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+          >
+            <option value="default">🌐 Default ({inherited.anonymousNotificationsStr || "Show content"})</option>
+            <option value="enabled">🙈 Enabled (hide content)</option>
+            <option value="disabled">👁️ Disabled (show content)</option>
+          </select>
+        )}
+      </div>}
+
       {/* 1. Sound Alert Switch or Select */}
-      <div className="flex items-center justify-between gap-x-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
+      {showSoundAlert && <div className="flex items-center justify-between gap-x-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
         <div className="flex items-center gap-x-1.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
           <Volume2 className="w-3.5 h-3.5 text-zinc-500" />
           Sound alert
@@ -291,10 +365,10 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
             <option value="disabled">🚫 Disabled (Mute)</option>
           </select>
         )}
-      </div>
+      </div>}
 
       {/* 2. Sound Tone / Presets */}
-      {soundIsEnabled && (
+      {soundIsEnabled && (showChannelSoundTone || showDmSoundTone) && (
         <>
           {/* Hidden HTML File Inputs */}
           <input
@@ -313,7 +387,7 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
           />
 
           {/* Channel Sound Tone (or generic Sound Tone for channel/dm) */}
-          <div className="space-y-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
+          {showChannelSoundTone && <div className="space-y-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
             <div className="flex items-center justify-between gap-x-2">
               <div className="flex items-center gap-x-1.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100 shrink-0">
                 <Volume2 className="w-3.5 h-3.5 text-zinc-500" />
@@ -405,10 +479,10 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
                 </Button>
               </div>
             )}
-          </div>
+          </div>}
 
           {/* DM Sound Tone (for Global and Server settings) */}
-          {(isGlobal || isServer) && (
+          {showDmSoundTone && (
             <div className="space-y-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
               <div className="flex items-center justify-between gap-x-2">
                 <div className="flex items-center gap-x-1.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100 shrink-0">
@@ -501,7 +575,7 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
           )}
 
           {/* 3. Sound Cooldown / Rate Limit */}
-          <div className="space-y-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
+          {showCooldown && <div className="space-y-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
             <div className="flex items-center justify-between gap-x-2">
               <div className="flex items-center gap-x-1.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
                 <Clock className="w-3.5 h-3.5 text-zinc-500" />
@@ -555,12 +629,12 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
                 </div>
               </div>
             )}
-          </div>
+          </div>}
         </>
       )}
 
       {/* 4. System Desktop Popup */}
-      <div className="flex items-center justify-between gap-x-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
+      {showPopup && <div className="flex items-center justify-between gap-x-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
         <div className="flex items-center gap-x-1.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
           <Bell className="w-3.5 h-3.5 text-zinc-500" />
           System Desktop Popup
@@ -581,10 +655,10 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
             <option value="disabled">🚫 Disabled</option>
           </select>
         )}
-      </div>
+      </div>}
 
       {/* 5. Taskbar Alert */}
-      <div className="flex items-center justify-between gap-x-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
+      {showTaskbar && <div className="flex items-center justify-between gap-x-2 pt-2 border-t border-zinc-200 dark:border-zinc-700/60">
         <div className="flex items-center gap-x-1.5 text-xs font-semibold text-zinc-900 dark:text-zinc-100">
           <Monitor className="w-3.5 h-3.5 text-zinc-500" />
           Taskbar Alert
@@ -605,7 +679,12 @@ export const NotificationSettingsFields: React.FC<NotificationSettingsFieldsProp
             <option value="disabled">🚫 Disabled</option>
           </select>
         )}
-      </div>
+      </div>}
+      {searchQuery.trim() && !hasVisibleSetting && (
+        <p className="border-t border-zinc-200 pt-3 text-xs text-zinc-500 dark:border-zinc-700/60 dark:text-zinc-400">
+          No matching settings in this category.
+        </p>
+      )}
     </div>
   );
 };

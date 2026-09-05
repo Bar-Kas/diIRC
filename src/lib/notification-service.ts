@@ -24,6 +24,7 @@ export function resolveEffectiveNotificationSettings(
   soundCooldownMs: number;
   soundPreset: SoundPreset;
   customSoundUrl?: string;
+  anonymousNotifications: boolean;
   channelNotifications: ChannelNotificationMode;
   dmNotifications: DmNotificationMode;
   shouldNotify: (hasMention?: boolean) => boolean;
@@ -35,6 +36,7 @@ export function resolveEffectiveNotificationSettings(
     soundCooldownMs: global?.soundCooldownMs ?? 3000,
     popupEnabled: global?.popupEnabled ?? true,
     taskbarHighlightEnabled: global?.taskbarHighlightEnabled ?? true,
+    anonymousNotifications: global?.anonymousNotifications ?? false,
     channelNotifications: global?.channelNotifications ?? "mentions",
     dmNotifications: global?.dmNotifications ?? "all",
   };
@@ -87,6 +89,14 @@ export function resolveEffectiveNotificationSettings(
     taskbar = channelOverride.taskbar === "enabled";
   }
 
+  let anonymousNotifications: boolean = globalDefaults.anonymousNotifications ?? false;
+  if (serverOverride?.anonymousNotifications && serverOverride.anonymousNotifications !== "default") {
+    anonymousNotifications = serverOverride.anonymousNotifications === "enabled";
+  }
+  if (channelOverride?.anonymousNotifications && channelOverride.anonymousNotifications !== "default") {
+    anonymousNotifications = channelOverride.anonymousNotifications === "enabled";
+  }
+
   // Resolve Sound Preset and Custom Sound URL
   let soundPreset: SoundPreset = isDm
     ? (globalDefaults.dmSoundPreset || globalDefaults.soundPreset)
@@ -135,6 +145,7 @@ export function resolveEffectiveNotificationSettings(
     soundCooldownMs,
     soundPreset,
     customSoundUrl,
+    anonymousNotifications,
     channelNotifications,
     dmNotifications,
     shouldNotify,
@@ -166,6 +177,7 @@ export interface TriggerNotificationParams {
     soundCooldownMs: number;
     soundPreset: SoundPreset;
     customSoundUrl?: string;
+    anonymousNotifications?: boolean;
     channelNotifications?: ChannelNotificationMode;
     dmNotifications?: DmNotificationMode;
     shouldNotify?: (hasMention?: boolean) => boolean;
@@ -274,6 +286,10 @@ export async function triggerIncomingNotification({
         const channelOrName = group.baseTitle.split(" - ")[0] || group.baseTitle;
         finalTitle = `${channelOrName} (${group.count} new messages)`;
         finalBody = group.lastSender ? `${group.lastSender}: ${group.lastBody}` : group.lastBody;
+      }
+
+      if (effectiveSettings.anonymousNotifications) {
+        finalBody = "New message";
       }
 
       if (isTauriEnv && isLinux) {

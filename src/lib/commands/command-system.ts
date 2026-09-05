@@ -1,8 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { CustomCommand, Member, Server } from "@/types";
-import { inviteUserToChannel } from "@/lib/irc-actions";
+import { inviteUserToChannel, requestWhois } from "@/lib/irc-actions";
 import { dedentCode, detectCodeLanguage } from "@/lib/markdown/markdown-utils";
 import { getIrcByteCount, getIrcMaxMessageBytes } from "@/lib/system-utils";
+import { useModalStore } from "@/hooks/use-modal-store";
 
 export interface CommandContext {
   serverId: string;
@@ -13,7 +14,13 @@ export interface CommandContext {
   type: "channel" | "conversation";
   currentMember: Member;
   activeServer: Server;
-  addMessage: (channelId: string, member: Member, content: string) => void;
+  addMessage: (
+    channelId: string,
+    member: Member,
+    content: string,
+    fileUrl?: string | null,
+    isSystem?: boolean
+  ) => void;
   addDirectMessage: (conversationId: string, member: Member, content: string, fileUrl?: string | null, isSystem?: boolean) => void;
   navigate?: (path: string) => void;
   setInputContent?: (content: string, cursorPosition?: number) => void;
@@ -23,6 +30,65 @@ export interface SlashCommand {
   name: string;
   description: string;
   execute: (args: string, ctx: CommandContext) => Promise<boolean | void> | boolean | void;
+}
+
+interface RawIrcCommand {
+  command: string;
+  args: string[];
+}
+
+const SAFE_RAW_COMMAND = /^[A-Za-z][A-Za-z0-9_-]{0,31}$/;
+
+function addRawCommandError(command: string, error: unknown) {
+  const detail = String(error || "The command could not be sent.")
+    .replace(/[\r\n\u0000]/g, " ")
+    .trim();
+
+  useModalStore.getState().onOpen("ircError", {
+    title: "IRC command error",
+    description: `/${command || "command"}: ${detail}`,
+  });
+
+  console.error(`Failed to send raw IRC command /${command || "command"}:`, error);
+}
+
+/**
+ * Parse a slash command using IRC's parameter convention. A parameter that
+ * starts with `:` consumes the rest of the line as one trailing parameter;
+ * the delimiter itself is omitted because irc-proto adds it when serializing.
+ */
+export function parseRawIrcCommand(input: string): RawIrcCommand | null {
+  const trimmed = input.trim();
+  if (!trimmed.startsWith("/")) return null;
+
+  const body = trimmed.slice(1);
+  if (!body || /[\r\n\u0000]/.test(body)) return null;
+
+  const commandMatch = body.match(/^([^ \t]+)(?:[ \t]+([\s\S]*))?$/);
+  if (!commandMatch) return null;
+
+  const command = commandMatch[1];
+  if (!SAFE_RAW_COMMAND.test(command)) return null;
+
+  const args: string[] = [];
+  let rest = commandMatch[2] || "";
+
+  while (rest) {
+    rest = rest.replace(/^[ \t]+/, "");
+    if (!rest) break;
+
+    if (rest.startsWith(":")) {
+      args.push(rest.slice(1));
+      break;
+    }
+
+    const argumentMatch = rest.match(/^([^ \t]+)(?:[ \t]+([\s\S]*))?$/);
+    if (!argumentMatch) return null;
+    args.push(argumentMatch[1]);
+    rest = argumentMatch[2] || "";
+  }
+
+  return { command: command.toUpperCase(), args };
 }
 
 export function normalizeCommandTrigger(trigger: string): string {
@@ -176,7 +242,10 @@ class CommandRegistry {
     const commandName = parts[0]?.toLowerCase();
     const args = trimmed.slice(1 + (parts[0]?.length || 0)).trim();
 
-    if (!commandName) return false;
+    if (!commandName) {
+      addRawCommandError("", "A command name is required.");
+      return true;
+    }
 
     const command = this.get(commandName);
     if (command) {
@@ -184,7 +253,35 @@ class CommandRegistry {
       return true;
     }
 
-    return false;
+    // ChatInput expands matching user-defined commands after the registry
+    // returns false. Keep that existing path ahead of the raw IRC fallback.
+    if (expandCustomCommand(trimmed, ctx.activeServer.customCommands) !== null) {
+      return false;
+    }
+
+    const rawCommand = parseRawIrcCommand(trimmed);
+    if (!rawCommand) {
+      addRawCommandError(commandName, "The command name or arguments are not valid IRC syntax.");
+      return true;
+    }
+
+    try {
+      if (rawCommand.command === "WHOIS") {
+        await requestWhois(ctx.serverId, rawCommand.args[0] || "", rawCommand.args);
+      } else {
+        await invoke("send_raw", {
+          serverId: ctx.serverId,
+          command: rawCommand.command,
+          args: rawCommand.args,
+        });
+      }
+    } catch (error) {
+      addRawCommandError(rawCommand.command, error);
+    }
+
+    // Raw commands are handled by the native IRC bridge. Do not let ChatInput
+    // fall through to its normal PRIVMSG path, which would echo the slash line.
+    return true;
   }
 }
 

@@ -702,6 +702,7 @@ export const useMockStore = create<MockState>()(
         soundCooldownMs: 3000,
         popupEnabled: true,
         taskbarHighlightEnabled: true,
+        anonymousNotifications: false,
         channelNotifications: "mentions",
         dmNotifications: "all",
       },

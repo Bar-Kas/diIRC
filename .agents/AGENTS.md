@@ -1,12 +1,25 @@
 # Workspace Guidelines
 
-- All user-facing UI messages, dialogs, titles, and labels in the application must be written in English.
-- All user-facing UI messages, dialogs, titles, labels, and button texts in the application must be written in Sentence Case (e.g. "Join channel", "Connect to server", "Save changes"), with only the first word capitalized, except for proper nouns and technical abbreviations/acronyms (e.g., IRC, TLS, SSL, POMF, URL, API).
-- **Mandatory Build After Every Change**: After every code modification, the agent must build the release desktop binary (`npm run tauri build -- --no-bundle`) in headless mode (closing existing `app.exe` first) and instruct the user to run the application (via `quick-build.bat` or `src-tauri/target/release/app.exe`) to test and verify on their desktop.
+AGENTS.md at the repository root is canonical. These are the rules most useful to an Antigravity worker:
 
-## End-to-End (E2E) & Visual Testing
+- Claim one task and non-overlapping files before editing. Use an isolated worktree when available.
+- Keep main for integration. Do not reset, checkout over, or overwrite another agent's work.
+- Run focused checks while iterating; run npm run tauri build -- --no-bundle once after integration, at the Ready for QA gate.
+- Do not launch app.exe or quick-build.bat from a headless agent session. Hand the release binary to the user for desktop QA.
+- Never commit or push without explicit user approval. Keep local coordination documents, generated output, and the test harness uncommitted.
+- Use English Sentence Case for all user-facing UI copy.
 
-- End-to-end and visual regression tests are located under the `test/` directory.
-- Test commands, architecture guidelines, multi-instance orchestration (Multiremote), and multi-stage screenshot practices are fully documented in [`test/documentation.md`](file:///home/a15/programing/diIRC/test/documentation.md).
-- Do not run tests automatically unless explicitly requested by the user or when actively working on tests.
-- Always execute tests via `npm run test:e2e` to ensure Docker dependencies (Ergo IRC), Vite dev server, and dual `tauri-driver` processes are spawned and cleaned up properly.
+## Focused checks
+
+```powershell
+git diff --check
+npm run build
+Push-Location src-tauri; cargo check; Pop-Location
+node --check devtools/irc-test-server/index.js
+```
+
+Run only the command relevant to the changed layer. Documentation-only changes need git diff --check only.
+
+## End-to-end tests
+
+Use npm run test:e2e only when the task explicitly concerns the E2E suite or the user requests it. Otherwise, use the focused checks and the local IRC harness documented in AGENTS.md.

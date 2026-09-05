@@ -103,6 +103,52 @@ struct IrcTopicErrorEvent {
 }
 
 #[derive(Serialize, Clone)]
+struct IrcCommandErrorEvent {
+    server_id: String,
+    command: String,
+    error: String,
+}
+
+#[derive(Serialize, Clone)]
+struct IrcWhoisEvent {
+    server_id: String,
+    query: String,
+    kind: String,
+    nick: Option<String>,
+    username: Option<String>,
+    host: Option<String>,
+    realname: Option<String>,
+    server: Option<String>,
+    server_info: Option<String>,
+    channels: Vec<String>,
+    away: bool,
+    away_reason: Option<String>,
+    idle_seconds: Option<u64>,
+    is_operator: bool,
+}
+
+impl IrcWhoisEvent {
+    fn new(server_id: &str, query: String, kind: &str) -> Self {
+        Self {
+            server_id: server_id.to_string(),
+            query,
+            kind: kind.to_string(),
+            nick: None,
+            username: None,
+            host: None,
+            realname: None,
+            server: None,
+            server_info: None,
+            channels: Vec::new(),
+            away: false,
+            away_reason: None,
+            idle_seconds: None,
+            is_operator: false,
+        }
+    }
+}
+
+#[derive(Serialize, Clone)]
 struct IrcUserHostEvent {
     server_id: String,
     nick: String,
@@ -526,6 +572,34 @@ struct IrcState {
     recent_sent_messages: Arc<Mutex<Vec<RecentSentMessage>>>,
     /// IRCv3 capabilities acknowledged per server_id
     server_caps: Arc<Mutex<HashMap<String, HashSet<String>>>>,
+    /// Key: "server_id\x00nick_lowercase" for WHOIS requests awaiting a terminal reply.
+    pending_whois: Arc<Mutex<HashSet<String>>>,
+}
+
+fn pending_whois_key(server_id: &str, nickname: &str) -> String {
+    format!("{}\0{}", server_id, nickname.trim().to_lowercase())
+}
+
+async fn take_pending_whois(
+    pending_whois: &Arc<Mutex<HashSet<String>>>,
+    server_id: &str,
+    nickname: &str,
+) -> bool {
+    pending_whois
+        .lock()
+        .await
+        .remove(&pending_whois_key(server_id, nickname))
+}
+
+async fn clear_pending_whois_for_server(
+    pending_whois: &Arc<Mutex<HashSet<String>>>,
+    server_id: &str,
+) {
+    let prefix = format!("{}\0", server_id);
+    pending_whois
+        .lock()
+        .await
+        .retain(|key| !key.starts_with(&prefix));
 }
 
 #[derive(Clone)]
@@ -1484,6 +1558,7 @@ async fn connect_irc(
     let channel_members_clone = state.channel_members.clone();
     let recent_sent_clone = state.recent_sent_messages.clone();
     let server_caps_clone = state.server_caps.clone();
+    let pending_whois_clone = state.pending_whois.clone();
     let app_clone = app.clone();
     let log_state_clone = LogState {
         writers: log_state.writers.clone(),
@@ -1505,6 +1580,7 @@ async fn connect_irc(
                 senders_clone.lock().await.remove(&stream_server_id);
                 nicknames_clone.lock().await.remove(&stream_server_id);
                 server_caps_clone.lock().await.remove(&stream_server_id);
+                clear_pending_whois_for_server(&pending_whois_clone, &stream_server_id).await;
                 let _ = app_clone.emit(
                     "irc_status",
                     IrcStatusEvent {
@@ -1999,6 +2075,7 @@ async fn connect_irc(
                             senders_clone.lock().await.remove(&stream_server_id);
                             nicknames_clone.lock().await.remove(&stream_server_id);
                             server_caps_clone.lock().await.remove(&stream_server_id);
+                            clear_pending_whois_for_server(&pending_whois_clone, &stream_server_id).await;
                             break;
                         }
                         Command::Response(Response::ERR_CHANOPRIVSNEEDED, ref args) => {
@@ -2308,6 +2385,17 @@ async fn connect_irc(
                         Command::Response(Response::ERR_NOSUCHNICK, ref args) => {
                             let target = args.get(1).cloned().unwrap_or_default();
                             let reason = args.get(2).cloned().unwrap_or_else(|| "No such nick".to_string());
+                            if take_pending_whois(&pending_whois_clone, &stream_server_id, &target).await {
+                                let _ = app_clone.emit(
+                                    "irc_command_error",
+                                    IrcCommandErrorEvent {
+                                        server_id: stream_server_id.clone(),
+                                        command: "WHOIS".to_string(),
+                                        error: format!("No WHOIS information was returned for {}: {}", target, reason),
+                                    },
+                                );
+                                continue;
+                            }
                             let sender_name = nicknames_clone.lock().await.get(&stream_server_id).cloned().unwrap_or_else(|| "You".to_string());
                             let _ = remove_last_log_line_internal(&app_clone, &log_state_clone, &stream_server_id, &target, &sender_name).await;
 
@@ -2328,6 +2416,17 @@ async fn connect_irc(
                         Command::Raw(ref cmd, ref args) if cmd == "401" => {
                             let target = args.get(1).cloned().unwrap_or_default();
                             let reason = args.get(2).cloned().unwrap_or_else(|| "No such nick".to_string());
+                            if take_pending_whois(&pending_whois_clone, &stream_server_id, &target).await {
+                                let _ = app_clone.emit(
+                                    "irc_command_error",
+                                    IrcCommandErrorEvent {
+                                        server_id: stream_server_id.clone(),
+                                        command: "WHOIS".to_string(),
+                                        error: format!("No WHOIS information was returned for {}: {}", target, reason),
+                                    },
+                                );
+                                continue;
+                            }
                             let sender_name = nicknames_clone.lock().await.get(&stream_server_id).cloned().unwrap_or_else(|| "You".to_string());
                             let _ = remove_last_log_line_internal(&app_clone, &log_state_clone, &stream_server_id, &target, &sender_name).await;
 
@@ -2806,11 +2905,20 @@ async fn connect_irc(
                                     "irc_away_event",
                                     IrcAwayEvent {
                                         server_id: stream_server_id.clone(),
-                                        nick,
+                                        nick: nick.clone(),
                                         away: true,
-                                        reason,
+                                        reason: reason.clone(),
                                     },
                                 );
+                                let mut whois = IrcWhoisEvent::new(
+                                    &stream_server_id,
+                                    nick.clone(),
+                                    "away",
+                                );
+                                whois.nick = Some(nick);
+                                whois.away = true;
+                                whois.away_reason = reason;
+                                let _ = app_clone.emit("irc_whois_event", whois);
                             }
                         }
                         Command::Raw(ref cmd, ref args) if cmd == "301" => {
@@ -2821,11 +2929,20 @@ async fn connect_irc(
                                     "irc_away_event",
                                     IrcAwayEvent {
                                         server_id: stream_server_id.clone(),
-                                        nick,
+                                        nick: nick.clone(),
                                         away: true,
-                                        reason,
+                                        reason: reason.clone(),
                                     },
                                 );
+                                let mut whois = IrcWhoisEvent::new(
+                                    &stream_server_id,
+                                    nick.clone(),
+                                    "away",
+                                );
+                                whois.nick = Some(nick);
+                                whois.away = true;
+                                whois.away_reason = reason;
+                                let _ = app_clone.emit("irc_whois_event", whois);
                             }
                         }
                         Command::Raw(ref cmd, ref args) if cmd == "305" => {
@@ -2937,6 +3054,97 @@ async fn connect_irc(
                                 );
                             }
                         }
+                        Command::Response(Response::RPL_WHOISUSER, ref args) => {
+                            let query = args.get(1).cloned().unwrap_or_default();
+                            let mut whois = IrcWhoisEvent::new(
+                                &stream_server_id,
+                                query.clone(),
+                                "user",
+                            );
+                            whois.nick = args.get(1).cloned();
+                            whois.username = args.get(2).cloned();
+                            whois.host = args.get(3).cloned();
+                            if args.len() > 5 {
+                                whois.realname = Some(args.iter().skip(5).cloned().collect::<Vec<_>>().join(" "));
+                            }
+                            let _ = app_clone.emit("irc_whois_event", whois);
+                        }
+                        Command::Response(Response::RPL_WHOISSERVER, ref args) => {
+                            let query = args.get(1).cloned().unwrap_or_default();
+                            let mut whois = IrcWhoisEvent::new(
+                                &stream_server_id,
+                                query.clone(),
+                                "server",
+                            );
+                            whois.nick = args.get(1).cloned();
+                            whois.server = args.get(2).cloned();
+                            if args.len() > 3 {
+                                whois.server_info = Some(args.iter().skip(3).cloned().collect::<Vec<_>>().join(" "));
+                            }
+                            let _ = app_clone.emit("irc_whois_event", whois);
+                        }
+                        Command::Response(Response::RPL_WHOISOPERATOR, ref args) => {
+                            let query = args.get(1).cloned().unwrap_or_default();
+                            let mut whois = IrcWhoisEvent::new(
+                                &stream_server_id,
+                                query.clone(),
+                                "operator",
+                            );
+                            whois.nick = args.get(1).cloned();
+                            whois.is_operator = true;
+                            let _ = app_clone.emit("irc_whois_event", whois);
+                        }
+                        Command::Response(Response::RPL_WHOISIDLE, ref args) => {
+                            let query = args.get(1).cloned().unwrap_or_default();
+                            let mut whois = IrcWhoisEvent::new(
+                                &stream_server_id,
+                                query.clone(),
+                                "idle",
+                            );
+                            whois.nick = args.get(1).cloned();
+                            whois.idle_seconds = args.get(2).and_then(|value| value.parse::<u64>().ok());
+                            let _ = app_clone.emit("irc_whois_event", whois);
+                        }
+                        Command::Response(Response::RPL_ENDOFWHOIS, ref args) => {
+                            let query = args.get(1).cloned().unwrap_or_default();
+                            let _ = take_pending_whois(&pending_whois_clone, &stream_server_id, &query).await;
+                            let mut whois = IrcWhoisEvent::new(
+                                &stream_server_id,
+                                query.clone(),
+                                "complete",
+                            );
+                            whois.nick = args.get(1).cloned();
+                            let _ = app_clone.emit("irc_whois_event", whois);
+                        }
+                        Command::Raw(ref cmd, ref args) if cmd == "318" => {
+                            let query = args.get(1).cloned().unwrap_or_default();
+                            let _ = take_pending_whois(&pending_whois_clone, &stream_server_id, &query).await;
+                            let mut whois = IrcWhoisEvent::new(
+                                &stream_server_id,
+                                query.clone(),
+                                "complete",
+                            );
+                            whois.nick = args.get(1).cloned();
+                            let _ = app_clone.emit("irc_whois_event", whois);
+                        }
+                        Command::Response(Response::RPL_WHOISCHANNELS, ref args) => {
+                            let query = args.get(1).cloned().unwrap_or_default();
+                            let mut whois = IrcWhoisEvent::new(
+                                &stream_server_id,
+                                query.clone(),
+                                "channels",
+                            );
+                            whois.nick = args.get(1).cloned();
+                            if args.len() > 2 {
+                                whois.channels = args
+                                    .iter()
+                                    .skip(2)
+                                    .flat_map(|value| value.split_whitespace())
+                                    .map(|value| value.to_string())
+                                    .collect();
+                            }
+                            let _ = app_clone.emit("irc_whois_event", whois);
+                        }
                         Command::Response(Response::ERR_BANNEDFROMCHAN, ref args) => {
                             let channel = args.iter().find(|a| a.starts_with('#') || a.starts_with('&')).cloned().unwrap_or_default();
                             let reason = args.last().cloned().unwrap_or_else(|| "Cannot join channel (+b) - You are banned".to_string());
@@ -3015,13 +3223,33 @@ async fn connect_irc(
                             let cmd_name = args.get(1).cloned().unwrap_or_default();
                             let reason = args.last().cloned().unwrap_or_else(|| "Unknown command".to_string());
                             let err_text = format!("{}: {}", reason, cmd_name);
-                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &err_text).await;
+                            if cmd_name.eq_ignore_ascii_case("WHOIS") {
+                                clear_pending_whois_for_server(&pending_whois_clone, &stream_server_id).await;
+                            }
+                            let _ = app_clone.emit(
+                                "irc_command_error",
+                                IrcCommandErrorEvent {
+                                    server_id: stream_server_id.clone(),
+                                    command: cmd_name,
+                                    error: err_text,
+                                },
+                            );
                         }
                         Command::Raw(ref cmd, ref args) if cmd == "421" => {
                             let cmd_name = args.get(1).cloned().unwrap_or_default();
                             let reason = args.last().cloned().unwrap_or_else(|| "Unknown command".to_string());
                             let err_text = format!("{}: {}", reason, cmd_name);
-                            emit_and_log_system_message(&app_clone, &log_state_clone, &stream_server_id, "", &err_text).await;
+                            if cmd_name.eq_ignore_ascii_case("WHOIS") {
+                                clear_pending_whois_for_server(&pending_whois_clone, &stream_server_id).await;
+                            }
+                            let _ = app_clone.emit(
+                                "irc_command_error",
+                                IrcCommandErrorEvent {
+                                    server_id: stream_server_id.clone(),
+                                    command: cmd_name,
+                                    error: err_text,
+                                },
+                            );
                         }
                         Command::Response(Response::ERR_NOTREGISTERED, ref args) => {
                             let reason = args.last().cloned().unwrap_or_else(|| "You have not registered".to_string());
@@ -3105,6 +3333,7 @@ async fn connect_irc(
                     senders_clone.lock().await.remove(&stream_server_id);
                     nicknames_clone.lock().await.remove(&stream_server_id);
                     server_caps_clone.lock().await.remove(&stream_server_id);
+                    clear_pending_whois_for_server(&pending_whois_clone, &stream_server_id).await;
                     break;
                 }
             }
@@ -3114,6 +3343,7 @@ async fn connect_irc(
         senders_clone.lock().await.remove(&stream_server_id);
         nicknames_clone.lock().await.remove(&stream_server_id);
         server_caps_clone.lock().await.remove(&stream_server_id);
+        clear_pending_whois_for_server(&pending_whois_clone, &stream_server_id).await;
         close_server_logs(&log_state_clone, &stream_server_id).await;
         let final_error = last_error.unwrap_or_else(|| "Stream closed".to_string());
         let _ = app_clone.emit(
@@ -3256,6 +3486,100 @@ async fn send_message(
         .await
         {
             log::error!("Failed to log outgoing IRC message: {}", error);
+        }
+        Ok(())
+    } else {
+        Err(format!("Not connected to server {}", server_id))
+    }
+}
+
+fn validate_raw_irc_command(command: &str, args: &[String]) -> Result<(), String> {
+    let mut chars = command.chars();
+    let first = chars
+        .next()
+        .ok_or_else(|| "IRC command name cannot be empty".to_string())?;
+
+    if !first.is_ascii_alphabetic()
+        || !chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+        || command.len() > 32
+    {
+        return Err("IRC command name contains invalid characters".to_string());
+    }
+
+    if args.len() > 15 {
+        return Err("IRC commands cannot contain more than 15 arguments".to_string());
+    }
+
+    for (index, arg) in args.iter().enumerate() {
+        if arg.chars().any(|ch| ch.is_control()) {
+            return Err(format!(
+                "IRC argument {} contains a control character",
+                index + 1
+            ));
+        }
+        if index + 1 < args.len() && arg.chars().any(|ch| ch == ' ' || ch == '\t') {
+            return Err("Only the final IRC argument may contain spaces".to_string());
+        }
+    }
+
+    let mut wire_len = command.len();
+    for (index, arg) in args.iter().enumerate() {
+        wire_len += 1 + arg.len();
+        if index + 1 == args.len()
+            && (arg.is_empty() || arg.contains(' ') || arg.starts_with(':'))
+        {
+            wire_len += 1;
+        }
+    }
+    if wire_len > 510 {
+        return Err("IRC command is too long (maximum 510 bytes)".to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn send_raw(
+    app: AppHandle,
+    state: State<'_, IrcState>,
+    server_id: String,
+    command: String,
+    args: Vec<String>,
+) -> Result<(), String> {
+    validate_raw_irc_command(&command, &args)?;
+
+    let pending_key = if command.eq_ignore_ascii_case("WHOIS") {
+        args.first()
+            .filter(|target| !target.trim().is_empty())
+            .map(|target| pending_whois_key(&server_id, target))
+    } else {
+        None
+    };
+
+    let senders = state.senders.lock().await;
+    if let Some(sender) = senders.get(&server_id) {
+        if let Some(key) = pending_key.as_ref() {
+            state.pending_whois.lock().await.insert(key.clone());
+        }
+
+        if let Err(error) = sender.send(Command::Raw(command, args)) {
+            let error_text = error.to_string();
+            if let Some(key) = pending_key.as_ref() {
+                state.pending_whois.lock().await.remove(key);
+            }
+            drop(senders);
+            state.senders.lock().await.remove(&server_id);
+            state.nicknames.lock().await.remove(&server_id);
+            state.server_caps.lock().await.remove(&server_id);
+            let _ = app.emit(
+                "irc_status",
+                IrcStatusEvent {
+                    server_id: server_id.clone(),
+                    connected: false,
+                    error: Some(error_text.clone()),
+                },
+            );
+            return Err(error_text);
         }
         Ok(())
     } else {
@@ -3942,6 +4266,7 @@ pub fn run() {
             channel_members: Arc::new(Mutex::new(HashMap::new())),
             recent_sent_messages: Arc::new(Mutex::new(Vec::new())),
             server_caps: Arc::new(Mutex::new(HashMap::new())),
+            pending_whois: Arc::new(Mutex::new(HashSet::new())),
         })
         .manage(LogState {
             writers: Arc::new(Mutex::new(HashMap::new())),
@@ -3956,6 +4281,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             connect_irc,
             send_message,
+            send_raw,
             load_log_tail,
             load_log_page,
             list_logged_conversations,

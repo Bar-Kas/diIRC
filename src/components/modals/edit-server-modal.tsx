@@ -23,7 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Plus, Trash, Bell, Volume2, Monitor, Clock, ScrollText, Sparkles, EyeOff } from "lucide-react";
+import { Plus, Trash, Bell, Volume2, Monitor, Clock, ScrollText, Sparkles, EyeOff, Server } from "lucide-react";
 import { useModal } from "@/hooks/use-modal-store";
 import { useMockStore } from "@/lib/mock-store";
 import {
@@ -37,6 +37,7 @@ import {
 } from "@/types";
 import { NotificationSettingsFields } from "@/components/notifications/notification-settings-fields";
 import { CustomCommandsFields, normalizeCustomCommandsFromForm } from "@/components/server/custom-commands-fields";
+import { SettingsTabs, matchesSettingsSearch, type SettingsTab } from "@/components/settings/settings-tabs";
 
 const formSchema = z.object({
   name: z.string().min(1, { message: "Server name is required." }),
@@ -66,6 +67,27 @@ const formSchema = z.object({
   ).default([]),
 });
 
+const SERVER_SETTINGS_TABS: SettingsTab[] = [
+  {
+    id: "connection",
+    label: "Connection",
+    icon: Server,
+    keywords: ["host", "address", "port", "password", "TLS", "SSL", "nickname", "connect", "reconnect", "ZNC", "commands"],
+  },
+  {
+    id: "appearance",
+    label: "Appearance",
+    icon: Sparkles,
+    keywords: ["MOTD", "display name", "image", "collapse"],
+  },
+  {
+    id: "notifications",
+    label: "Notifications",
+    icon: Bell,
+    keywords: ["sound", "popup", "taskbar", "cooldown", "anonymous", "messages"],
+  },
+];
+
 export const EditServerModal = () => {
   const { isOpen, onClose, type, data } = useModal();
   const updateServer = useMockStore((state) => state.updateServer);
@@ -86,6 +108,8 @@ export const EditServerModal = () => {
   const setGlobalMotdPolicy = useMockStore((state) => state.setGlobalMotdPolicy);
 
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("connection");
+  const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
   const [motdPolicyOverride, setMotdPolicyOverride] = useState<ServerMotdDisplayPolicy>("default");
   const [displayNameModeOverride, setDisplayNameModeOverride] = useState<ServerUserDisplayNameMode>("default");
   const [mediaCollapseOverride, setMediaCollapseOverride] = useState<ServerMediaCollapseMode>("default");
@@ -94,6 +118,7 @@ export const EditServerModal = () => {
   const [soundOverride, setSoundOverride] = useState<NotificationOverrideValue>("default");
   const [popupOverride, setPopupOverride] = useState<NotificationOverrideValue>("default");
   const [taskbarOverride, setTaskbarOverride] = useState<NotificationOverrideValue>("default");
+  const [anonymousNotificationsOverride, setAnonymousNotificationsOverride] = useState<NotificationOverrideValue>("default");
   const [soundCooldownOverride, setSoundCooldownOverride] = useState<"default" | number>("default");
   const [soundPresetOverride, setSoundPresetOverride] = useState<"default" | SoundPreset>("default");
   const [dmSoundPresetOverride, setDmSoundPresetOverride] = useState<"default" | SoundPreset>("default");
@@ -110,6 +135,7 @@ export const EditServerModal = () => {
   const inheritedSoundStr = globalNotif?.soundEnabled ? "Enabled" : "Muted";
   const inheritedPopupStr = globalNotif?.popupEnabled ? "Enabled" : "Off";
   const inheritedTaskbarStr = globalNotif?.taskbarHighlightEnabled ? "Enabled" : "Off";
+  const inheritedAnonymousNotificationsStr = globalNotif?.anonymousNotifications ? "Hide content" : "Show content";
   const inheritedCooldownSec = ((globalNotif?.soundCooldownMs ?? 3000) / 1000).toFixed(1);
   const inheritedSoundPresetStr = globalNotif?.soundPreset || "chime";
   const inheritedDmSoundPresetStr = globalNotif?.dmSoundPreset || "chime";
@@ -146,6 +172,7 @@ export const EditServerModal = () => {
       setSoundOverride(server.notificationSettings?.sound || "default");
       setPopupOverride(server.notificationSettings?.popup || "default");
       setTaskbarOverride(server.notificationSettings?.taskbar || "default");
+      setAnonymousNotificationsOverride(server.notificationSettings?.anonymousNotifications || "default");
       setSoundCooldownOverride(server.notificationSettings?.soundCooldown ?? "default");
       setSoundPresetOverride(server.notificationSettings?.soundPreset || "default");
       setDmSoundPresetOverride(server.notificationSettings?.dmSoundPreset || "default");
@@ -158,6 +185,7 @@ export const EditServerModal = () => {
       );
       setDisplayNameModeOverride(server.displayNameMode || "default");
       setMediaCollapseOverride(server.autoCollapseImages || "default");
+      setActiveTab("connection");
 
       form.reset({
         name: server.name || "",
@@ -212,6 +240,7 @@ export const EditServerModal = () => {
           sound: soundOverride,
           popup: popupOverride,
           taskbar: taskbarOverride,
+          anonymousNotifications: anonymousNotificationsOverride,
           soundCooldown: soundCooldownOverride,
           soundPreset: soundPresetOverride,
           dmSoundPreset: dmSoundPresetOverride,
@@ -253,7 +282,7 @@ export const EditServerModal = () => {
       <Dialog open={isModalOpen} onOpenChange={handleAttemptClose}>
         <DialogContent
           onOpenAutoFocus={(e) => e.preventDefault()}
-          className="bg-white dark:bg-[#313338] text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden sm:max-w-lg max-h-[90vh] flex flex-col border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl"
+          className="flex h-[720px] max-h-[90vh] flex-col overflow-hidden bg-white p-0 text-zinc-900 dark:bg-[#313338] dark:text-zinc-100 sm:max-w-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-xl"
         >
           <DialogHeader className="pt-6 px-6 space-y-1 shrink-0">
             <DialogTitle className="text-2xl text-center font-bold text-zinc-900 dark:text-zinc-100">
@@ -264,8 +293,20 @@ export const EditServerModal = () => {
             </DialogDescription>
           </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onFormSubmit)} className="flex flex-col flex-1 min-h-0">
+            <div className="flex min-h-0 flex-1 flex-col border-t border-zinc-200 dark:border-zinc-800 sm:flex-row">
+              <SettingsTabs
+                activeTab={activeTab}
+                tabs={SERVER_SETTINGS_TABS}
+                onTabChange={setActiveTab}
+                ariaLabel="server-settings"
+                searchQuery={settingsSearchQuery}
+                onSearchQueryChange={setSettingsSearchQuery}
+              />
+              <form onSubmit={form.handleSubmit(onFormSubmit)} className="flex min-h-0 min-w-0 flex-1 flex-col">
               <div className="space-y-4 flex-1 overflow-y-auto px-6 py-2 min-h-0">
+              {activeTab === "connection" && (
+                <div id="server-settings-panel-connection" role="tabpanel" aria-labelledby="server-settings-tab-connection" className="space-y-4">
+              {matchesSettingsSearch(settingsSearchQuery, "server name", "name") && (
               <FormField
                 control={form.control}
                 name="name"
@@ -286,7 +327,9 @@ export const EditServerModal = () => {
                   </FormItem>
                 )}
               />
+              )}
 
+              {matchesSettingsSearch(settingsSearchQuery, "host address", "host", "address", "port") && (
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">
                   <FormField
@@ -348,7 +391,9 @@ export const EditServerModal = () => {
                   />
                 </div>
               </div>
+              )}
 
+              {matchesSettingsSearch(settingsSearchQuery, "password", "server password", "credentials") && (
               <FormField
                 control={form.control}
                 name="password"
@@ -370,7 +415,9 @@ export const EditServerModal = () => {
                   </FormItem>
                 )}
               />
+              )}
 
+              {matchesSettingsSearch(settingsSearchQuery, "username", "ident", "user") && (
               <FormField
                 control={form.control}
                 name="username"
@@ -391,7 +438,9 @@ export const EditServerModal = () => {
                   </FormItem>
                 )}
               />
+              )}
 
+              {matchesSettingsSearch(settingsSearchQuery, "real name", "realname", "identity") && (
               <FormField
                 control={form.control}
                 name="realname"
@@ -412,7 +461,9 @@ export const EditServerModal = () => {
                   </FormItem>
                 )}
               />
+              )}
 
+              {matchesSettingsSearch(settingsSearchQuery, "nicknames", "nickname", "fallback nick") && (
               <div className="flex flex-col gap-2">
                 <FormLabel className="uppercase text-xs font-bold text-zinc-600 dark:text-zinc-300 tracking-wider flex items-center justify-between">
                   Nicknames
@@ -450,9 +501,13 @@ export const EditServerModal = () => {
                   />
                 ))}
               </div>
+              )}
 
+              {matchesSettingsSearch(settingsSearchQuery, "custom commands", "commands", "slash command") && (
               <CustomCommandsFields control={form.control} disabled={isLoading} />
+              )}
 
+              {matchesSettingsSearch(settingsSearchQuery, "use TLS SSL", "TLS", "SSL", "encryption") && (
               <FormField
                 control={form.control}
                 name="useTls"
@@ -482,7 +537,9 @@ export const EditServerModal = () => {
                   </FormItem>
                 )}
               />
+              )}
 
+              {matchesSettingsSearch(settingsSearchQuery, "auto-connect on startup", "auto connect", "startup") && (
               <FormField
                 control={form.control}
                 name="autoConnect"
@@ -505,7 +562,9 @@ export const EditServerModal = () => {
                   </FormItem>
                 )}
               />
+              )}
 
+              {matchesSettingsSearch(settingsSearchQuery, "auto-reconnect on disconnect", "auto reconnect", "reconnect") && (
               <FormField
                 control={form.control}
                 name="autoReconnect"
@@ -528,7 +587,9 @@ export const EditServerModal = () => {
                   </FormItem>
                 )}
               />
+              )}
 
+              {matchesSettingsSearch(settingsSearchQuery, "parse legacy ZNC timestamps", "ZNC", "timestamps", "bouncer") && (
               <FormField
                 control={form.control}
                 name="parseLegacyZncTimestamps"
@@ -551,8 +612,15 @@ export const EditServerModal = () => {
                   </FormItem>
                 )}
               />
+              )}
 
+                </div>
+              )}
+
+              {activeTab === "appearance" && (
+                <div id="server-settings-panel-appearance" role="tabpanel" aria-labelledby="server-settings-tab-appearance" className="space-y-4">
               {/* SECTION: MOTD POLICY */}
+              {matchesSettingsSearch(settingsSearchQuery, "message of the day", "MOTD", "connect", "join", "appearance") && (
               <div className="flex flex-col rounded-xl border border-zinc-300/80 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-3.5 space-y-2.5 shadow-sm">
                 <div className="flex items-center gap-x-2">
                   <ScrollText className="w-4 h-4 text-indigo-500" />
@@ -585,8 +653,10 @@ export const EditServerModal = () => {
                   <option value="never_globally">Don't show again (all servers)</option>
                 </select>
               </div>
+              )}
 
               {/* SECTION: DISPLAY NAME MODE OVERRIDE */}
+              {matchesSettingsSearch(settingsSearchQuery, "user display name format", "display name", "nickname", "realname", "username", "appearance") && (
               <div className="flex flex-col rounded-xl border border-zinc-300/80 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-3.5 space-y-2.5 shadow-sm">
                 <div className="flex items-center gap-x-2">
                   <Sparkles className="w-4 h-4 text-indigo-500" />
@@ -610,8 +680,10 @@ export const EditServerModal = () => {
                   <option value="username">Username</option>
                 </select>
               </div>
+              )}
 
               {/* SECTION: IMAGE COLLAPSE OVERRIDE */}
+              {matchesSettingsSearch(settingsSearchQuery, "image preview collapse", "image", "collapse", "attachments", "appearance") && (
               <div className="flex flex-col rounded-xl border border-zinc-300/80 dark:border-zinc-700/60 bg-zinc-50 dark:bg-[#2b2d31] p-3.5 space-y-2.5 shadow-sm">
                 <div className="flex items-center gap-x-2">
                   <EyeOff className="w-4 h-4 text-indigo-500" />
@@ -634,10 +706,17 @@ export const EditServerModal = () => {
                   <option value="collapsed">Always collapsed</option>
                 </select>
               </div>
+              )}
 
+                </div>
+              )}
+
+              {activeTab === "notifications" && (
+                <div id="server-settings-panel-notifications" role="tabpanel" aria-labelledby="server-settings-tab-notifications" className="space-y-4">
               {/* SECTION: SERVER NOTIFICATION OVERRIDES */}
               <NotificationSettingsFields
                 mode="server"
+                searchQuery={settingsSearchQuery}
                 values={{
                   channelNotifications: channelNotificationsOverride,
                   dmNotifications: dmNotificationsOverride,
@@ -649,6 +728,7 @@ export const EditServerModal = () => {
                   soundCooldown: soundCooldownOverride,
                   popup: popupOverride,
                   taskbar: taskbarOverride,
+                  anonymousNotifications: anonymousNotificationsOverride,
                 }}
                 inherited={{
                   channelNotificationsStr: inheritedChannelNotifStr,
@@ -659,6 +739,7 @@ export const EditServerModal = () => {
                   cooldownSec: inheritedCooldownSec,
                   popupStr: inheritedPopupStr,
                   taskbarStr: inheritedTaskbarStr,
+                  anonymousNotificationsStr: inheritedAnonymousNotificationsStr,
                 }}
                 onChange={(field, val) => {
                   if (field === "channelNotifications") setChannelNotificationsOverride(val);
@@ -671,8 +752,11 @@ export const EditServerModal = () => {
                   else if (field === "soundCooldown") setSoundCooldownOverride(val);
                   else if (field === "popup") setPopupOverride(val);
                   else if (field === "taskbar") setTaskbarOverride(val);
+                  else if (field === "anonymousNotifications") setAnonymousNotificationsOverride(val);
                 }}
               />
+                </div>
+              )}
               </div>
 
               <DialogFooter className="bg-zinc-100/90 dark:bg-[#2b2d31] border-t border-zinc-200 dark:border-zinc-800/80 px-6 py-4 flex items-center justify-between shrink-0">
@@ -689,7 +773,8 @@ export const EditServerModal = () => {
                   Save changes
                 </Button>
               </DialogFooter>
-            </form>
+              </form>
+            </div>
           </Form>
         </DialogContent>
       </Dialog>

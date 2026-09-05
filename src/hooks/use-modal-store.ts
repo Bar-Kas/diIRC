@@ -1,4 +1,4 @@
-import { Channel, ChannelType, Server } from "@/types";
+import { Channel, ChannelType, Server, WhoisData } from "@/types";
 import { create } from "zustand";
 
 export type ModalType = 
@@ -24,6 +24,7 @@ export type ModalType =
   | "updateAvailable"
   | "motd"
   | "alreadyAway"
+  | "whois"
   | "changelog";
 
 interface ModalData {
@@ -41,6 +42,7 @@ interface ModalData {
   description?: string;
   errorMessage?: string;
   flag?: string;
+  whois?: WhoisData;
   motd?: string[];
   updateInfo?: {
     currentVersion: string;

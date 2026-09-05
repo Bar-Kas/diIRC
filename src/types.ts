@@ -15,6 +15,22 @@ export interface Profile {
   updatedAt?: string;
 }
 
+export interface WhoisData {
+  nick: string;
+  imageUrl?: string;
+  loading?: boolean;
+  username?: string;
+  host?: string;
+  realname?: string;
+  server?: string;
+  serverInfo?: string;
+  channels?: string[];
+  away?: boolean;
+  awayReason?: string;
+  idleSeconds?: number;
+  isOperator?: boolean;
+}
+
 export interface Member {
   id: string;
   profileId: string;
@@ -36,6 +52,7 @@ export interface NotificationOverride {
   sound?: NotificationOverrideValue;
   popup?: NotificationOverrideValue;
   taskbar?: NotificationOverrideValue;
+  anonymousNotifications?: NotificationOverrideValue;
   soundCooldown?: "default" | number;
   soundPreset?: "default" | SoundPreset;
   dmSoundPreset?: "default" | SoundPreset;
@@ -54,6 +71,7 @@ export interface GlobalNotificationSettings {
   soundCooldownMs?: number;
   popupEnabled: boolean;
   taskbarHighlightEnabled: boolean;
+  anonymousNotifications?: boolean;
   channelNotifications?: ChannelNotificationMode;
   dmNotifications?: DmNotificationMode;
 }
