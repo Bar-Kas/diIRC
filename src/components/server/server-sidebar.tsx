@@ -275,9 +275,7 @@ export const ServerSidebar = ({
       !m.id.startsWith("self-")
   );
 
-  const activeMemberIds = (activeConversations[server.id] || []).filter(
-    (memberId) => memberId !== currentMember?.id
-  );
+  const activeMemberIds = activeConversations[server.id] || [];
   const rawPmMembers = activeMemberIds
     .map((memberId) => server.members.find((m) => m.id === memberId))
     .filter((m): m is NonNullable<typeof m> => {

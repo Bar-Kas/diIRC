@@ -123,7 +123,6 @@ export const ChatMembersSidebar = ({
   const totalCount = 1 + otherMembers.length;
 
   const onMemberClick = (memberId: string) => {
-    if (selfMember?.id === memberId) return;
     openConversation(server.id, memberId);
     navigate(`/servers/${server.id}/conversations/${memberId}`);
   };

@@ -117,10 +117,6 @@ const ChatItemInner = ({
     const serverId = params?.serverId || activeServers[0]?.id;
     if (!serverId) return;
 
-    if (currentMember.id === member.id || currentMember.profile.name.toLowerCase() === member.profile.name.toLowerCase()) {
-      return;
-    }
-
     const server = activeServers.find((s) => s.id === serverId) || activeServers[0];
     if (!server) return;
 

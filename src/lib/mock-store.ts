@@ -2678,13 +2678,6 @@ export const useMockStore = create<MockState>()(
 
       openConversation: (serverId, memberId) => {
         set((state) => {
-          const server = state.servers.find((s) => s.id === serverId);
-          if (server) {
-            const currentMember = getServerSelfMember(server, state.currentProfile.id);
-            if (currentMember && currentMember.id === memberId) {
-              return state;
-            }
-          }
           const currentActive = state.activeConversations[serverId] || [];
 
           const newActive = currentActive.includes(memberId) ? currentActive : [...currentActive, memberId];
@@ -2769,22 +2762,20 @@ export const useMockStore = create<MockState>()(
 
           const validMemberIds = new Set<string>();
 
-          // Include members whose log file is non-empty on disk
+          // Include members whose log file is non-empty on disk (incl. self-query)
           updatedMembers.forEach((m) => {
-            if (m.profile.name && m.profile.name !== "***" && loggedSet.has(m.profile.name.toLowerCase()) && m.id !== currentMember?.id) {
+            if (m.profile.name && m.profile.name !== "***" && loggedSet.has(m.profile.name.toLowerCase())) {
               validMemberIds.add(m.id);
             }
           });
 
-          // Include members with in-memory messages
+          // Include members with in-memory messages (incl. self→self conversation)
           if (currentMember) {
             updatedMembers.forEach((m) => {
-              if (m.id !== currentMember.id) {
-                const convId = [currentMember.id, m.id].sort().join("-");
-                const dms = state.directMessages[convId];
-                if (dms && dms.length > 0) {
-                  validMemberIds.add(m.id);
-                }
+              const convId = [currentMember.id, m.id].sort().join("-");
+              const dms = state.directMessages[convId];
+              if (dms && dms.length > 0) {
+                validMemberIds.add(m.id);
               }
             });
           }
@@ -2824,10 +2815,15 @@ export const useMockStore = create<MockState>()(
           const currentMember = server ? getServerSelfMember(server, state.currentProfile.id) : undefined;
 
           if (currentMember) {
-            const memberIds = conversationId.split("-");
-            const otherMemberId = memberIds.find((id) => id !== currentMember.id) || member.id;
-            if (otherMemberId && otherMemberId !== currentMember.id) {
-              get().addToHistoricalConversations(member.serverId, otherMemberId);
+            // Self-PM uses conversationId `${selfId}-${selfId}`; keep it in history.
+            if (member.id === currentMember.id) {
+              get().addToHistoricalConversations(member.serverId, currentMember.id);
+            } else {
+              const memberIds = conversationId.split("-");
+              const otherMemberId = memberIds.find((id) => id !== currentMember.id) || member.id;
+              if (otherMemberId && otherMemberId !== currentMember.id) {
+                get().addToHistoricalConversations(member.serverId, otherMemberId);
+              }
             }
           }
         }
