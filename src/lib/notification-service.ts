@@ -146,9 +146,11 @@ export function checkIsMention(content: string, myNicks: string[]): boolean {
   return myNicks.some((nick) => {
     if (!nick || !nick.trim()) return false;
     const escaped = nick.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // @nick only when @ is not mid-email; bare nick / nick: / nick, at word boundaries
     return (
-      new RegExp(`(?:^|\\s|@)${escaped}(?:[:,]?(?:\\s|$))`, "i").test(content) ||
-      new RegExp(`\\b${escaped}\\b`, "i").test(content)
+      new RegExp(`(?<![A-Za-z0-9._%+-])@${escaped}\\b`, "i").test(content) ||
+      new RegExp(`(?:^|\\s)${escaped}(?:[:,]?(?:\\s|$))`, "i").test(content) ||
+      new RegExp(`(?<![A-Za-z0-9._%+-])\\b${escaped}\\b(?![.@])`, "i").test(content)
     );
   });
 }

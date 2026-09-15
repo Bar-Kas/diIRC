@@ -151,9 +151,17 @@ const ChatItemInner = ({
     );
   }, [activeServer?.nicknames, currentMember?.profile?.name, currentProfile?.name]);
 
+  const channelMembersMap = useMockStore((state) => state.channelMembers);
+
   const allMemberNicks = useMemo(() => {
+    if (channelId) {
+      const channelNicks = channelMembersMap[channelId];
+      if (channelNicks && channelNicks.length > 0) {
+        return channelNicks.filter(Boolean);
+      }
+    }
     return (activeServer?.members || []).map((m) => m.profile.name).filter(Boolean);
-  }, [activeServer?.members]);
+  }, [channelId, channelMembersMap, activeServer?.members]);
 
   const isSelf = useMemo(() => {
     if (!member) return false;
@@ -199,7 +207,7 @@ const ChatItemInner = ({
       .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 
     const regexPattern =
-      `(@[a-zA-Z0-9_\\-\\[\\]\\\`^{}|]+)` +
+      `((?<![A-Za-z0-9._%+-])@[a-zA-Z0-9_\\-\\[\\]\\\`^{}|]+)` +
       (escapedMyNicks.length > 0
         ? `|(\\b(?:${escapedMyNicks.join("|")})(?:[:,]?(?=\\s|$)|\\b))`
         : "");
@@ -219,7 +227,8 @@ const ChatItemInner = ({
       const matchedStr = match[0];
       const cleanNick = matchedStr.replace(/^@/, "").replace(/[:,]$/, "").toLowerCase();
       const isMyMention = myNicksLower.has(cleanNick);
-      const isMemberMention = isMyMention || allNicksLower.has(cleanNick) || matchedStr.startsWith("@");
+      // Only highlight @nicks that exist on this channel/server — never bare emails.
+      const isMemberMention = isMyMention || allNicksLower.has(cleanNick);
 
       if (isMemberMention) {
         elements.push(
