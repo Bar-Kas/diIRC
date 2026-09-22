@@ -63,7 +63,7 @@ export const UserHoverCard = ({
     e.stopPropagation();
     e.preventDefault();
 
-    if (!activeServer || isSelf) return;
+    if (!activeServer) return;
 
     let targetMember = activeServer.members.find(
       (m) => m.id === freshMember.id || m.profile.name.toLowerCase() === freshMember.profile.name.toLowerCase()
@@ -100,14 +100,14 @@ export const UserHoverCard = ({
               name={displayName}
               className="h-14 w-14 md:h-14 md:w-14 shadow-sm"
             />
-            {!isSelf && activeServer && (
+            {activeServer && (
               <Button
                 onClick={onOpenDM}
                 size="sm"
                 className="h-8 gap-x-1.5 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-md font-medium shadow-sm transition"
               >
                 <MessageSquare className="w-3.5 h-3.5" />
-                Message
+                {isSelf ? "Message yourself" : "Message"}
               </Button>
             )}
           </div>

@@ -132,7 +132,7 @@ export function remarkMention(options?: { myNicks?: string[]; allMemberNicks?: s
       .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 
     const regexPattern =
-      `(@[a-zA-Z0-9_\\-\\[\\]\\\`^{}|]+)` +
+      `((?<![A-Za-z0-9._%+-])@[a-zA-Z0-9_\\-\\[\\]\\\`^{}|]+)` +
       (escapedMyNicks.length > 0
         ? `|(\\b(?:${escapedMyNicks.join("|")})(?:[:,]?(?=\\s|$)|\\b))`
         : "");
@@ -156,7 +156,8 @@ export function remarkMention(options?: { myNicks?: string[]; allMemberNicks?: s
         const matchedStr = match[0];
         const cleanNick = matchedStr.replace(/^@/, "").replace(/[:,]$/, "").toLowerCase();
         const isMyMention = myNicksLower.has(cleanNick);
-        const isMemberMention = isMyMention || allNicksLower.has(cleanNick) || matchedStr.startsWith("@");
+        // Only highlight @nicks that exist on this channel/server — never bare emails.
+        const isMemberMention = isMyMention || allNicksLower.has(cleanNick);
 
         if (!isMemberMention) continue;
 
