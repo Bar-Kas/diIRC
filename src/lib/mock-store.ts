@@ -463,6 +463,7 @@ interface MockState {
   confirmLeaveChannel: boolean;
   enableCommandSuggestions: boolean;
   enableLinkPreviews: boolean;
+  enableMotdMediaPreviews: boolean;
   enableWebPagePreviews: boolean;
   linkPreviewApiUrl: string;
   uploadConfig: ImageUploadConfig;
@@ -531,6 +532,7 @@ interface MockState {
   setConfirmLeaveChannel: (enabled: boolean) => void;
   setEnableCommandSuggestions: (enabled: boolean) => void;
   setEnableLinkPreviews: (enabled: boolean) => void;
+  setEnableMotdMediaPreviews: (enabled: boolean) => void;
   setEnableWebPagePreviews: (enabled: boolean) => void;
   setLinkPreviewApiUrl: (url: string) => void;
   setUploadConfig: (config: ImageUploadConfig) => void;
@@ -672,6 +674,7 @@ export const useMockStore = create<MockState>()(
       confirmLeaveChannel: true,
       enableCommandSuggestions: true,
       enableLinkPreviews: true,
+      enableMotdMediaPreviews: false,
       enableWebPagePreviews: true,
       linkPreviewApiUrl: "https://api.microlink.io",
       uploadConfig: {
@@ -1086,6 +1089,7 @@ export const useMockStore = create<MockState>()(
       setConfirmLeaveChannel: (enabled: boolean) => set({ confirmLeaveChannel: enabled }),
       setEnableCommandSuggestions: (enabled: boolean) => set({ enableCommandSuggestions: enabled }),
       setEnableLinkPreviews: (enabled: boolean) => set({ enableLinkPreviews: enabled }),
+      setEnableMotdMediaPreviews: (enabled: boolean) => set({ enableMotdMediaPreviews: enabled }),
       setEnableWebPagePreviews: (enabled: boolean) => set({ enableWebPagePreviews: enabled }),
       setLinkPreviewApiUrl: (url: string) => set({ linkPreviewApiUrl: url }),
       setUploadConfig: (config: ImageUploadConfig) => set({ uploadConfig: config }),
@@ -3045,6 +3049,7 @@ export const useMockStore = create<MockState>()(
           nickCompletionFormat: "plain",
           customNickCompletionFormat: "{nick}: ",
           autoCollapseImages: false,
+          enableMotdMediaPreviews: false,
           serverMediaCollapsePolicies: {},
           lastActiveChatPerServer: {},
           ...persistedState,
