@@ -108,7 +108,7 @@ export const UserContextMenu = React.forwardRef<
 
   const onOpenDM = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!activeServer || isSelf) return;
+    if (!activeServer) return;
 
     let targetMember = activeServer.members.find(
       (m) =>
@@ -192,6 +192,10 @@ export const UserContextMenu = React.forwardRef<
       <ContextMenuContent className="w-52 select-none">
         {isSelf && activeServer && (
           <>
+            <ContextMenuItem onClick={onOpenDM} className="gap-x-2 cursor-pointer">
+              <MessageSquare className="w-4 h-4 text-zinc-500" />
+              <span>Message yourself</span>
+            </ContextMenuItem>
             <ContextMenuItem onClick={handleToggleSelfAway} className="gap-x-2 cursor-pointer">
               {isSelfAway ? (
                 <>

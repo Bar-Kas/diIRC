@@ -18,6 +18,7 @@
 src-tauri/target/
 
 # devtools data
+/devtools/bot-joiner/config.json
 /devtools/data
 /devtools/znc-data
 

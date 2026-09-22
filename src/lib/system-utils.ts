@@ -118,3 +118,29 @@ export async function saveImageToFile(url: string, suggestedName?: string): Prom
     }
   }
 }
+
+/**
+ * Calculates byte length of text formatted for IRC transmission.
+ */
+export function getIrcByteCount(text: string): number {
+  if (!text) return 0;
+  const ircMessage = text.replace(/\r?\n/g, "\u0085");
+  return new TextEncoder().encode(ircMessage).length;
+}
+
+/**
+ * Calculates maximum message byte budget for PRIVMSG to a target.
+ */
+export function getIrcMaxMessageBytes(
+  target: string,
+  nick?: string,
+  username?: string,
+  host?: string
+): number {
+  const defaultNick = nick || "user";
+  const defaultUser = username || defaultNick;
+  const defaultHost = host || "localhost";
+  const rawPrefix = `:${defaultNick}!${defaultUser}@${defaultHost} PRIVMSG ${target} :\r\n`;
+  const overhead = new TextEncoder().encode(rawPrefix).length;
+  return Math.max(0, 512 - overhead);
+}
